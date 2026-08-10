@@ -1,127 +1,132 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Clockwork Autofill — Opzioni</title>
+  <title data-i18n="optionsTitle">Clockwork Autofill — Options</title>
   <link rel="stylesheet" href="options.css" />
 </head>
 <body>
   <h1>Clockwork Autofill</h1>
-  <p class="lede">
-    Le ore vengono scritte sui worklog nativi di Jira, che Clockwork tiene sincronizzati:
-    compaiono in <em>My Work</em> e nei timesheet senza passare dall'API di Clockwork.
-    L'autenticazione usa la sessione del browser — nessun token, nessuna credenziale salvata:
-    basta avere una scheda aperta e loggata sul sito qui sotto.
+  <p class="lede" data-i18n="optionsLede">
+    Hours are written to native Jira worklogs, which Clockwork keeps in sync: they show up in
+    My Work and in timesheets without going through the Clockwork API. Authentication uses your
+    browser session — no tokens, no stored credentials: you just need a tab open and logged in
+    on the site below.
   </p>
 
   <section>
-    <h2>Jira</h2>
+    <h2 data-i18n="secJira">Jira</h2>
     <div class="field">
-      <label for="jira-url">Sito Jira</label>
+      <label for="jira-url" data-i18n="fieldSite">Jira site</label>
       <div class="with-button">
         <span class="affix">https://</span>
-        <input type="text" id="jira-url" placeholder="iltuosito" autocapitalize="off" spellcheck="false" />
+        <input type="text" id="jira-url" data-i18n-placeholder="sitePlaceholder" placeholder="yoursite"
+               autocapitalize="off" spellcheck="false" />
         <span class="affix">.atlassian.net</span>
-        <button id="detect-site" class="ghost">Rileva dal browser</button>
+        <button id="detect-site" class="ghost" data-i18n="btnDetectSite">Detect from browser</button>
       </div>
-      <p class="hint">
-        Basta il prefisso: Jira Cloud sta sempre su <span class="mono">.atlassian.net</span>, ed è
-        l'unico host per cui l'estensione ha i permessi. Se incolli l'URL intero viene ripulito da solo.
-        Solo le schede aperte su <em>questo</em> sito vengono usate per la sessione: se hai aperto
-        un altro sito Atlassian viene ignorato.
+      <p class="hint" data-i18n="hintSite">
+        The prefix is enough: Jira Cloud always lives on .atlassian.net, and it is the only host
+        this extension has permissions for. If you paste the full URL it gets cleaned up. Only tabs
+        open on this site are used for the session: another Atlassian site is ignored.
       </p>
     </div>
     <div class="field">
-      <label for="jira-projects">Progetti da scansionare</label>
+      <label for="jira-projects" data-i18n="fieldProjects">Projects to scan</label>
       <input type="text" id="jira-projects" placeholder="ABC, XYZ" />
-      <p class="hint">Chiavi separate da virgola. Restringe sia la ricerca attività sia le chiavi accettate nei commit.</p>
+      <p class="hint" data-i18n="hintProjects">
+        Comma-separated keys. Narrows both the activity search and the issue keys accepted in
+        commit messages.
+      </p>
     </div>
     <div class="field check">
       <input type="checkbox" id="jira-comments" />
-      <label for="jira-comments">Considera anche i miei commenti come attività</label>
+      <label for="jira-comments" data-i18n="checkComments">Count my comments as activity too</label>
     </div>
-    <button id="test-jira" class="ghost">Verifica connessione</button>
+    <button id="test-jira" class="ghost" data-i18n="btnTestConnection">Test connection</button>
     <span id="jira-result" class="result"></span>
   </section>
 
   <section>
-    <h2>Commit</h2>
+    <h2 data-i18n="secCommits">Commits</h2>
     <div class="field check">
       <input type="checkbox" id="dev-panel" />
-      <label for="dev-panel">Leggi i commit dal pannello «Sviluppo» delle issue</label>
+      <label for="dev-panel" data-i18n="checkDevPanel">
+        Read commits from the issue Development panel
+      </label>
     </div>
-    <p class="hint">
-      I commit vengono letti da Jira stesso — lo stesso pannello che vedi in fondo a ogni ticket.
-      Nessuna scheda Bitbucket da tenere aperta, nessun workspace da configurare.
+    <p class="hint" data-i18n="hintDevPanel">
+      Commits are read from Jira itself — the same panel you see at the bottom of every ticket.
+      No Bitbucket tab to keep open, no workspace to configure.
     </p>
     <div class="field">
-      <label for="dev-candidates">Issue da controllare oltre a quelle di oggi</label>
+      <label for="dev-candidates" data-i18n="fieldDevCandidates">Issues to check besides today's</label>
       <input type="number" id="dev-candidates" min="0" max="100" />
-      <p class="hint">
-        Il pannello si interroga una issue alla volta, quindi il numero conta. Oltre alle issue
-        toccate oggi vengono controllate le tue issue aggiornate nelle ultime tre settimane:
-        serve a trovare i commit su ticket che oggi non hai aperto in Jira.
-        Più alto = più copertura ma analisi più lenta. <span class="mono">0</span> = solo le issue di oggi.
+      <p class="hint" data-i18n="hintDevCandidates">
+        The panel is queried one issue at a time, so the number matters. Besides the issues you
+        touched today, your issues updated in the last three weeks are checked too. Higher means
+        more coverage but a slower analysis. 0 means today's issues only.
       </p>
     </div>
     <div class="field">
-      <label for="authors">Nomi o email con cui firmi i commit</label>
-      <input type="text" id="authors" placeholder="di norma si può lasciare vuoto" />
-      <p class="hint">
-        Separati da virgola. Il tuo nome e la tua email Jira sono già considerati: questo campo
-        serve solo se firmi i git commit con un altro nome (un vecchio indirizzo, il portatile di casa).
+      <label for="authors" data-i18n="fieldAuthors">Names or emails you sign commits with</label>
+      <input type="text" id="authors" data-i18n-placeholder="authorsPlaceholder"
+             placeholder="usually can be left empty" />
+      <p class="hint" data-i18n="hintAuthors">
+        Comma-separated. Your Jira name and email are already taken into account: this field is
+        only needed if you sign git commits with a different name.
       </p>
     </div>
   </section>
 
   <section>
-    <h2>Giornata</h2>
+    <h2 data-i18n="secDay">Working day</h2>
     <div class="row">
       <div class="field">
-        <label for="work-hours">Ore da coprire</label>
+        <label for="work-hours" data-i18n="fieldDailyHours">Hours to cover</label>
         <input type="number" id="work-hours" min="1" max="24" step="0.5" />
       </div>
       <div class="field">
-        <label for="work-rounding">Arrotondamento (minuti)</label>
+        <label for="work-rounding" data-i18n="fieldRounding">Rounding (minutes)</label>
         <input type="number" id="work-rounding" min="1" max="60" step="1" />
       </div>
       <div class="field">
-        <label for="work-start">Inizio giornata</label>
+        <label for="work-start" data-i18n="fieldStartTime">Day starts at</label>
         <input type="time" id="work-start" />
       </div>
     </div>
   </section>
 
   <section>
-    <h2>Pause</h2>
-    <p class="hint">
-      Le pause <strong>non consumano monte ore</strong>: sono buchi nella linea del tempo.
-      Un blocco di lavoro che ci finisce sopra viene spezzato, e in Jira arrivano più worklog —
-      come appare la giornata sul calendario. Puoi metterne quante ne servono.
+    <h2 data-i18n="secBreaks">Breaks</h2>
+    <p class="hint" data-i18n="hintBreaks">
+      Breaks do not consume your daily budget: they are holes in the timeline. A block of work
+      that lands on one gets split, and several worklogs reach Jira — the way the day actually
+      looks on the calendar. Add as many as you need.
     </p>
     <div id="breaks"></div>
-    <button id="add-break" class="ghost">Aggiungi pausa</button>
+    <button id="add-break" class="ghost" data-i18n="btnAddBreak">Add break</button>
   </section>
 
   <section>
-    <h2>Riunioni ricorrenti</h2>
-    <p class="hint">
-      Durata fissa, sottratta al monte ore prima di dividere il resto fra le task.
-      Il ticket si sceglie nel popup e viene ricordato per tutta la settimana.
+    <h2 data-i18n="secMeetings">Recurring meetings</h2>
+    <p class="hint" data-i18n="hintMeetings">
+      Fixed duration, subtracted from the daily budget before the rest is split across tasks.
+      The ticket is picked in the popup and remembered for the whole week.
     </p>
     <div id="meetings"></div>
-    <button id="add-meeting" class="ghost">Aggiungi riunione</button>
+    <button id="add-meeting" class="ghost" data-i18n="btnAddMeeting">Add meeting</button>
   </section>
 
   <footer>
-    <button id="save" class="primary">Salva</button>
+    <button id="save" class="primary" data-i18n="btnSave">Save</button>
     <span id="save-result" class="result"></span>
   </footer>
 
   <p class="colophon">
     <span data-i18n="colophonCredit">Made with ❤️ by Matt</span>
     <span class="sep">·</span>
-    <span data-i18n="colophonContact">For bugs or requests, contact me on Telegram</span>
+    <span data-i18n="colophonContact">For bugs or requests contact me on Telegram</span>
   </p>
 
   <script type="module" src="options.js"></script>

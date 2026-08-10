@@ -57,7 +57,7 @@ const taskKeys = pieno.rows.filter(r => r.kind === 'task').map(r => r.issueKey);
 assert.ok(!taskKeys.includes('ABC-1969'), 'il ticket cerimonie non deve comparire anche come task');
 assert.equal(pieno.rows.filter(r => r.kind === 'task' && r.minutes > 0).length, 0,
   'niente ore inventate sopra a una giornata gia piena');
-assert.ok(pieno.warnings.some(w => /riunioni .* coprono tutto il tempo/.test(w.text)), 'lo dice invece di far finta di niente');
+assert.ok(pieno.warnings.some(w => w.key === 'planMeetingsCoverAll'), 'lo dice invece di far finta di niente');
 
 // il ticket cerimonie e' stato proposto sulle due righe riunione
 const meetingRows = pieno.rows.filter(r => r.kind === 'meeting');
@@ -92,6 +92,6 @@ const vuoto = buildPlan({
   jiraActivity: new Map(), gitByIssue: new Map(), recentIssues, alreadyLoggedMinutes: 0
 });
 assert.equal(vuoto.budgetMinutes, 480);
-assert.ok(vuoto.warnings.some(w => w.text.includes('Nessuna task')));
+assert.ok(vuoto.warnings.some(w => w.key === 'planNoTasks'));
 
 console.log('planner + date: tutti i controlli passati.');

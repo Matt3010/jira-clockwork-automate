@@ -23,7 +23,8 @@ const SUITES = [
   'aggiornamento-leggero.test.mjs',
   'transport.test.mjs',
   'devpanel.test.mjs',
-  'opzioni.test.mjs'
+  'opzioni.test.mjs',
+  'traduzioni.test.mjs'
 ];
 
 let failed = 0;

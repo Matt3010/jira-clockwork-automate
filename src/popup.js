@@ -9,6 +9,7 @@ import {
   todayIso
 } from './lib/dates.js';
 import { icon, setIcon } from './lib/icons.js';
+import { t, applyI18n } from './lib/i18n.js';
 
 const el = {
   date: document.getElementById('date'),
@@ -52,7 +53,7 @@ function send(type, payload) {
     chrome.runtime.sendMessage({ type, payload }, (response) => {
       if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
       if (!response?.ok) {
-        const error = new Error(response?.error || 'Errore sconosciuto');
+        const error = new Error(response?.error || 'Unknown error');
         error.code = response?.code || null;
         error.detail = response?.detail || null;
         return reject(error);
@@ -78,9 +79,12 @@ const LEVELS = {
  */
 function normalizeMessage(input, fallbackLevel) {
   if (typeof input === 'string') return { text: input, level: fallbackLevel || 'info' };
-  if (input && typeof input.text === 'string') {
-    return { text: input.text, level: input.level || fallbackLevel || 'info' };
-  }
+  if (!input) return null;
+  const level = input.level || fallbackLevel || 'info';
+  // Planner e background mandano chiave + parametri: la frase la compone qui,
+  // nella lingua giusta. `text` resta accettato per i messaggi già pronti.
+  if (input.key) return { text: t(input.key, ...(input.params || [])), level };
+  if (typeof input.text === 'string') return { text: input.text, level };
   return null;
 }
 
@@ -169,16 +173,16 @@ function updateTotal() {
   const strong = document.createElement('strong');
   strong.textContent = formatMinutes(total);
 
-  const parti = [` da distribuire su ${formatMinutes(state.budgetMinutes)}`];
+  const parti = [t('totalDistribute', formatMinutes(state.budgetMinutes))];
   if (state.alreadyLoggedMinutes) {
-    parti.push(` · ${formatMinutes(state.alreadyLoggedMinutes)} già registrate su ${formatMinutes(state.dayBudgetMinutes)}`);
+    parti.push(t('totalAlready', formatMinutes(state.alreadyLoggedMinutes), formatMinutes(state.dayBudgetMinutes)));
   }
-  parti.push(` · ${sendable} riga/e`);
-  if (sendable && state.endOfDay) parti.push(` · fine giornata ${state.endOfDay}`);
+  parti.push(t('totalRows', sendable));
+  if (sendable && state.endOfDay) parti.push(t('totalEndOfDay', state.endOfDay));
   if (sforo > 0) {
     parti.push(rifatte
-      ? ` · la giornata arriverebbe a ${formatMinutes(finale)}: stai rimettendo ${formatMinutes(rifatte)} già registrate`
-      : ` · la giornata arriverebbe a ${formatMinutes(finale)}`);
+      ? t('totalOverflowRedo', formatMinutes(finale), formatMinutes(rifatte))
+      : t('totalOverflow', formatMinutes(finale)));
   }
   el.total.append(strong, parti.join(''));
 
@@ -187,7 +191,7 @@ function updateTotal() {
   state.overflowMinutes = Math.max(0, sforo);
   disarmSubmit();
   el.submit.disabled = sendable === 0;
-  setButton(el.submit, 'send', sendable ? `Invia ${sendable} worklog` : 'Invia worklog');
+  setButton(el.submit, 'send', sendable ? t('btnSendCount', sendable) : t('btnSend'));
 }
 
 // Invio in due passi quando la giornata sforerebbe il monte ore: il pulsante
@@ -198,9 +202,9 @@ function armSubmit() {
   confirmingSend = true;
   el.submit.classList.remove('primary');
   el.submit.classList.add('danger');
-  setButton(el.submit, 'send', `Conferma: la giornata arriverà a ${formatMinutes(
+  setButton(el.submit, 'send', t('btnConfirmDay', formatMinutes(
     state.alreadyLoggedMinutes + sendableRows().reduce((s, r) => s + r.minutes, 0)
-  )}`);
+  )));
   el.cancelSend.hidden = false;
 }
 
@@ -244,6 +248,24 @@ function syncValues() {
   updateTotal();
 }
 
+/**
+ * La riga in una frase. Il planner conta gli eventi, la frase si compone qui:
+ * singolare e plurale cambiano da lingua a lingua.
+ */
+function describeRow(row) {
+  if (row.kind === 'meeting') {
+    const slot = t('meetingRecurring', row.time, addMinutes(row.time, row.defaultMinutes ?? row.minutes));
+    return row.summary ? `${slot} · ${row.summary}` : slot;
+  }
+  if (row.detail) return row.detail; // righe aggiunte a mano
+  const { changes = 0, comments = 0, commits = 0 } = row.activity || {};
+  const parti = [];
+  if (changes) parti.push(t(changes === 1 ? 'activityChange' : 'activityChanges', changes));
+  if (comments) parti.push(t(comments === 1 ? 'activityComment' : 'activityComments', comments));
+  if (commits) parti.push(t(commits === 1 ? 'activityCommit' : 'activityCommits', commits));
+  return parti.join(' · ');
+}
+
 function badge(text, kind) {
   const span = document.createElement('span');
   span.className = `badge ${kind}`;
@@ -284,8 +306,8 @@ function renderRow(row) {
   // Il progetto nel suggerimento viene dalla configurazione, non dal codice.
   const esempio = state.config?.jira?.projects?.[0];
   issue.placeholder = row.kind === 'meeting'
-    ? 'Ticket cerimonie…'
-    : (esempio ? `${esempio}-…` : 'ABC-123');
+    ? t('phMeetingTicket')
+    : (esempio ? t('phIssuePrefix', esempio) : t('phIssueExample'));
   issue.value = row.issueKey || '';
   issue.addEventListener('change', () => {
     row.issueKey = issue.value.trim().toUpperCase();
@@ -301,7 +323,7 @@ function renderRow(row) {
       const clashes = state.rows.filter((r) => r.kind === 'task' && r.issueKey === row.issueKey);
       if (clashes.length) {
         state.rows = state.rows.filter((r) => !(r.kind === 'task' && r.issueKey === row.issueKey));
-        message(`${row.issueKey} era anche fra le task: l'ho tolto, resta solo come riunione.`, 'info');
+        message(t('msgClash', row.issueKey), 'info');
       }
     }
     redistribute();
@@ -314,7 +336,7 @@ function renderRow(row) {
   const summary = document.createElement('div');
   summary.className = 'summary';
   if (row.kind === 'meeting') summary.appendChild(icon('calendar', { size: 14 }));
-  summary.append(row.kind === 'meeting' ? row.label : (row.summary || '(titolo non disponibile)'));
+  summary.append(row.kind === 'meeting' ? row.label : (row.summary || t('rowNoTitle')));
 
   const badges = document.createElement('span');
   badges.className = 'badges';
@@ -322,27 +344,25 @@ function renderRow(row) {
   if (row.sources?.includes('git')) badges.appendChild(badge('git', 'git'));
   if (row.guessed) {
     const why = {
-      orario: "proposto perché a quell'ora risulta già un worklog su questo ticket",
-      nome: 'proposto per somiglianza col nome della riunione',
-      data: 'proposto perché il titolo contiene la data di oggi'
-    }[row.guessReason] || 'proposta automatica';
-    const mark = badge('proposto', 'dup');
+      orario: t('whyTime'),
+      nome: t('whyName'),
+      data: t('whyDate')
+    }[row.guessReason] || t('whyAuto');
+    const mark = badge(t('badgeProposed'), 'dup');
     mark.title = why;
     badges.appendChild(mark);
   }
-  if (row.existingMinutes) badges.appendChild(badge(`già ${formatMinutes(row.existingMinutes)}`, 'dup'));
+  if (row.existingMinutes) badges.appendChild(badge(t('badgeAlready', formatMinutes(row.existingMinutes)), 'dup'));
   summary.appendChild(badges);
 
   const detail = document.createElement('div');
   detail.className = 'detail';
-  detail.textContent = row.kind === 'meeting' && row.summary
-    ? `${row.detail} · ${row.summary}`
-    : (row.detail || '');
+  detail.textContent = describeRow(row);
 
   const comment = document.createElement('input');
   comment.type = 'text';
   comment.className = 'comment';
-  comment.placeholder = 'Nota del worklog (opzionale)';
+  comment.placeholder = t('phComment');
   comment.value = row.comment || '';
   comment.addEventListener('input', () => { row.comment = comment.value; });
 
@@ -375,7 +395,7 @@ function renderRow(row) {
   time.className = 'time';
   time.textContent = timeLabel(row);
   if (segmentsOf(row).length > 1) {
-    time.title = 'Spezzato dalla pausa: verranno scritti più worklog.';
+    time.title = t('titleSplitByBreak');
   }
   tdTime.appendChild(time);
 
@@ -388,8 +408,7 @@ function renderRow(row) {
     wipe.className = 'remove wipe';
     wipe.classList.toggle('open', state.expanded.has(row.id));
     setIcon(wipe, 'trash');
-    wipe.title = `Mostra le ${formatMinutes(row.existingMinutes)} già registrate ` +
-      `oggi su ${row.issueKey}, per cancellarle`;
+    wipe.title = t('titleWipe', formatMinutes(row.existingMinutes), row.issueKey);
     // Niente conferma cieca: si apre l'elenco dei singoli worklog e si sceglie.
     // Con un doppione, cancellarli tutti in blocco sarebbe la cosa sbagliata.
     wipe.addEventListener('click', () => {
@@ -403,7 +422,7 @@ function renderRow(row) {
   const remove = document.createElement('button');
   remove.className = 'remove';
   setIcon(remove, 'x');
-  remove.title = 'Togli dal piano (non tocca Jira)';
+  remove.title = t('titleRemoveRow');
   remove.addEventListener('click', () => {
     state.rows = state.rows.filter((r) => r.id !== row.id);
     redistribute();
@@ -430,12 +449,12 @@ async function afterWrite(issueKeys) {
     const out = await send('reloadSite');
     if (!out.reloaded) {
       message(
-        'Nessuna scheda Jira da ricaricare: il calendario sotto potrebbe mostrare i dati di prima.',
+        t('msgReloadNone'),
         'info'
       );
     }
   } catch (error) {
-    message(`Non ho potuto ricaricare la pagina Jira: ${error.message}`, 'action');
+    message(t('msgReloadFailed', error.message), 'action');
   }
 }
 
@@ -459,13 +478,12 @@ async function removeWorklogs(row, worklogIds, button) {
     clearMessages();
     if (out.error) {
       message(
-        `${row.issueKey}: cancellati ${out.deleted} worklog su ${out.total} ` +
-        `(${formatMinutes(out.minutes)}), poi si è fermato: ${out.error}`,
+        t('msgDeletedPartial', row.issueKey, out.deleted, out.total, formatMinutes(out.minutes), out.error),
         'err'
       );
     } else {
       message(
-        `${row.issueKey}: cancellati ${out.deleted} worklog (${formatMinutes(out.minutes)}).`,
+        t('msgDeleted', row.issueKey, out.deleted, formatMinutes(out.minutes)),
         'ok'
       );
     }
@@ -495,13 +513,11 @@ function renderWorklogRow(row) {
   if (!entries.length) {
     // Il badge dice che ci sono ore, ma i singoli worklog non sono arrivati:
     // succede col service worker non ricaricato, che non manda ancora gli id.
-    titolo.textContent = `Non riesco a elencare i singoli worklog di ${row.issueKey} ` +
-      `(${formatMinutes(row.existingMinutes)} in totale). Ricarica l'estensione, ` +
-      'oppure cancellali tutti:';
+    titolo.textContent = t('worklogsUnlistable', row.issueKey, formatMinutes(row.existingMinutes));
     td.appendChild(titolo);
     const tutti = document.createElement('button');
     tutti.className = 'ghost inline danger-text';
-    tutti.textContent = `Cancella tutte le ${formatMinutes(row.existingMinutes)}`;
+    tutti.textContent = t('btnDeleteAllAmount', formatMinutes(row.existingMinutes));
     tutti.addEventListener('click', () => removeWorklogs(row, null, tutti));
     td.appendChild(tutti);
     tr.append(document.createElement('td'), document.createElement('td'), td);
@@ -509,8 +525,8 @@ function renderWorklogRow(row) {
   }
 
   titolo.textContent = entries.length === 1
-    ? `Worklog già su Jira per ${row.issueKey}:`
-    : `${entries.length} worklog già su Jira per ${row.issueKey} — cancellali singolarmente:`;
+    ? t('worklogsOne', row.issueKey)
+    : t('worklogsMany', entries.length, row.issueKey);
   td.appendChild(titolo);
 
   for (const entry of entries) {
@@ -523,7 +539,7 @@ function renderWorklogRow(row) {
 
     const del = document.createElement('button');
     del.className = 'ghost inline';
-    del.textContent = 'Cancella';
+    del.textContent = t('btnDelete');
     del.addEventListener('click', () => removeWorklogs(row, [entry.id], del));
 
     riga.append(quando, del);
@@ -533,7 +549,7 @@ function renderWorklogRow(row) {
   if (entries.length > 1) {
     const tutti = document.createElement('button');
     tutti.className = 'ghost inline danger-text';
-    tutti.textContent = `Cancella tutti e ${entries.length}`;
+    tutti.textContent = t('btnDeleteAllCount', entries.length);
     tutti.addEventListener('click', () => removeWorklogs(row, entries.map((e) => e.id), tutti));
     td.appendChild(tutti);
   }
@@ -557,7 +573,7 @@ function timelineBlocks() {
         rowId: row.id,
         from,
         to: from + segment.minutes,
-        label: `${row.issueKey} · ${segment.time}–${addMinutes(segment.time, segment.minutes)}`
+        label: t('tlBlock', row.issueKey, segment.time, addMinutes(segment.time, segment.minutes))
       });
     }
   }
@@ -572,12 +588,12 @@ function timelineBlocks() {
       tipo: 'logged',
       from: entry.startMinutes,
       to: entry.startMinutes + entry.minutes,
-      label: `${entry.key} · già registrate`
+      label: t('tlLogged', entry.key)
     });
   }
 
   for (const pausa of state.config ? breakRanges(state.config) : []) {
-    blocchi.push({ tipo: 'pause', from: pausa.from, to: pausa.to, label: 'Pausa' });
+    blocchi.push({ tipo: 'pause', from: pausa.from, to: pausa.to, label: t('tlPause') });
   }
 
   return blocchi;
@@ -657,10 +673,10 @@ function renderTimeline() {
   legend.replaceChildren();
   legend.hidden = false;
   const voci = [
-    ['task', 'da scrivere'],
-    ['meeting', 'riunioni'],
-    ['logged', 'già registrate'],
-    ['pause', 'pausa']
+    ['task', t('legendTask')],
+    ['meeting', t('legendMeeting')],
+    ['logged', t('legendLogged')],
+    ['pause', t('legendPause')]
   ];
   for (const [tipo, testo] of voci) {
     if (!blocchi.some((b) => b.tipo === tipo)) continue;
@@ -690,7 +706,7 @@ function highlight(rowId, on) {
   }
 }
 
-let emptyMessage = 'Analizzo la giornata…';
+let emptyMessage = t('emptyAnalysing');
 
 function render() {
   // Riga di stacco fra riunioni ricorrenti e attività: sono due cose diverse
@@ -770,13 +786,13 @@ function setSite(text, kind = '') {
 async function refreshSite() {
   try {
     const status = await send('siteStatus');
-    if (!status.host) return setSite('Nessun sito Jira configurato', 'down');
+    if (!status.host) return setSite(t('siteNoneConfigured'), 'down');
 
-    const origin = status.configured ? '' : ' (rilevato dal browser)';
+    const origin = status.configured ? '' : t('siteDetectedSuffix');
     if (!status.tabsOnSite) {
-      return setSite(`${status.host}${origin} · nessuna scheda aperta`, 'down');
+      return setSite(t('siteNoTab', status.host, origin), 'down');
     }
-    setSite(`${status.host}${origin} · sessione del browser`, 'live');
+    setSite(t('siteSession', status.host, origin), 'live');
   } catch (error) {
     setSite(error.message, 'down');
   }
@@ -808,13 +824,13 @@ function reportAuthError(error, retry) {
   if (error.code === 'NO_TAB' && host) {
     const altri = openHosts.filter((h) => h !== host);
     const extra = altri.length
-      ? ` Hai aperto ${altri.join(', ')}, ma la configurazione punta a ${host}.`
+      ? t('errNoTabOthers', altri.join(', '), host)
       : '';
     return message(
-      `Nessuna scheda aperta su ${host}, quindi non posso usare la tua sessione.${extra}`,
+      t('errNoTab', host, extra),
       'action',
       {
-        label: 'Apri e riprova',
+        label: t('btnOpenRetry'),
         onClick: async () => { await openAndWait(host); retry(); }
       }
     );
@@ -822,25 +838,25 @@ function reportAuthError(error, retry) {
 
   if (error.code === 'SESSION_INVALID' && host) {
     return message(
-      `La scheda su ${host} c'è ma la sessione non è valida: rifai il login e riprova.`,
+      t('errSessionInvalid', host),
       'action',
       {
-        label: 'Vai al login',
+        label: t('btnGoLogin'),
         onClick: () => chrome.tabs.create({ url: `https://${host}/`, active: true })
       }
     );
   }
 
   if (error.code === 'TAB_GONE' && host) {
-    return message(error.message, 'action', {
-      label: 'Riapri e riprova',
+    return message(t('errTabGone', host), 'action', {
+      label: t('btnReopenRetry'),
       onClick: async () => { await openAndWait(host); retry(); }
     });
   }
 
   if (error.code === 'NO_HOST') {
     return message(error.message, 'err', {
-      label: 'Apri opzioni',
+      label: t('btnOpenOptions'),
       onClick: () => chrome.runtime.openOptionsPage()
     });
   }
@@ -899,7 +915,7 @@ async function refreshLogged({ force = [], silent = true } = {}) {
   } catch (error) {
     // Al rientro sul popup è cortesia e si tace; dopo una scrittura no: se il
     // piano non si aggiorna, quello che vedi non è più quello che c'è su Jira.
-    if (!silent) message(`Piano non aggiornato: ${error.message}`, 'action');
+    if (!silent) message(t('msgPlanNotUpdated', error.message), 'action');
   }
   return undefined;
 }
@@ -911,11 +927,11 @@ async function analyze({ preserveMessages = false } = {}) {
 
   if (!preserveMessages) clearMessages();
   el.analyze.disabled = true;
-  setButton(el.analyze, 'refresh', 'Analizzo…');
+  setButton(el.analyze, 'refresh', t('btnAnalysing'));
 
   // Si riparte dallo stato di apertura: tabella e anteprima spariscono finché
   // non arriva il piano nuovo, invece di lasciare in vista quello vecchio.
-  emptyMessage = 'Analizzo la giornata…';
+  emptyMessage = t('emptyAnalysing');
   state.rows = [];
   state.expanded.clear();
   render();
@@ -931,9 +947,14 @@ async function analyze({ preserveMessages = false } = {}) {
     state.loggedEntries = data.loggedEntries || [];
     state.recentIssues = data.recentIssues || [];
     // Le righe arrivano gia' con `enabled` deciso dal planner: una issue che ha
-    // gia' un worklog quel giorno parte spenta.
-    state.rows = data.rows.map((row) => ({ ...row, locked: false }));
-    emptyMessage = 'Niente da registrare per questa giornata.';
+    // gia' un worklog quel giorno parte spenta. La nota precompilata arriva come
+    // chiave e diventa testo qui, perché finisce in un campo modificabile.
+    state.rows = data.rows.map((row) => ({
+      ...row,
+      locked: false,
+      comment: row.comment || (row.commentKey ? t(row.commentKey) : '')
+    }));
+    emptyMessage = t('emptyNothing');
     redistribute();
     renderDatalist();
     render();
@@ -946,7 +967,7 @@ async function analyze({ preserveMessages = false } = {}) {
     const missing = state.rows.filter((row) => row.enabled && !row.issueKey);
     if (missing.length) {
       message(
-        `${missing.length} riunione/i senza ticket: scegli la issue dal campo con i suggerimenti.`,
+        t('msgMeetingsNoTicket', missing.length),
         'action'
       );
     }
@@ -956,30 +977,29 @@ async function analyze({ preserveMessages = false } = {}) {
     const guessed = state.rows.filter((row) => row.guessed && row.enabled && row.issueKey);
     if (guessed.length) {
       message(
-        `Ticket riunione proposto in automatico (${guessed.map((r) => r.issueKey).join(', ')}): ` +
-        'controlla che sia quello giusto prima di inviare.',
+        t('msgProposedTickets', guessed.map((r) => r.issueKey).join(', ')),
         'action'
       );
     }
-    if (data.site?.host) setSite(`${data.site.host} · sessione del browser`, 'live');
+    if (data.site?.host) setSite(t('siteSession', data.site.host, ''), 'live');
   } catch (error) {
     if (token !== analyzeToken) return;
     reportAuthError(error, analyze);
     state.rows = [];
-    emptyMessage = 'Nessun piano per questa giornata.';
+    emptyMessage = t('emptyNoPlan');
     render();
   } finally {
     if (token === analyzeToken) {
       state.analyzedAt = Date.now();
       el.analyze.disabled = false;
-      setButton(el.analyze, 'refresh', 'Aggiorna');
+      setButton(el.analyze, 'refresh', t('btnRefresh'));
     }
   }
 }
 
 async function submit() {
   el.submit.disabled = true;
-  setButton(el.submit, 'send', 'Invio…');
+  setButton(el.submit, 'send', t('btnSending'));
   try {
     const payload = state.rows.map((row) => ({
       kind: row.kind,
@@ -998,10 +1018,12 @@ async function submit() {
     const failed = results.filter((r) => !r.ok);
     if (ok.length) {
       const parti = ok.reduce((sum, r) => sum + (r.parts || 1), 0);
-      const dettaglio = parti > ok.length ? ` (${parti} worklog, alcune righe spezzate dalla pausa)` : '';
-      message(`${ok.length} righe registrate${dettaglio}: ${ok.map((r) => r.issueKey).join(', ')}.`, 'ok');
+      const chiavi = ok.map((r) => r.issueKey).join(', ');
+      message(parti > ok.length
+        ? t('msgSentSplit', ok.length, parti, chiavi)
+        : t('msgSent', ok.length, chiavi), 'ok');
     }
-    failed.forEach((r) => message(`${r.issueKey}: ${r.error}`, 'err'));
+    failed.forEach((r) => message(t('msgSendFailed', r.issueKey, r.error), 'err'));
 
     // Le righe andate a buon fine escono subito dal piano, cosi' un secondo
     // invio non puo' duplicarle mentre la tabella si aggiorna.
@@ -1040,7 +1062,7 @@ el.addRow.addEventListener('click', () => {
     time: '',
     segments: [],
     sources: [],
-    detail: 'Aggiunta a mano',
+    detail: t('detailManual'),
     comment: '',
     enabled: true,
     existingMinutes: 0,
@@ -1090,6 +1112,10 @@ window.addEventListener('focus', () => {
 setIcon(el.prevDay, 'chevronLeft');
 setIcon(el.nextDay, 'chevronRight');
 setIcon(el.openOptions, 'settings');
+
+// Il markup statico prima di tutto: l'analisi parte subito dopo e i suoi
+// messaggi sono già tradotti da `t`.
+applyI18n();
 
 refreshSite();
 analyze();

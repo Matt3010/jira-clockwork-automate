@@ -1,239 +1,283 @@
 # Clockwork Autofill
 
-Estensione Chrome che ricostruisce la tua giornata (o una giornata passata) e
-precompila i worklog, per non doverli inserire a mano in Clockwork.
+Chrome extension that reconstructs your day (or a past day) and pre-fills the
+worklogs, so you don't have to enter them by hand in Clockwork.
 
-**Come fa a finire in Clockwork:** i worklog di Clockwork sono sincronizzati con
-i worklog nativi di Jira. L'estensione scrive su `POST /rest/api/3/issue/{key}/worklog`
-e le ore compaiono in *My Work* e nei timesheet. L'API pubblica di Clockwork non
-serve — è read-only sui worklog.
+**How it ends up in Clockwork:** Clockwork worklogs are synced with Jira's native
+worklogs. The extension writes to `POST /rest/api/3/issue/{key}/worklog` and the
+hours show up in *My Work* and in timesheets. Clockwork's public API isn't needed —
+it's read-only on worklogs.
 
-**Parla solo con Jira.** Niente token, niente Bitbucket, niente altri servizi.
+**It only talks to Jira.** No tokens, no Bitbucket, no other services.
 
-## Autenticazione: la sessione del browser
+## Authentication: the browser session
 
-Nessuna credenziale salvata da nessuna parte. Le richieste vengono eseguite
-**dentro una scheda già aperta** sul sito Jira: sono same-origin e usano il cookie
-del login che hai già fatto.
+No credentials stored anywhere. Requests run **inside a tab that's already open**
+on the Jira site: they're same-origin and use the cookie from the login you already
+did.
 
-**Sul dominio:** se l'URL del sito è configurato, **solo** le schede su quell'host
-valgono. Una scheda su un altro `*.atlassian.net` viene ignorata — non si scrivono
-ore sul sito sbagliato perché era aperto. Il popup mostra in basso da che host sta
-leggendo (🟢 sessione attiva, 🔴 nessuna scheda utilizzabile), e se manca la scheda
-il messaggio ha un pulsante **Apri e riprova**.
+**On the domain:** if the site URL is configured, **only** tabs on that host count.
+A tab on a different `*.atlassian.net` is ignored — hours don't get written to the
+wrong site just because it happened to be open. The popup shows at the bottom which
+host it's reading from (🟢 active session, 🔴 no usable tab), and if the tab is
+missing the message carries an **Open and retry** button.
 
-Nota: Atlassian ha deprecato l'auth via cookie per le REST API. In-browser funziona
-— è così che la UI di Jira chiama sé stessa — ma è terreno non supportato.
+Note: Atlassian has deprecated cookie auth for the REST APIs. In-browser it works —
+that's how Jira's own UI calls itself — but it's unsupported ground.
 
-## Da dove prende le task
+## Where the tasks come from
 
-| Fonte | Cosa cerca |
+| Source | What it looks for |
 | --- | --- |
-| **Attività Jira** | Issue dei progetti configurati modificate quel giorno, filtrate sul changelog e sui commenti scritti **da te** |
-| **Commit** | Il pannello «Sviluppo» delle issue, via `/rest/dev-status/1.0/issue/detail` — lo stesso che la UI di Jira usa per disegnare quel riquadro. Tiene i commit della giornata firmati da te |
-| **Riunioni ricorrenti** | Regole fisse per giorno della settimana, a durata fissa |
+| **Jira activity** | Issues in the configured projects modified that day, filtered on the changelog and on comments written **by you** |
+| **Commits** | The issue "Development" panel, via `/rest/dev-status/1.0/issue/detail` — the same one Jira's UI uses to draw that box. Keeps the day's commits signed by you |
+| **Recurring meetings** | Fixed rules per weekday, at a fixed duration |
 
-### Come funzionano i commit senza Bitbucket
+### How commits work without Bitbucket
 
-Il pannello Sviluppo si interroga **una issue alla volta**, quindi bisogna sapere
-quali issue guardare. Le candidate sono:
+The Development panel is queried **one issue at a time**, so you need to know which
+issues to look at. The candidates are:
 
-1. le issue toccate da te in Jira quel giorno;
-2. più le tue issue assegnate e aggiornate nelle ultime tre settimane (default 25,
-   configurabile) — servono a trovare i commit su ticket che quel giorno non hai
-   aperto in Jira.
+1. the issues you touched in Jira that day;
+2. plus your assigned issues updated in the last three weeks (default 25,
+   configurable) — these are there to find commits on tickets you didn't open in
+   Jira that day.
 
-Le chiamate partono 6 alla volta per non rendere l'analisi lenta. Un commit su un
-ticket fuori da entrambe le liste non viene visto: se capita, alza il numero di
-candidate nelle opzioni.
+Calls go out 6 at a time to keep the analysis from dragging. A commit on a ticket
+outside both lists won't be seen: if that happens, raise the candidate count in the
+options.
 
-I commit sono tuoi se il nome o l'email dell'autore combaciano con la tua identità
-Jira (accenti e maiuscole non contano). Se firmi i git commit con un altro nome,
-dichiaralo nelle opzioni: i commit scartati perché "di altri" vengono **contati e
-segnalati**, così ti accorgi se il match non funziona.
+Commits are yours if the author's name or email matches your Jira identity (accents
+and case don't matter). If you sign your git commits with a different name, declare
+it in the options: commits discarded as "someone else's" are **counted and
+reported**, so you notice when the match isn't working.
 
-L'endpoint `dev-status` è interno e non documentato da Atlassian: può cambiare senza
-preavviso. Se smette di rispondere, l'analisi prosegue con la sola attività Jira e
-te lo dice.
+The `dev-status` endpoint is internal and undocumented by Atlassian: it can change
+without notice. If it stops responding, the analysis carries on with Jira activity
+alone and tells you so.
 
-## Come calcola le ore
+## How it works out the hours
 
 ```
-monte ore giornaliero
-  − ore già registrate quel giorno   (su qualunque issue, non solo quelle nel piano)
-  − durata delle riunioni con un ticket
-  = resto, diviso equamente fra le task a scatti di 15 minuti
+daily budget
+  − hours already logged that day   (on any issue, not just the ones in the plan)
+  − duration of meetings that have a ticket
+  = remainder, split evenly across the tasks in 15-minute steps
 ```
 
-Sottrarre le ore già registrate è essenziale: senza, una giornata con 7h30m già
-loggate ne distribuirebbe altre 8 sopra.
+Subtracting the hours already logged is essential: without it, a day with 7h30m
+already logged would distribute another 8 on top.
 
-Il conto è **vivo**: le ore già registrate bloccano spazio solo finché non le
-stai rifacendo. Riaccendi una riga con il badge *già Xh* e quei minuti tornano
-disponibili — è una scelta esplicita, e il totale ti avverte in rosso a quanto
-arriverebbe la giornata.
+The maths is **live**: hours already logged hold space only until you start redoing
+them. Switch a row back on via its *already Xh* badge and those minutes return to
+the pool — it's an explicit choice, and the total warns you in red about where the
+day would land.
 
-Una riga che non verrà scritta mostra **0 ore** e non partecipa alla divisione:
-vale sia per le righe spente sia per quelle **senza ticket** — una riunione non
-ancora agganciata, una riga appena aggiunta. Esibire ore che non finiranno da
-nessuna parte, o riservare tempo per una riga che non può inviarlo, è il modo più
-diretto per far tornare i conti sbagliati. Il valore che hai corretto a mano non
-si perde: torna appena la riga ridiventa inviabile.
+A row that won't be written shows **0 hours** and takes no part in the split: that
+covers both rows switched off and rows **without a ticket** — a meeting not yet
+matched, a row just added. Displaying hours that will go nowhere, or reserving time
+for a row that can't send it, is the most direct way to make the numbers wrong. A
+value you corrected by hand isn't lost: it comes back as soon as the row is sendable
+again.
 
-**Le pause** (quante ne servono, non solo il pranzo) non consumano monte ore:
-sono buchi nella linea del tempo. Un blocco di lavoro che ci finisce sopra viene
-spezzato e in Jira arrivano più worklog — `09:00–13:00 + 14:00–18:00` — come la
-giornata appare davvero sul calendario. Le riunioni restano all'orario che hai
-configurato: sono appuntamenti, non blocchi da incastrare.
+**Breaks** (as many as you need, not just lunch) don't consume the daily budget:
+they're holes in the timeline. A block of work landing on one gets split and several
+worklogs reach Jira — `09:00–13:00 + 14:00–18:00` — the way the day actually looks
+on the calendar. Meetings stay at the time you configured: they're appointments, not
+blocks to be slotted in.
 
-Il resto della divisione va alle righe con più attività. Niente viene scritto senza
-conferma: il popup mostra il piano, tu lo correggi e premi *Invia*.
+The remainder of the split goes to the rows with the most activity. Nothing is
+written without confirmation: the popup shows the plan, you correct it and hit
+*Send*.
 
-## Installazione
+## Installation
 
-1. `chrome://extensions` → attiva **Modalità sviluppatore**
-2. **Carica estensione non pacchettizzata** → seleziona questa cartella
-3. Apri le **Opzioni** e compila:
+1. `chrome://extensions` → turn on **Developer mode**
+2. **Load unpacked** → select this folder
+3. Open the **Options** and fill in:
 
-**Jira** — URL del sito, oppure **Rileva dal browser** se hai già una scheda
-aperta, e in *Progetti* le chiavi su cui lavori. Non c'è nessun sito né progetto
-cablato nel codice: senza progetti l'estensione lo dice e ti invita a impostarli,
-perché la ricerca attività girerebbe su tutte le issue del sito. Premi
-**Verifica connessione**.
+**Jira** — the site URL, or **Detect from browser** if you already have a tab open,
+and under *Projects* the keys you work on. There is no site and no project hardcoded
+anywhere: with no projects the extension says so and invites you to set them,
+because the activity search would otherwise run across every issue on the site. Hit
+**Test connection**.
 
-**Commit** — di norma va bene così com'è. Alza *Issue da controllare* se lavori su
-molti ticket, mettilo a `0` per limitarsi alle issue di oggi.
+**Commits** — the defaults are usually fine. Raise *Issues to check* if you work
+across many tickets, set it to `0` to stick to today's issues.
 
-**Riunioni** — si inseriscono con **dalle / alle**, come stanno sul calendario
-(internamente diventano una durata, che è quello che Jira vuole). Spostando
-l'orario di inizio la riunione trasla mantenendo la sua durata. Se l'ora di fine
-non è successiva a quella di inizio, il salvataggio si blocca e lo dice.
+**Meetings** — entered as **from / to**, the way they sit on the calendar
+(internally they become a duration, which is what Jira wants). Moving the start time
+shifts the meeting while keeping its duration. If the end time isn't after the start
+time, saving is blocked and says so.
 
-| Nome | Giorni | Dalle | Alle |
+| Name | Days | From | To |
 | --- | --- | --- | --- |
-| Giornaliero | lun | 09:30 | 10:00 |
-| Standup di progetto | lun | 10:00 | 10:30 |
-| Standup di progetto | mar–ven | 09:30 | 10:00 |
+| Daily | Mon | 09:30 | 10:00 |
+| Project standup | Mon | 10:00 | 10:30 |
+| Project standup | Tue–Fri | 09:30 | 10:00 |
 
-## Uso quotidiano
+## Daily use
 
-1. Clicca l'icona: parte da sola sulla giornata di **oggi**, senza premere niente
-2. Con `‹` `›` o dal campo data vai a un altro giorno — l'analisi riparte da sé.
-   Tenendo premuto `‹` le richieste vengono accorpate e i risultati sorpassati
-   scartati, così in tabella non finisce mai il giorno sbagliato.
-   Il pulsante **Aggiorna** serve solo per rifare l'analisi a parità di data
-3. Il ticket delle cerimonie viene **proposto in automatico** cercando le parole del
-   nome della riunione nei titoli delle issue recenti (es. *Standup di progetto* →
-   `Standup - Team Sprint 8`). Arriva col badge **proposto**: controllalo,
-   cambia ogni sprint. Confermato una volta, viene ricordato per tutta la settimana ISO
-4. Correggi ore e note. Modificare le ore di una riga la "blocca" (bordo blu) e le
-   altre si ridistribuiscono attorno. Con **Aggiungi una riga** metti quello che il
-   rilevamento non ha visto — una riunione fuori programma, un ticket su cui hai
-   lavorato senza lasciare tracce
-5. **Invia worklog** — le righe scritte spariscono subito dal piano, poi la
-   **tabella si rilegge da Jira**: badge *già Xh*, monte ore residuo e orari
-   tornano allineati al server. Si aggiorna solo la tabella, la pagina Jira
-   sotto non viene toccata
+1. Click the icon: it starts on **today** by itself, without pressing anything
+2. With `‹` `›` or the date field you move to another day — the analysis restarts on
+   its own. Holding `‹` down coalesces the requests and discards superseded results,
+   so the wrong day never lands in the table.
+   The **Refresh** button is only for redoing the analysis on the same date
+3. The ceremony ticket is **proposed automatically** by looking for the words of the
+   meeting name in the titles of recent issues (e.g. *Project standup* →
+   `Standup - Team Sprint 8`). It arrives with a **proposed** badge: check it, it
+   changes every sprint. Once confirmed, it's remembered for the whole ISO week
+4. Correct hours and notes. Editing a row's hours "locks" it (blue border) and the
+   others redistribute around it. With **Add a row** you put in what detection
+   missed — an unplanned meeting, a ticket you worked on without leaving traces
+5. **Send worklogs** — written rows disappear from the plan straight away, then the
+   **table re-reads itself from Jira**: *already Xh* badges, remaining budget and
+   times line back up with the server. Only the table refreshes, the Jira page
+   underneath isn't touched
 
-### Anteprima della giornata
+### Preview of the day
 
-Sopra la tabella c'è una striscia con l'asse dei tempi: mostra dove cadranno i
-blocchi **prima** di scriverli. Blu = da scrivere, ambra = riunioni, tratteggio =
-ore già registrate che non stai toccando, chiaro = pausa. Passando il mouse su
-una riga i suoi blocchi si evidenziano, così si vede subito quale pezzo è quale.
+Above the table there's a strip with the time axis: it shows where the blocks will
+land **before** they're written. Blue = to be written, amber = meetings, hatched =
+hours already logged that you aren't touching, light = break. Hovering a row
+highlights its blocks, so you see at once which piece is which.
 
-È l'anteprima esatta: nasce dagli stessi segmenti che vengono inviati, non da un
-calcolo parallelo.
+It's the exact preview: it's built from the same segments that get sent, not from a
+parallel calculation.
 
-### Disfare un invio
+### Undoing a send
 
-Le righe che hanno già ore su Jira mostrano un'icona **cestino**: apre sotto la
-riga l'elenco dei singoli worklog di quel giorno, ciascuno cancellabile da solo.
+Rows that already have hours on Jira show a **bin** icon: it opens, under the row,
+the list of that day's individual worklogs, each deletable on its own.
 
 ```
-2 worklog già su Jira per ABC-123 — cancellali singolarmente:
-  10:00–10:30 · 30m     [Cancella]
-  13:00–13:30 · 30m     [Cancella]
-  Cancella tutti e 2
+2 worklogs already on Jira for ABC-123 — delete them one by one:
+  10:00–10:30 · 30m     [Delete]
+  13:00–13:30 · 30m     [Delete]
+  Delete all 2
 ```
 
-Scegliere una voce precisa *è* la conferma: con un doppione togli solo quello che
-serve, invece di azzerare tutta la giornata su quella issue. Tocca solo i tuoi
-worklog e solo quella data.
+Picking a specific entry *is* the confirmation: with a duplicate you remove only
+what you need, instead of wiping the whole day on that issue. It only touches your
+worklogs and only that date.
 
-### La pagina sotto
+### The page underneath
 
-Clockwork disegna il calendario una volta sola e non si accorge di quello che
-scriviamo. Dopo un invio o una cancellazione la scheda Jira viene quindi
-**ricaricata** — dopo aver riletto il piano, perché l'analisi passa proprio da lì.
+Clockwork draws the calendar once and doesn't notice what we write. So after a send
+or a delete the Jira tab is **reloaded** — after the plan has been re-read, because
+the analysis goes through that very tab.
 
-Allo stesso modo il piano è una fotografia del momento in cui è stato letto: se
-sposti un worklog da Clockwork, l'estensione lo rilegge da sé appena il popup
-torna in primo piano.
+In the same way the plan is a snapshot of the moment it was read: if you move a
+worklog from Clockwork, the extension re-reads it by itself as soon as the popup
+comes back to the foreground.
 
-Quel rientro usa un **percorso leggero**: rilegge solo le ore già registrate, che
-sono l'unica cosa che può essere cambiata sotto. Un'analisi completa rifarebbe
-attività, commit e issue recenti — decine di richieste per aggiornare un badge.
-Le righe spente dal controllo duplicati si riaccendono se quelle ore spariscono
-da Jira; quelle che hai acceso o spento **tu** restano come le hai lasciate.
+That return uses a **light path**: it re-reads only the hours already logged, which
+are the only thing that can have changed underneath. A full analysis would redo
+activity, commits and recent issues — dozens of requests to update one badge. Rows
+switched off by the duplicate check come back on if those hours disappear from Jira;
+the ones **you** switched on or off stay as you left them.
 
-### Due protezioni
+### Two safeguards
 
-- **Duplicati.** Se su una issue hai già un worklog tuo in quella data, la riga ha il
-  badge *già Xh* e parte disattivata.
-- **Ticket riunione ≠ task.** Il ticket delle cerimonie non compare anche fra le task
-  di lavoro: l'attività Jira su quel ticket *è* la riunione. Se lo assegni a mano a una
-  riunione, l'eventuale riga task corrispondente viene tolta.
+- **Duplicates.** If an issue already has a worklog of yours on that date, the row
+  carries the *already Xh* badge and starts switched off.
+- **Meeting ticket ≠ task.** The ceremony ticket doesn't also show up among the work
+  tasks: the Jira activity on that ticket *is* the meeting. If you assign it to a
+  meeting by hand, the corresponding task row is removed.
 
-## Struttura
+## Languages
+
+English and Italian. The language follows Chrome's UI language; English is the
+fallback (`default_locale`), so a browser in German sees English.
+
+```
+_locales/
+  en/messages.json
+  it/messages.json
+```
+
+Static markup declares its keys with `data-i18n`, `data-i18n-title`,
+`data-i18n-placeholder`, and the English text stays written in the HTML as readable
+source. **Planner and background produce no prose**: they emit `{ level, key,
+params }` and the popup composes the sentence, in the right language — singular and
+plural included, which differ from language to language.
+
+A test suite keeps the two languages aligned: same keys, same placeholders, no key
+used and not defined, none defined and never used, and no sentence left written in
+the code.
+
+## Structure
 
 ```
 manifest.json
+icons/                extension icon, 16/32/48/128
+_locales/             en, it
 src/
-  background.js       service worker: tutte le chiamate di rete
-  popup.html/js/css   piano della giornata, editabile
-  options.html/js/css configurazione
+  background.js       service worker: every network call
+  popup.html/js/css   the day's plan, editable
+  options.html/js/css configuration
   lib/
-    icons.js          icone Lucide inline (ISC), nessuna dipendenza esterna
-    transport.js      canale di sessione, rilevamento e vincolo del dominio
-    jira.js           attività, commit dal pannello Sviluppo, ore già registrate
-    planner.js        riunioni, proposta ticket, distribuzione ore, orari
-    dates.js          date locali, settimana ISO, formato `started` di Jira
-    storage.js        configurazione e default
+    icons.js          inline Lucide icons (ISC), no external dependency
+    i18n.js           `t()` and markup translation via `data-i18n`
+    transport.js      session channel, domain detection and enforcement
+    jira.js           activity, commits from the Development panel, hours already logged
+    planner.js        meetings, ticket proposal, hour distribution, times
+    dates.js          local dates, ISO week, Jira's `started` format
+    storage.js        configuration and defaults
+tools/
+  build.mjs           distributable package
 ```
 
-Il canale si valida **una volta sola** per analisi, con una richiesta di prova. Dopo
-non c'è nessun ripiego: se una scrittura potesse essere ritentata su un altro canale
-si creerebbe un worklog doppio.
+The channel validates itself **once only** per analysis, with a probe request. After
+that there's no fallback: if a write could be retried on another channel, it would
+create a duplicate worklog.
 
-La distribuzione delle ore (`allocate`) ha **una sola implementazione**, usata sia
-alla costruzione del piano sia a ogni modifica nel popup: due copie divergerebbero
-al primo ritocco.
+Hour distribution (`allocate`) has **one implementation only**, used both when
+building the plan and on every edit in the popup: two copies would diverge at the
+first tweak.
 
-## Test
+## Tests
 
 ```
 npm test
 ```
 
-Sette suite su `src/lib`, che sono moduli puri e girano in node così come sono; le
-parti che parlano con Chrome sono simulate. Coprono: date e settimana ISO, divisione
-delle ore, livelli dei messaggi, le tre strategie di aggancio del ticket riunione,
-il canale di sessione (incluso il rifiuto di una scheda sul dominio sbagliato e il
-divieto di riprovare una scrittura), i commit dal pannello Sviluppo, e il flusso
-completo in quattro scenari: giornata vuota, giornata già registrata a mano,
-giornata a metà, correzioni manuali.
+Eighteen suites over `src/lib`, which are pure modules and run in node as they are;
+the parts that talk to Chrome are simulated. They cover: dates and ISO week, the
+hour split, message levels, the three strategies for matching the meeting ticket,
+the session channel (including refusing a tab on the wrong domain and the ban on
+retrying a write), commits from the Development panel, translations, and the full
+flow across four scenarios: empty day, day already logged by hand, half-filled day,
+manual corrections.
 
-Permessi: `storage`, `scripting` e `https://*.atlassian.net/*`. Non serve `tabs` —
-gli host_permissions bastano a trovare le schede del sito e non danno visibilità
-sugli altri.
+Permissions: `storage`, `scripting` and `https://*.atlassian.net/*`. `tabs` isn't
+needed — host_permissions are enough to find the site's tabs and grant no visibility
+over the others.
 
-## Limiti noti
+## Build
 
-- La ricerca attività guarda le prime 100 issue aggiornate quel giorno nei progetti
-  configurati.
-- I commit si vedono solo sulle issue candidate (vedi sopra), e solo se il pannello
-  Sviluppo è collegato al repository.
-- `dev-status` è un endpoint interno di Jira, non supportato ufficialmente.
-- La divisione delle ore è un'euristica, non una misurazione: è fatta per essere
-  corretta a mano prima dell'invio.
+```
+npm run build
+```
+
+Produces `dist/clockwork-autofill-<version>.zip`, to upload to the Chrome Web Store
+or hand over directly, and `dist/unpacked/` for "Load unpacked". Only the manifest,
+`src/`, `icons/` and `_locales/` go into the package: tests and tooling stay out.
+
+**The build won't run if the suite isn't green** — translations included, which are
+exactly the ones that break silently. It also checks that every file the manifest
+names actually ends up in the zip. A zip with a defect inside gets discovered by
+whoever installs it, and by then it's late.
+
+No dependencies: the zip is written by hand with `node:zlib`, like the rest of the
+project, which needs nothing but `node`.
+
+## Known limits
+
+- The activity search looks at the first 100 issues updated that day in the
+  configured projects.
+- Commits are only visible on candidate issues (see above), and only if the
+  Development panel is linked to the repository.
+- `dev-status` is an internal Jira endpoint, not officially supported.
+- The hour split is a heuristic, not a measurement: it's built to be corrected by
+  hand before sending.

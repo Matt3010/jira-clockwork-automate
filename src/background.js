@@ -17,6 +17,7 @@ import {
 import { Channel, TransportError, detectAtlassianHosts, hostOf, tabsOnHost } from './lib/transport.js';
 import { buildPlan } from './lib/planner.js';
 import { jiraStarted } from './lib/dates.js';
+import { t } from './lib/i18n.js';
 
 const HANDLERS = {
   analyze,
@@ -65,7 +66,7 @@ async function jiraChannel(config) {
   if (!host) {
     throw new TransportError(
       'NO_HOST',
-      'Nessun sito Jira configurato, e nessuna scheda Atlassian aperta da cui dedurlo.'
+      t('errNoHost')
     );
   }
   return new Channel({
@@ -158,14 +159,14 @@ async function reloadSite() {
 
 async function detectSite() {
   const hosts = await detectAtlassianHosts();
-  if (!hosts.length) throw new Error('Nessuna scheda aperta su un sito Atlassian.');
+  if (!hosts.length) throw new Error(t('msgNoAtlassianTab'));
   return { hosts: hosts.map((h) => h.host) };
 }
 
 async function resolveMe(client, config) {
   if (config.cache?.accountId && config.cache?.displayName) return config.cache;
   const me = await client.myself();
-  if (!me?.accountId) throw new Error('Non riesco a leggere la tua identità Jira.');
+  if (!me?.accountId) throw new Error(t('errNoIdentity'));
   const identity = {
     accountId: me.accountId,
     displayName: me.displayName || '',
@@ -218,7 +219,7 @@ async function refreshLogged({ isoDate }) {
  * Tocca solo i tuoi worklog e solo quella data.
  */
 async function deleteLogged({ isoDate, issueKey, worklogIds = null }) {
-  if (!issueKey) throw new Error('Manca la issue da ripulire.');
+  if (!issueKey) throw new Error(t('errMissingIssue'));
   const config = await loadConfig();
   const channel = await jiraChannel(config);
   const jira = new JiraClient(channel);
@@ -298,10 +299,7 @@ async function analyze({ isoDate }) {
 
   if (!projects.length) {
     notes.push({
-      level: 'action',
-      text: 'Nessun progetto configurato: la ricerca attività guarda tutte le issue aggiornate ' +
-        'nel sito (al massimo 100) e su un\'istanza trafficata può perdersi le tue. ' +
-        'Imposta le chiavi dei tuoi progetti nelle opzioni.'
+      level: 'action', key: 'noteNoProjects', params: []
     });
   }
 
@@ -324,22 +322,17 @@ async function analyze({ isoDate }) {
 
       if (dev.skippedOther) {
         notes.push({
-          level: 'info',
-          text: `${dev.skippedOther} commit di oggi risultano di altri autori e non sono stati contati. ` +
-            'Se qualcuno era tuo, aggiungi nelle opzioni il nome con cui firmi i commit.'
+          level: 'info', key: 'noteOtherAuthors', params: [dev.skippedOther]
         });
       }
       if (!dev.appType && candidates.length) {
         notes.push({
-          level: 'info',
-          text: `Nessun commit collegato trovato sulle ${candidates.length} issue controllate: ` +
-            'o il pannello Sviluppo non è collegato, o il ticket non era fra le candidate.'
+          level: 'info', key: 'noteNoCommits', params: [candidates.length]
         });
       }
     } catch (error) {
       notes.push({
-        level: 'info',
-        text: `Pannello Sviluppo non leggibile (${error.message}). Vado avanti con la sola attività Jira.`
+        level: 'info', key: 'noteDevPanelUnreadable', params: [error.message]
       });
     }
   }
@@ -390,8 +383,7 @@ async function analyze({ isoDate }) {
 
   if (!logged.reliable) {
     notes.push({
-      level: 'action',
-      text: 'Non ho potuto leggere i worklog già presenti: controlla di non star raddoppiando le ore.'
+      level: 'action', key: 'noteWorklogsUnreadable', params: []
     });
   }
 
@@ -457,7 +449,7 @@ async function submit({ isoDate, rows }) {
       // Una riga spezzata dalla pausa fa piu' worklog: se salta il secondo, il
       // primo e' gia' su Jira. Dirlo, altrimenti si rilancia e si duplica.
       const parziale = scritti > 0
-        ? ` — attenzione: ${scritti} di ${segments.length} blocchi sono già stati scritti`
+        ? t('msgPartialWrite', scritti, segments.length)
         : '';
       results.push({
         issueKey: row.issueKey,

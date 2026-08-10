@@ -5,6 +5,10 @@
   "type": "module",
   "description": "Test dei moduli puri dell'estensione. Chrome ignora questo file: serve solo a poter eseguire i test con node.",
   "scripts": {
-    "test": "node test/run.mjs"
+    "test": "node test/run.mjs",
+    "build": "node tools/build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   }
 }

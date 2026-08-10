@@ -117,30 +117,32 @@ export function guessMeetingIssue(label, recentIssues, { isoDate, taken = new Se
   };
 }
 
-function describeSources(jiraEvents, gitCommits) {
-  const parts = [];
-  if (jiraEvents?.length) {
-    const comments = jiraEvents.filter((e) => e.kind === 'comment').length;
-    const changes = jiraEvents.length - comments;
-    if (changes) parts.push(`${changes} modific${changes === 1 ? 'a' : 'he'} Jira`);
-    if (comments) parts.push(`${comments} comment${comments === 1 ? 'o' : 'i'}`);
-  }
-  if (gitCommits?.length) {
-    parts.push(`${gitCommits.length} commit`);
-  }
-  return parts.join(' · ');
+/**
+ * Da cosa nasce la riga, in numeri. La frase la compone chi disegna: il planner
+ * non deve produrre prosa, o non si puo' tradurre.
+ */
+function countActivity(jiraEvents, gitCommits) {
+  const comments = (jiraEvents || []).filter((e) => e.kind === 'comment').length;
+  return {
+    changes: (jiraEvents || []).length - comments,
+    comments,
+    commits: (gitCommits || []).length
+  };
 }
 
-/** Commento precompilato del worklog: i soggetti dei commit sono la traccia migliore. */
+/**
+ * Nota precompilata del worklog. I soggetti dei commit sono la traccia migliore
+ * e vanno usati cosi' come sono; altrimenti si rimanda a una frase tradotta.
+ */
 function defaultComment(jira, commits) {
   if (commits?.length) {
     const subjects = [...new Set(commits.map((c) => c.subject).filter(Boolean))].slice(0, 3);
-    if (subjects.length) return subjects.join(' · ');
+    if (subjects.length) return { text: subjects.join(' · ') };
   }
   const kinds = new Set((jira?.events || []).map((e) => e.kind));
-  if (kinds.has('comment') && kinds.has('changelog')) return 'Avanzamento e commenti';
-  if (kinds.has('comment')) return 'Analisi e confronto sul ticket';
-  return 'Avanzamento attività';
+  if (kinds.has('comment') && kinds.has('changelog')) return { key: 'commentProgressAndComments' };
+  if (kinds.has('comment')) return { key: 'commentAnalysis' };
+  return { key: 'commentProgress' };
 }
 
 /**
@@ -199,7 +201,6 @@ export function buildPlan({
       defaultMinutes: meeting.minutes,
       minutes: meeting.minutes,
       time: meeting.time,
-      detail: `Riunione ricorrente · ${meeting.time}–${addMinutes(meeting.time, meeting.minutes)}`,
       comment: meeting.label,
       enabled: true,
       existingMinutes: 0
@@ -219,6 +220,8 @@ export function buildPlan({
     const sources = [];
     if (jira) sources.push('jira');
     if (commits.length) sources.push('git');
+    const activity = countActivity(jira?.events, commits);
+    const nota = defaultComment(jira, commits);
     return {
       id: `task:${key}`,
       kind: 'task',
@@ -228,19 +231,19 @@ export function buildPlan({
       minutes: 0,
       time: '',
       sources,
-      detail: describeSources(jira?.events, commits),
-      comment: defaultComment(jira, commits),
+      activity,
+      // Peso per l'ordinamento: piu' fonti e piu' eventi vuol dire piu'
+      // probabilmente il lavoro principale della giornata.
+      weight: sources.length * 100 + activity.changes + activity.comments + activity.commits,
+      comment: nota.text || '',
+      commentKey: nota.key || null,
       enabled: true,
       existingMinutes: 0
     };
   });
 
-  // Piu' attivita' = piu' probabile che sia il lavoro principale della giornata:
-  // finisce in cima e prende l'eventuale resto della divisione.
-  taskRows.sort((a, b) => {
-    const weight = (row) => (row.sources.length * 100) + (row.detail ? row.detail.length : 0);
-    return weight(b) - weight(a) || a.issueKey.localeCompare(b.issueKey);
-  });
+  // Chi ha piu' peso finisce in cima e prende l'eventuale resto della divisione.
+  taskRows.sort((a, b) => b.weight - a.weight || a.issueKey.localeCompare(b.issueKey));
 
   const rows = [...meetingRows, ...taskRows];
 
@@ -267,25 +270,17 @@ export function buildPlan({
     rows.forEach((row) => { row.enabled = false; });
     warnings.push({
       level: 'info',
-      text: `Le ${formatMinutes(alreadyLoggedMinutes)} già registrate coprono il monte ore ` +
-        `di ${formatMinutes(dayBudgetMinutes)}: non resta nulla da distribuire, ` +
-        'tutte le righe partono disattivate.'
+      key: 'planDayAlreadyFull',
+      params: [formatMinutes(alreadyLoggedMinutes), formatMinutes(dayBudgetMinutes)]
     });
   } else if (!taskRows.length) {
-    warnings.push({
-      level: 'info',
-      text: 'Nessuna task di lavoro trovata per questa giornata, né da attività Jira né dai commit.'
-    });
+    warnings.push({ level: 'info', key: 'planNoTasks', params: [] });
   }
 
   const { budgetMinutes, endOfDay } = reflow(rows, config, contesto, warnings);
 
   if (endOfPlan(rows) > 24 * 60) {
-    warnings.push({
-      level: 'action',
-      text: 'Gli orari sforano la mezzanotte: sposta indietro l\'inizio giornata, ' +
-        'riduci le pause o togli qualche riga.'
-    });
+    warnings.push({ level: 'action', key: 'planPastMidnight', params: [] });
   }
 
   return {
@@ -383,8 +378,8 @@ export function allocate(rows, config, budgetMinutes, warnings = []) {
     if (free.length && reserved >= budgetMinutes) {
       warnings.push({
         level: 'info',
-        text: `Le riunioni (${formatMinutes(reserved)}) coprono tutto il tempo rimasto ` +
-          `(${formatMinutes(budgetMinutes)}): le task restano a zero.`
+        key: 'planMeetingsCoverAll',
+        params: [formatMinutes(reserved), formatMinutes(budgetMinutes)]
       });
     }
     return rows;
@@ -396,8 +391,8 @@ export function allocate(rows, config, budgetMinutes, warnings = []) {
   if (free.length && slices[slices.length - 1] === 0) {
     warnings.push({
       level: 'action',
-      text: `Troppe task (${free.length}) per ${formatMinutes(remaining)} residui a scatti di ` +
-        `${increment} minuti: alcune righe sono a zero, togline qualcuna o riduci l'arrotondamento.`
+      key: 'planTooManyTasks',
+      params: [free.length, formatMinutes(remaining), increment]
     });
   }
   return rows;

@@ -1,9 +1,9 @@
 import { loadConfig, saveConfig } from './lib/storage.js';
 import { addMinutes, timeToMinutes } from './lib/dates.js';
+import { t, applyI18n } from './lib/i18n.js';
 
-const DAY_LABELS = [
-  [1, 'Lun'], [2, 'Mar'], [3, 'Mer'], [4, 'Gio'], [5, 'Ven'], [6, 'Sab'], [7, 'Dom']
-];
+// L'indice nell'elenco più uno dà il giorno ISO: 1 = lunedì.
+const DAY_KEYS = ['dayMon', 'dayTue', 'dayWed', 'dayThu', 'dayFri', 'daySat', 'daySun'];
 
 const $ = (id) => document.getElementById(id);
 let config = null;
@@ -12,7 +12,7 @@ function send(type) {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage({ type }, (response) => {
       if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-      if (!response?.ok) return reject(new Error(response?.error || 'Errore sconosciuto'));
+      if (!response?.ok) return reject(new Error(response?.error || 'Unknown error'));
       resolve(response.data);
     });
   });
@@ -31,7 +31,7 @@ function renderMeeting(meeting) {
   const labelField = document.createElement('div');
   labelField.className = 'field label-field';
   const labelTitle = document.createElement('label');
-  labelTitle.textContent = 'Nome';
+  labelTitle.textContent = t('fieldName');
   const labelInput = document.createElement('input');
   labelInput.type = 'text';
   labelInput.className = 'm-label';
@@ -41,10 +41,11 @@ function renderMeeting(meeting) {
   const daysField = document.createElement('div');
   daysField.className = 'field';
   const daysTitle = document.createElement('label');
-  daysTitle.textContent = 'Giorni';
+  daysTitle.textContent = t('fieldDays');
   const days = document.createElement('div');
   days.className = 'days';
-  for (const [value, text] of DAY_LABELS) {
+  for (const [indice, chiave] of DAY_KEYS.entries()) {
+    const value = indice + 1;
     const dayLabel = document.createElement('label');
     const input = document.createElement('input');
     input.type = 'checkbox';
@@ -52,7 +53,7 @@ function renderMeeting(meeting) {
     input.value = String(value);
     input.checked = (meeting.days || []).includes(value);
     const span = document.createElement('span');
-    span.textContent = text;
+    span.textContent = t(chiave);
     dayLabel.append(input, span);
     days.appendChild(dayLabel);
   }
@@ -61,7 +62,7 @@ function renderMeeting(meeting) {
   const timeField = document.createElement('div');
   timeField.className = 'field small';
   const timeTitle = document.createElement('label');
-  timeTitle.textContent = 'Dalle';
+  timeTitle.textContent = t('fieldFrom');
   const timeInput = document.createElement('input');
   timeInput.type = 'time';
   timeInput.className = 'm-time';
@@ -73,7 +74,7 @@ function renderMeeting(meeting) {
   const endField = document.createElement('div');
   endField.className = 'field small';
   const endTitle = document.createElement('label');
-  endTitle.textContent = 'Alle';
+  endTitle.textContent = t('fieldTo');
   const endInput = document.createElement('input');
   endInput.type = 'time';
   endInput.className = 'm-end';
@@ -90,7 +91,7 @@ function renderMeeting(meeting) {
 
   const remove = document.createElement('button');
   remove.className = 'ghost';
-  remove.textContent = 'Rimuovi';
+  remove.textContent = t('btnRemove');
   remove.addEventListener('click', () => wrapper.remove());
 
   wrapper.append(labelField, daysField, timeField, endField, remove);
@@ -108,7 +109,7 @@ function readMeetings() {
   // Ristretto al proprio contenitore: le pause riusano la classe `.meeting`
   // per la griglia, ma non hanno gli stessi campi.
   for (const node of document.querySelectorAll('#meetings .meeting')) {
-    const label = node.querySelector('.m-label').value.trim() || 'Riunione';
+    const label = node.querySelector('.m-label').value.trim() || t('defaultMeetingName');
     const days = [...node.querySelectorAll('.m-day')].filter((i) => i.checked).map((i) => Number(i.value));
     if (!days.length) continue;
 
@@ -132,7 +133,7 @@ function renderBreak(pausa) {
   const labelField = document.createElement('div');
   labelField.className = 'field label-field';
   const labelTitle = document.createElement('label');
-  labelTitle.textContent = 'Nome';
+  labelTitle.textContent = t('fieldName');
   const labelInput = document.createElement('input');
   labelInput.type = 'text';
   labelInput.className = 'b-label';
@@ -142,7 +143,7 @@ function renderBreak(pausa) {
   const fromField = document.createElement('div');
   fromField.className = 'field small';
   const fromTitle = document.createElement('label');
-  fromTitle.textContent = 'Dalle';
+  fromTitle.textContent = t('fieldFrom');
   const fromInput = document.createElement('input');
   fromInput.type = 'time';
   fromInput.className = 'b-start';
@@ -152,7 +153,7 @@ function renderBreak(pausa) {
   const toField = document.createElement('div');
   toField.className = 'field small';
   const toTitle = document.createElement('label');
-  toTitle.textContent = 'Alle';
+  toTitle.textContent = t('fieldTo');
   const toInput = document.createElement('input');
   toInput.type = 'time';
   toInput.className = 'b-end';
@@ -161,7 +162,7 @@ function renderBreak(pausa) {
 
   const remove = document.createElement('button');
   remove.className = 'ghost';
-  remove.textContent = 'Rimuovi';
+  remove.textContent = t('btnRemove');
   remove.addEventListener('click', () => wrapper.remove());
 
   wrapper.append(labelField, fromField, toField, remove);
@@ -174,7 +175,7 @@ function readBreaks() {
   const invalid = [];
 
   for (const node of document.querySelectorAll('#breaks .meeting')) {
-    const label = node.querySelector('.b-label').value.trim() || 'Pausa';
+    const label = node.querySelector('.b-label').value.trim() || t('defaultBreakName');
     const start = node.querySelector('.b-start').value;
     const end = node.querySelector('.b-end').value;
     if (!start || !end || timeToMinutes(end) <= timeToMinutes(start)) {
@@ -237,7 +238,7 @@ async function save() {
   if (rotte.length) {
     setResult(
       $('save-result'),
-      `Non salvato: in ${rotte.join(', ')} l'orario di fine non è successivo a quello di inizio.`,
+      t('msgNotSavedTimes', rotte.join(', ')),
       'err'
     );
     throw new Error('Orari non validi.');
@@ -267,14 +268,14 @@ async function save() {
   if (urlChanged) patch.cache = { accountId: null };
 
   config = await saveConfig(patch);
-  setResult($('save-result'), 'Salvato.', 'ok');
+  setResult($('save-result'), t('msgSaved'), 'ok');
   setTimeout(() => setResult($('save-result'), '', ''), 2500);
 }
 
 $('add-break').addEventListener('click', () => {
   $('breaks').appendChild(renderBreak({
     id: `break-${Date.now()}`,
-    label: 'Pausa',
+    label: t('defaultBreakName'),
     start: '13:00',
     end: '14:00'
   }));
@@ -283,7 +284,7 @@ $('add-break').addEventListener('click', () => {
 $('add-meeting').addEventListener('click', () => {
   $('meetings').appendChild(renderMeeting({
     id: `meeting-${Date.now()}`,
-    label: 'Nuova riunione',
+    label: t('defaultMeetingName'),
     days: [1, 2, 3, 4, 5],
     time: '09:30',
     minutes: 30
@@ -294,14 +295,14 @@ $('add-meeting').addEventListener('click', () => {
 $('save').addEventListener('click', () => { save().catch(() => {}); });
 
 $('detect-site').addEventListener('click', async () => {
-  setResult($('jira-result'), 'Cerco…', '');
+  setResult($('jira-result'), t('btnAnalysing'), '');
   try {
     const { hosts } = await send('detectSite');
     $('jira-url').value = normalizeSite(hosts[0]);
     const altri = hosts.slice(1);
     setResult(
       $('jira-result'),
-      `Trovato ${hosts[0]}${altri.length ? ` (aperti anche: ${altri.join(', ')})` : ''}. Controlla e salva.`,
+      altri.length ? t('msgSiteFoundOthers', hosts[0], altri.join(', ')) : t('msgSiteFound', hosts[0]),
       'ok'
     );
   } catch (error) {
@@ -310,15 +311,19 @@ $('detect-site').addEventListener('click', async () => {
 });
 
 $('test-jira').addEventListener('click', async () => {
-  setResult($('jira-result'), 'Verifico…', '');
+  setResult($('jira-result'), t('btnAnalysing'), '');
   try {
     await save();
     const me = await send('testJira');
-    setResult($('jira-result'), `Connesso come ${me.displayName} su ${me.host}.`, 'ok');
+    setResult($('jira-result'), t('msgConnectedAs', me.displayName, me.host), 'ok');
   } catch (error) {
     setResult($('jira-result'), error.message, 'err');
   }
 });
+
+// Prima il markup statico, poi i campi: le righe di riunioni e pause vengono
+// costruite da JS e si traducono da sole con `t`.
+applyI18n();
 
 loadConfig().then((loaded) => {
   config = loaded;

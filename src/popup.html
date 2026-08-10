@@ -1,21 +1,21 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Clockwork Autofill</title>
+  <title data-i18n="popupTitle">Clockwork Autofill</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
   <header class="bar">
     <div class="bar-left">
-      <label for="date">Giornata</label>
+      <label for="date" data-i18n="labelDay">Day</label>
       <input type="date" id="date" />
-      <button id="prev-day" class="ghost icon-only" title="Giorno precedente"></button>
-      <button id="next-day" class="ghost icon-only" title="Giorno successivo"></button>
+      <button id="prev-day" class="ghost icon-only" data-i18n-title="titlePrevDay" title="Previous day"></button>
+      <button id="next-day" class="ghost icon-only" data-i18n-title="titleNextDay" title="Next day"></button>
     </div>
     <div class="bar-right">
-      <button id="analyze" class="ghost" title="Rianalizza la giornata">Aggiorna</button>
-      <button id="open-options" class="ghost icon-only" title="Opzioni"></button>
+      <button id="analyze" class="ghost" data-i18n-title="btnRefresh" title="Refresh">Refresh</button>
+      <button id="open-options" class="ghost icon-only" data-i18n-title="titleOptions" title="Options"></button>
     </div>
   </header>
 
@@ -35,30 +35,31 @@
       <thead>
         <tr>
           <th class="col-check">
-            <input type="checkbox" id="toggle-all" title="Seleziona o deseleziona tutto" />
+            <input type="checkbox" id="toggle-all" data-i18n-title="titleToggleAll"
+                   title="Select or deselect everything" />
           </th>
-          <th class="col-issue">Issue</th>
-          <th class="col-what">Cosa</th>
-          <th class="col-hours">Ore</th>
-          <th class="col-time">Orario</th>
+          <th class="col-issue" data-i18n="thIssue">Issue</th>
+          <th class="col-what" data-i18n="thWhat">What</th>
+          <th class="col-hours" data-i18n="thHours">Hours</th>
+          <th class="col-time" data-i18n="thTime">Time</th>
           <th class="col-actions"></th>
         </tr>
       </thead>
       <tbody id="rows"></tbody>
     </table>
-    <p id="empty" class="empty">Analizzo la giornata…</p>
-    <button id="add-row" class="ghost add-row" hidden>Aggiungi una riga</button>
+    <p id="empty" class="empty" data-i18n="emptyAnalysing">Analysing the day…</p>
+    <button id="add-row" class="ghost add-row" hidden data-i18n="btnAddRow">Add a row</button>
     </div>
   </main>
 
   <footer class="bar">
     <div class="foot-info">
       <div id="total" class="total"></div>
-      <div id="site" class="site">Controllo il sito…</div>
+      <div id="site" class="site" data-i18n="siteChecking">Checking the site…</div>
     </div>
     <div class="actions">
-      <button id="cancel-send" class="ghost" hidden>Annulla</button>
-      <button id="submit" class="primary" disabled>Invia worklog</button>
+      <button id="cancel-send" class="ghost" hidden data-i18n="btnCancel">Cancel</button>
+      <button id="submit" class="primary" disabled data-i18n="btnSend">Send worklogs</button>
     </div>
   </footer>
 

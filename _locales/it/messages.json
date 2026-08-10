@@ -1,144 +1,144 @@
 {
   "extensionDescription": {
-    "message": "Fills in your Jira/Clockwork worklogs for a day from your Jira activity, the commits linked to your issues, and your recurring meetings."
+    "message": "Compila i worklog Jira/Clockwork di una giornata partendo dalla tua attività su Jira, dai commit collegati alle issue e dalle riunioni ricorrenti."
   },
   "optionsTitle": {
-    "message": "Clockwork Autofill — Options"
+    "message": "Clockwork Autofill — Opzioni"
   },
   "optionsLede": {
-    "message": "Hours are written to native Jira worklogs, which Clockwork keeps in sync: they show up in My Work and in timesheets without going through the Clockwork API. Authentication uses your browser session — no tokens, no stored credentials: you just need a tab open and logged in on the site below."
+    "message": "Le ore vengono scritte sui worklog nativi di Jira, che Clockwork tiene sincronizzati: compaiono in My Work e nei timesheet senza passare dall'API di Clockwork. L'autenticazione usa la sessione del browser — nessun token, nessuna credenziale salvata: basta avere una scheda aperta e loggata sul sito qui sotto."
   },
   "secJira": {
     "message": "Jira"
   },
   "fieldSite": {
-    "message": "Jira site"
+    "message": "Sito Jira"
   },
   "sitePlaceholder": {
-    "message": "yoursite"
+    "message": "iltuosito"
   },
   "btnDetectSite": {
-    "message": "Detect from browser"
+    "message": "Rileva dal browser"
   },
   "hintSite": {
-    "message": "The prefix is enough: Jira Cloud always lives on .atlassian.net, and it is the only host this extension has permissions for. If you paste the full URL it gets cleaned up. Only tabs open on this site are used for the session: another Atlassian site is ignored."
+    "message": "Basta il prefisso: Jira Cloud sta sempre su .atlassian.net, ed è l'unico host per cui l'estensione ha i permessi. Se incolli l'URL intero viene ripulito da solo. Solo le schede aperte su questo sito vengono usate per la sessione: un altro sito Atlassian viene ignorato."
   },
   "fieldProjects": {
-    "message": "Projects to scan"
+    "message": "Progetti da scansionare"
   },
   "hintProjects": {
-    "message": "Comma-separated keys. Narrows both the activity search and the issue keys accepted in commit messages."
+    "message": "Chiavi separate da virgola. Restringe sia la ricerca attività sia le chiavi accettate nei commit."
   },
   "checkComments": {
-    "message": "Count my comments as activity too"
+    "message": "Considera anche i miei commenti come attività"
   },
   "btnTestConnection": {
-    "message": "Test connection"
+    "message": "Verifica connessione"
   },
   "secCommits": {
-    "message": "Commits"
+    "message": "Commit"
   },
   "checkDevPanel": {
-    "message": "Read commits from the issue Development panel"
+    "message": "Leggi i commit dal pannello «Sviluppo» delle issue"
   },
   "hintDevPanel": {
-    "message": "Commits are read from Jira itself — the same panel you see at the bottom of every ticket. No Bitbucket tab to keep open, no workspace to configure."
+    "message": "I commit vengono letti da Jira stesso — lo stesso pannello che vedi in fondo a ogni ticket. Nessuna scheda Bitbucket da tenere aperta, nessun workspace da configurare."
   },
   "fieldDevCandidates": {
-    "message": "Issues to check besides today's"
+    "message": "Issue da controllare oltre a quelle di oggi"
   },
   "hintDevCandidates": {
-    "message": "The panel is queried one issue at a time, so the number matters. Besides the issues you touched today, your issues updated in the last three weeks are checked too: that is how commits on tickets you did not open in Jira get found. Higher means more coverage but a slower analysis. 0 means today's issues only."
+    "message": "Il pannello si interroga una issue alla volta, quindi il numero conta. Oltre alle issue toccate oggi vengono controllate le tue issue aggiornate nelle ultime tre settimane: serve a trovare i commit su ticket che oggi non hai aperto in Jira. Più alto significa più copertura ma analisi più lenta. 0 significa solo le issue di oggi."
   },
   "fieldAuthors": {
-    "message": "Names or emails you sign commits with"
+    "message": "Nomi o email con cui firmi i commit"
   },
   "authorsPlaceholder": {
-    "message": "usually can be left empty"
+    "message": "di norma si può lasciare vuoto"
   },
   "hintAuthors": {
-    "message": "Comma-separated. Your Jira name and email are already taken into account: this field is only needed if you sign git commits with a different name (an old address, your home laptop)."
+    "message": "Separati da virgola. Il tuo nome e la tua email Jira sono già considerati: questo campo serve solo se firmi i git commit con un altro nome (un vecchio indirizzo, il portatile di casa)."
   },
   "secDay": {
-    "message": "Working day"
+    "message": "Giornata"
   },
   "fieldDailyHours": {
-    "message": "Hours to cover"
+    "message": "Ore da coprire"
   },
   "fieldRounding": {
-    "message": "Rounding (minutes)"
+    "message": "Arrotondamento (minuti)"
   },
   "fieldStartTime": {
-    "message": "Day starts at"
+    "message": "Inizio giornata"
   },
   "secBreaks": {
-    "message": "Breaks"
+    "message": "Pause"
   },
   "hintBreaks": {
-    "message": "Breaks do not consume your daily budget: they are holes in the timeline. A block of work that lands on one gets split, and several worklogs reach Jira — the way the day actually looks on the calendar. Add as many as you need."
+    "message": "Le pause non consumano monte ore: sono buchi nella linea del tempo. Un blocco di lavoro che ci finisce sopra viene spezzato, e in Jira arrivano più worklog — come appare la giornata sul calendario. Puoi metterne quante ne servono."
   },
   "btnAddBreak": {
-    "message": "Add break"
+    "message": "Aggiungi pausa"
   },
   "secMeetings": {
-    "message": "Recurring meetings"
+    "message": "Riunioni ricorrenti"
   },
   "hintMeetings": {
-    "message": "Fixed duration, subtracted from the daily budget before the rest is split across tasks. The ticket is picked in the popup and remembered for the whole week."
+    "message": "Durata fissa, sottratta al monte ore prima di dividere il resto fra le task. Il ticket si sceglie nel popup e viene ricordato per tutta la settimana."
   },
   "btnAddMeeting": {
-    "message": "Add meeting"
+    "message": "Aggiungi riunione"
   },
   "fieldName": {
-    "message": "Name"
+    "message": "Nome"
   },
   "fieldDays": {
-    "message": "Days"
+    "message": "Giorni"
   },
   "fieldFrom": {
-    "message": "From"
+    "message": "Dalle"
   },
   "fieldTo": {
-    "message": "To"
+    "message": "Alle"
   },
   "btnRemove": {
-    "message": "Remove"
+    "message": "Rimuovi"
   },
   "btnSave": {
-    "message": "Save"
+    "message": "Salva"
   },
   "dayMon": {
-    "message": "Mon"
+    "message": "Lun"
   },
   "dayTue": {
-    "message": "Tue"
+    "message": "Mar"
   },
   "dayWed": {
-    "message": "Wed"
+    "message": "Mer"
   },
   "dayThu": {
-    "message": "Thu"
+    "message": "Gio"
   },
   "dayFri": {
-    "message": "Fri"
+    "message": "Ven"
   },
   "daySat": {
-    "message": "Sat"
+    "message": "Sab"
   },
   "daySun": {
-    "message": "Sun"
+    "message": "Dom"
   },
   "defaultMeetingName": {
-    "message": "New meeting"
+    "message": "Nuova riunione"
   },
   "defaultBreakName": {
-    "message": "Break"
+    "message": "Pausa"
   },
   "msgSaved": {
-    "message": "Saved."
+    "message": "Salvato."
   },
   "msgNotSavedTimes": {
-    "message": "Not saved: in $NAMES$ the end time is not after the start time.",
+    "message": "Non salvato: in $NAMES$ l'orario di fine non è successivo a quello di inizio.",
     "placeholders": {
       "names": {
         "content": "$1"
@@ -146,7 +146,7 @@
     }
   },
   "msgSiteFound": {
-    "message": "Found $SITE$. Check and save.",
+    "message": "Trovato $SITE$. Controlla e salva.",
     "placeholders": {
       "site": {
         "content": "$1"
@@ -154,7 +154,7 @@
     }
   },
   "msgSiteFoundOthers": {
-    "message": "Found $SITE$ (also open: $OTHERS$). Check and save.",
+    "message": "Trovato $SITE$ (aperti anche: $OTHERS$). Controlla e salva.",
     "placeholders": {
       "site": {
         "content": "$1"
@@ -165,10 +165,10 @@
     }
   },
   "msgNoAtlassianTab": {
-    "message": "No tab open on an Atlassian site."
+    "message": "Nessuna scheda aperta su un sito Atlassian."
   },
   "msgConnectedAs": {
-    "message": "Connected as $NAME$ on $HOST$.",
+    "message": "Connesso come $NAME$ su $HOST$.",
     "placeholders": {
       "name": {
         "content": "$1"
@@ -182,55 +182,55 @@
     "message": "Made with ❤️ by Matt"
   },
   "colophonContact": {
-    "message": "For bugs or requests contact me on Telegram"
+    "message": "Per bug o richieste contattami su Telegram"
   },
   "popupTitle": {
     "message": "Clockwork Autofill"
   },
   "labelDay": {
-    "message": "Day"
+    "message": "Giornata"
   },
   "titlePrevDay": {
-    "message": "Previous day"
+    "message": "Giorno precedente"
   },
   "titleNextDay": {
-    "message": "Next day"
+    "message": "Giorno successivo"
   },
   "titleOptions": {
-    "message": "Options"
+    "message": "Opzioni"
   },
   "titleToggleAll": {
-    "message": "Select or deselect everything"
+    "message": "Seleziona o deseleziona tutto"
   },
   "btnRefresh": {
-    "message": "Refresh"
+    "message": "Aggiorna"
   },
   "btnAnalysing": {
-    "message": "Analysing…"
+    "message": "Analizzo…"
   },
   "thIssue": {
     "message": "Issue"
   },
   "thWhat": {
-    "message": "What"
+    "message": "Cosa"
   },
   "thHours": {
-    "message": "Hours"
+    "message": "Ore"
   },
   "thTime": {
-    "message": "Time"
+    "message": "Orario"
   },
   "btnAddRow": {
-    "message": "Add a row"
+    "message": "Aggiungi una riga"
   },
   "btnCancel": {
-    "message": "Cancel"
+    "message": "Annulla"
   },
   "btnSend": {
-    "message": "Send worklogs"
+    "message": "Invia worklog"
   },
   "btnSendCount": {
-    "message": "Send $COUNT$ worklogs",
+    "message": "Invia $COUNT$ worklog",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -238,10 +238,10 @@
     }
   },
   "btnSending": {
-    "message": "Sending…"
+    "message": "Invio…"
   },
   "btnConfirmDay": {
-    "message": "Confirm: the day will reach $TOTAL$",
+    "message": "Conferma: la giornata arriverà a $TOTAL$",
     "placeholders": {
       "total": {
         "content": "$1"
@@ -249,25 +249,25 @@
     }
   },
   "emptyAnalysing": {
-    "message": "Analysing the day…"
+    "message": "Analizzo la giornata…"
   },
   "emptyNoPlan": {
-    "message": "No plan for this day."
+    "message": "Nessun piano per questa giornata."
   },
   "emptyNothing": {
-    "message": "Nothing to log for this day."
+    "message": "Niente da registrare per questa giornata."
   },
   "siteChecking": {
-    "message": "Checking the site…"
+    "message": "Controllo il sito…"
   },
   "siteNoneConfigured": {
-    "message": "No Jira site configured"
+    "message": "Nessun sito Jira configurato"
   },
   "siteDetectedSuffix": {
-    "message": " (detected from the browser)"
+    "message": " (rilevato dal browser)"
   },
   "siteNoTab": {
-    "message": "$HOST$$ORIGIN$ · no tab open",
+    "message": "$HOST$$ORIGIN$ · nessuna scheda aperta",
     "placeholders": {
       "host": {
         "content": "$1"
@@ -278,7 +278,7 @@
     }
   },
   "siteSession": {
-    "message": "$HOST$$ORIGIN$ · browser session",
+    "message": "$HOST$$ORIGIN$ · sessione del browser",
     "placeholders": {
       "host": {
         "content": "$1"
@@ -289,7 +289,7 @@
     }
   },
   "totalDistribute": {
-    "message": " to distribute out of $BUDGET$",
+    "message": " da distribuire su $BUDGET$",
     "placeholders": {
       "budget": {
         "content": "$1"
@@ -297,7 +297,7 @@
     }
   },
   "totalAlready": {
-    "message": " · $LOGGED$ already logged out of $DAY$",
+    "message": " · $LOGGED$ già registrate su $DAY$",
     "placeholders": {
       "logged": {
         "content": "$1"
@@ -308,7 +308,7 @@
     }
   },
   "totalRows": {
-    "message": " · $COUNT$ row(s)",
+    "message": " · $COUNT$ riga/e",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -316,7 +316,7 @@
     }
   },
   "totalEndOfDay": {
-    "message": " · day ends at $TIME$",
+    "message": " · fine giornata $TIME$",
     "placeholders": {
       "time": {
         "content": "$1"
@@ -324,7 +324,7 @@
     }
   },
   "totalOverflow": {
-    "message": " · the day would reach $TOTAL$",
+    "message": " · la giornata arriverebbe a $TOTAL$",
     "placeholders": {
       "total": {
         "content": "$1"
@@ -332,7 +332,7 @@
     }
   },
   "totalOverflowRedo": {
-    "message": " · the day would reach $TOTAL$: you are re-adding $REDONE$ already logged",
+    "message": " · la giornata arriverebbe a $TOTAL$: stai rimettendo $REDONE$ già registrate",
     "placeholders": {
       "total": {
         "content": "$1"
@@ -343,10 +343,10 @@
     }
   },
   "rowNoTitle": {
-    "message": "(title unavailable)"
+    "message": "(titolo non disponibile)"
   },
   "phMeetingTicket": {
-    "message": "Ceremony ticket…"
+    "message": "Ticket cerimonie…"
   },
   "phIssueExample": {
     "message": "ABC-123"
@@ -360,13 +360,13 @@
     }
   },
   "phComment": {
-    "message": "Worklog note (optional)"
+    "message": "Nota del worklog (opzionale)"
   },
   "detailManual": {
-    "message": "Added by hand"
+    "message": "Aggiunta a mano"
   },
   "meetingRecurring": {
-    "message": "Recurring meeting · $FROM$–$TO$",
+    "message": "Riunione ricorrente · $FROM$–$TO$",
     "placeholders": {
       "from": {
         "content": "$1"
@@ -377,7 +377,7 @@
     }
   },
   "activityChange": {
-    "message": "$COUNT$ Jira change",
+    "message": "$COUNT$ modifica Jira",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -385,7 +385,7 @@
     }
   },
   "activityChanges": {
-    "message": "$COUNT$ Jira changes",
+    "message": "$COUNT$ modifiche Jira",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -393,7 +393,7 @@
     }
   },
   "activityComment": {
-    "message": "$COUNT$ comment",
+    "message": "$COUNT$ commento",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -401,7 +401,7 @@
     }
   },
   "activityComments": {
-    "message": "$COUNT$ comments",
+    "message": "$COUNT$ commenti",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -417,7 +417,7 @@
     }
   },
   "activityCommits": {
-    "message": "$COUNT$ commits",
+    "message": "$COUNT$ commit",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -425,19 +425,19 @@
     }
   },
   "commentProgressAndComments": {
-    "message": "Progress and comments"
+    "message": "Avanzamento e commenti"
   },
   "commentAnalysis": {
-    "message": "Analysis and discussion on the ticket"
+    "message": "Analisi e confronto sul ticket"
   },
   "commentProgress": {
-    "message": "Work in progress"
+    "message": "Avanzamento attività"
   },
   "badgeProposed": {
-    "message": "proposed"
+    "message": "proposto"
   },
   "badgeAlready": {
-    "message": "already $AMOUNT$",
+    "message": "già $AMOUNT$",
     "placeholders": {
       "amount": {
         "content": "$1"
@@ -445,22 +445,22 @@
     }
   },
   "whyTime": {
-    "message": "proposed because a worklog already exists on this ticket at that time"
+    "message": "proposto perché a quell'ora risulta già un worklog su questo ticket"
   },
   "whyName": {
-    "message": "proposed because it resembles the meeting name"
+    "message": "proposto per somiglianza col nome della riunione"
   },
   "whyDate": {
-    "message": "proposed because the title contains today's date"
+    "message": "proposto perché il titolo contiene la data di oggi"
   },
   "whyAuto": {
-    "message": "automatic proposal"
+    "message": "proposta automatica"
   },
   "titleSplitByBreak": {
-    "message": "Split by the break: several worklogs will be written."
+    "message": "Spezzato dalla pausa: verranno scritti più worklog."
   },
   "titleWipe": {
-    "message": "Show the $AMOUNT$ already logged today on $ISSUE$, to delete them",
+    "message": "Mostra le $AMOUNT$ già registrate oggi su $ISSUE$, per cancellarle",
     "placeholders": {
       "amount": {
         "content": "$1"
@@ -471,10 +471,10 @@
     }
   },
   "titleRemoveRow": {
-    "message": "Remove from the plan (does not touch Jira)"
+    "message": "Togli dal piano (non tocca Jira)"
   },
   "worklogsOne": {
-    "message": "Worklogs already on Jira for $ISSUE$:",
+    "message": "Worklog già su Jira per $ISSUE$:",
     "placeholders": {
       "issue": {
         "content": "$1"
@@ -482,7 +482,7 @@
     }
   },
   "worklogsMany": {
-    "message": "$COUNT$ worklogs already on Jira for $ISSUE$ — delete them individually:",
+    "message": "$COUNT$ worklog già su Jira per $ISSUE$ — cancellali singolarmente:",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -493,7 +493,7 @@
     }
   },
   "worklogsUnlistable": {
-    "message": "Cannot list the individual worklogs for $ISSUE$ ($AMOUNT$ in total). Reload the extension, or delete them all:",
+    "message": "Non riesco a elencare i singoli worklog di $ISSUE$ ($AMOUNT$ in totale). Ricarica l'estensione, oppure cancellali tutti:",
     "placeholders": {
       "issue": {
         "content": "$1"
@@ -504,10 +504,10 @@
     }
   },
   "btnDelete": {
-    "message": "Delete"
+    "message": "Cancella"
   },
   "btnDeleteAllCount": {
-    "message": "Delete all $COUNT$",
+    "message": "Cancella tutti e $COUNT$",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -515,7 +515,7 @@
     }
   },
   "btnDeleteAllAmount": {
-    "message": "Delete all $AMOUNT$",
+    "message": "Cancella tutte le $AMOUNT$",
     "placeholders": {
       "amount": {
         "content": "$1"
@@ -523,7 +523,7 @@
     }
   },
   "msgDeleted": {
-    "message": "$ISSUE$: deleted $COUNT$ worklogs ($AMOUNT$).",
+    "message": "$ISSUE$: cancellati $COUNT$ worklog ($AMOUNT$).",
     "placeholders": {
       "issue": {
         "content": "$1"
@@ -537,7 +537,7 @@
     }
   },
   "msgDeletedPartial": {
-    "message": "$ISSUE$: deleted $DONE$ of $TOTAL$ worklogs ($AMOUNT$), then stopped: $ERROR$",
+    "message": "$ISSUE$: cancellati $DONE$ worklog su $TOTAL$ ($AMOUNT$), poi si è fermato: $ERROR$",
     "placeholders": {
       "issue": {
         "content": "$1"
@@ -557,7 +557,7 @@
     }
   },
   "msgSent": {
-    "message": "$COUNT$ rows logged: $ISSUES$.",
+    "message": "$COUNT$ righe registrate: $ISSUES$.",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -568,7 +568,7 @@
     }
   },
   "msgSentSplit": {
-    "message": "$COUNT$ rows logged ($PARTS$ worklogs, some split by the break): $ISSUES$.",
+    "message": "$COUNT$ righe registrate ($PARTS$ worklog, alcune spezzate dalla pausa): $ISSUES$.",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -593,7 +593,7 @@
     }
   },
   "msgClash": {
-    "message": "$ISSUE$ was also among the tasks: removed, it stays as a meeting.",
+    "message": "$ISSUE$ era anche fra le task: l'ho tolto, resta solo come riunione.",
     "placeholders": {
       "issue": {
         "content": "$1"
@@ -601,7 +601,7 @@
     }
   },
   "msgMeetingsNoTicket": {
-    "message": "$COUNT$ meeting(s) without a ticket: pick the issue from the suggestions field.",
+    "message": "$COUNT$ riunione/i senza ticket: scegli la issue dal campo con i suggerimenti.",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -609,7 +609,7 @@
     }
   },
   "msgProposedTickets": {
-    "message": "Meeting ticket proposed automatically ($ISSUES$): check it is the right one before sending.",
+    "message": "Ticket riunione proposto in automatico ($ISSUES$): controlla che sia quello giusto prima di inviare.",
     "placeholders": {
       "issues": {
         "content": "$1"
@@ -617,7 +617,7 @@
     }
   },
   "msgPlanNotUpdated": {
-    "message": "Plan not updated: $ERROR$",
+    "message": "Piano non aggiornato: $ERROR$",
     "placeholders": {
       "error": {
         "content": "$1"
@@ -625,10 +625,10 @@
     }
   },
   "msgReloadNone": {
-    "message": "No Jira tab to reload: the calendar below may still show the previous data."
+    "message": "Nessuna scheda Jira da ricaricare: il calendario sotto potrebbe mostrare i dati di prima."
   },
   "msgReloadFailed": {
-    "message": "Could not reload the Jira page: $ERROR$",
+    "message": "Non ho potuto ricaricare la pagina Jira: $ERROR$",
     "placeholders": {
       "error": {
         "content": "$1"
@@ -636,16 +636,16 @@
     }
   },
   "legendTask": {
-    "message": "to write"
+    "message": "da scrivere"
   },
   "legendMeeting": {
-    "message": "meetings"
+    "message": "riunioni"
   },
   "legendLogged": {
-    "message": "already logged"
+    "message": "già registrate"
   },
   "legendPause": {
-    "message": "break"
+    "message": "pausa"
   },
   "tlBlock": {
     "message": "$ISSUE$ · $FROM$–$TO$",
@@ -662,7 +662,7 @@
     }
   },
   "tlLogged": {
-    "message": "$ISSUE$ · already logged",
+    "message": "$ISSUE$ · già registrate",
     "placeholders": {
       "issue": {
         "content": "$1"
@@ -670,10 +670,10 @@
     }
   },
   "tlPause": {
-    "message": "Break"
+    "message": "Pausa"
   },
   "errNoTab": {
-    "message": "No tab open on $HOST$, so I cannot use your session.$EXTRA$",
+    "message": "Nessuna scheda aperta su $HOST$, quindi non posso usare la tua sessione.$EXTRA$",
     "placeholders": {
       "host": {
         "content": "$1"
@@ -684,7 +684,7 @@
     }
   },
   "errNoTabOthers": {
-    "message": " You have $OTHERS$ open, but the configuration points to $HOST$.",
+    "message": " Hai aperto $OTHERS$, ma la configurazione punta a $HOST$.",
     "placeholders": {
       "others": {
         "content": "$1"
@@ -695,7 +695,7 @@
     }
   },
   "errSessionInvalid": {
-    "message": "The tab on $HOST$ is there but the session is not valid: log in again and retry.",
+    "message": "La scheda su $HOST$ c'è ma la sessione non è valida: rifai il login e riprova.",
     "placeholders": {
       "host": {
         "content": "$1"
@@ -703,19 +703,19 @@
     }
   },
   "btnOpenRetry": {
-    "message": "Open and retry"
+    "message": "Apri e riprova"
   },
   "btnGoLogin": {
-    "message": "Go to login"
+    "message": "Vai al login"
   },
   "btnReopenRetry": {
-    "message": "Reopen and retry"
+    "message": "Riapri e riprova"
   },
   "btnOpenOptions": {
-    "message": "Open options"
+    "message": "Apri opzioni"
   },
   "planDayAlreadyFull": {
-    "message": "The $LOGGED$ already logged cover the $BUDGET$ daily budget: nothing left to distribute, all rows start disabled.",
+    "message": "Le $LOGGED$ già registrate coprono il monte ore di $BUDGET$: non resta nulla da distribuire, tutte le righe partono disattivate.",
     "placeholders": {
       "logged": {
         "content": "$1"
@@ -726,10 +726,10 @@
     }
   },
   "planNoTasks": {
-    "message": "No work task found for this day, neither from Jira activity nor from commits."
+    "message": "Nessuna task di lavoro trovata per questa giornata, né da attività Jira né dai commit."
   },
   "planMeetingsCoverAll": {
-    "message": "Meetings ($MEETINGS$) cover all the remaining time ($BUDGET$): tasks stay at zero.",
+    "message": "Le riunioni ($MEETINGS$) coprono tutto il tempo rimasto ($BUDGET$): le task restano a zero.",
     "placeholders": {
       "meetings": {
         "content": "$1"
@@ -740,7 +740,7 @@
     }
   },
   "planTooManyTasks": {
-    "message": "Too many tasks ($COUNT$) for the $REMAINING$ left in $STEP$-minute steps: some rows are at zero, remove a few or reduce the rounding.",
+    "message": "Troppe task ($COUNT$) per $REMAINING$ residui a scatti di $STEP$ minuti: alcune righe sono a zero, togline qualcuna o riduci l'arrotondamento.",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -754,13 +754,13 @@
     }
   },
   "planPastMidnight": {
-    "message": "The schedule runs past midnight: move the day start earlier, shorten the breaks or remove some rows."
+    "message": "Gli orari sforano la mezzanotte: sposta indietro l'inizio giornata, riduci le pause o togli qualche riga."
   },
   "noteNoProjects": {
-    "message": "No project configured: the activity search looks at every issue updated on the site (100 at most) and on a busy instance it can miss yours. Set your project keys in the options."
+    "message": "Nessun progetto configurato: la ricerca attività guarda tutte le issue aggiornate nel sito (al massimo 100) e su un'istanza trafficata può perdersi le tue. Imposta le chiavi dei tuoi progetti nelle opzioni."
   },
   "noteOtherAuthors": {
-    "message": "$COUNT$ commits today are by other authors and were not counted. If any were yours, add the name you sign commits with in the options.",
+    "message": "$COUNT$ commit di oggi risultano di altri autori e non sono stati contati. Se qualcuno era tuo, aggiungi nelle opzioni il nome con cui firmi i commit.",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -768,7 +768,7 @@
     }
   },
   "noteNoCommits": {
-    "message": "No linked commit found on the $COUNT$ issues checked: either the Development panel is not connected, or the ticket was not among the candidates.",
+    "message": "Nessun commit collegato trovato sulle $COUNT$ issue controllate: o il pannello Sviluppo non è collegato, o il ticket non era fra le candidate.",
     "placeholders": {
       "count": {
         "content": "$1"
@@ -776,7 +776,7 @@
     }
   },
   "noteDevPanelUnreadable": {
-    "message": "Development panel not readable ($ERROR$). Continuing with Jira activity only.",
+    "message": "Pannello Sviluppo non leggibile ($ERROR$). Vado avanti con la sola attività Jira.",
     "placeholders": {
       "error": {
         "content": "$1"
@@ -784,19 +784,19 @@
     }
   },
   "noteWorklogsUnreadable": {
-    "message": "Could not read the worklogs already present: check that you are not doubling the hours."
+    "message": "Non ho potuto leggere i worklog già presenti: controlla di non star raddoppiando le ore."
   },
   "errNoHost": {
-    "message": "No Jira site configured, and no Atlassian tab open to infer it from."
+    "message": "Nessun sito Jira configurato, e nessuna scheda Atlassian aperta da cui dedurlo."
   },
   "errNoIdentity": {
-    "message": "I cannot read your Jira identity."
+    "message": "Non riesco a leggere la tua identità Jira."
   },
   "errMissingIssue": {
-    "message": "Missing the issue to clean up."
+    "message": "Manca la issue da ripulire."
   },
   "errTabGone": {
-    "message": "The tab on $HOST$ used for the session no longer responds.",
+    "message": "La scheda su $HOST$ usata per la sessione non risponde più.",
     "placeholders": {
       "host": {
         "content": "$1"
@@ -804,7 +804,7 @@
     }
   },
   "msgPartialWrite": {
-    "message": " — careful: $DONE$ of $TOTAL$ blocks were already written",
+    "message": " — attenzione: $DONE$ di $TOTAL$ blocchi sono già stati scritti",
     "placeholders": {
       "done": {
         "content": "$1"

@@ -1,0 +1,4 @@
+# Output di `npm run build`: si rigenera, non si versiona.
+dist/
+
+node_modules/

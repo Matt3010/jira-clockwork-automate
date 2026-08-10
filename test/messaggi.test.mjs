@@ -16,7 +16,7 @@ const piano = (alreadyLoggedMinutes) => buildPlan({
   isoDate: '2026-08-10', config: DEFAULT_CONFIG,
   jiraActivity, gitByIssue: new Map(), recentIssues, alreadyLoggedMinutes
 });
-const testi = (p) => p.warnings.map((w) => w.text);
+const chiaviAvvisi = (p) => p.warnings.map((w) => w.key);
 
 // ---------- livelli dei messaggi ----------
 const normale = piano(0);
@@ -25,18 +25,18 @@ assert.equal(normale.warnings.length, 0, 'giornata sana: nessun messaggio');
 const pieno = piano(480);
 assert.equal(pieno.warnings.length, 1, 'un solo messaggio, non due che dicono la stessa cosa');
 assert.equal(pieno.warnings[0].level, 'info', 'e informativo: non serve fare niente');
-assert.match(pieno.warnings[0].text, /già registrate/);
-assert.doesNotMatch(pieno.warnings[0].text, /[Rr]iunioni/,
+assert.equal(pieno.warnings[0].key, 'planDayAlreadyFull');
+assert.notEqual(pieno.warnings[0].key, 'planMeetingsCoverAll',
   'la causa sono le ore gia registrate, non le riunioni');
 assert.ok(pieno.rows.every((r) => r.enabled === false), 'nessuna riga attiva');
 
 const stretto = piano(450); // restano 30 minuti, le riunioni ne vogliono 60
-const riunioni = stretto.warnings.filter((w) => /riunioni/i.test(w.text));
+const riunioni = stretto.warnings.filter((w) => w.key === 'planMeetingsCoverAll');
 assert.equal(riunioni.length, 1);
 assert.equal(riunioni[0].level, 'info');
-assert.match(riunioni[0].text, /1h/);
-assert.match(riunioni[0].text, /30m/);
-assert.ok(!testi(stretto).some((t) => /già registrate/.test(t)), 'non raddoppia il messaggio');
+assert.equal(riunioni[0].params[0], '1h', 'quanto pesano le riunioni');
+assert.equal(riunioni[0].params[1], '30m', 'e quanto tempo restava');
+assert.ok(!chiaviAvvisi(stretto).includes('planDayAlreadyFull'), 'non raddoppia il messaggio');
 
 // Troppe task per il tempo residuo: questo invece richiede un intervento.
 const tante = new Map();
@@ -47,7 +47,7 @@ const affollato = buildPlan({
   isoDate: '2026-08-10', config: DEFAULT_CONFIG,
   jiraActivity: tante, gitByIssue: new Map(), recentIssues, alreadyLoggedMinutes: 0
 });
-const troppe = affollato.warnings.find((w) => /Troppe task/.test(w.text));
+const troppe = affollato.warnings.find((w) => w.key === 'planTooManyTasks');
 assert.ok(troppe, 'segnala che non ci sta tutto');
 assert.equal(troppe.level, 'action', 'qui devi intervenire tu: livello diverso');
 
