@@ -1,0 +1,358 @@
+{
+  "extensionDescription": {
+    "message": "Fills in your Jira/Clockwork worklogs for a day from your Jira activity, the commits linked to your issues, and your recurring meetings."
+  },
+
+  "optionsTitle": { "message": "Clockwork Autofill — Options" },
+  "optionsLede": {
+    "message": "Hours are written to native Jira worklogs, which Clockwork keeps in sync: they show up in My Work and in timesheets without going through the Clockwork API. Authentication uses your browser session — no tokens, no stored credentials: you just need a tab open and logged in on the site below."
+  },
+
+  "secJira": { "message": "Jira" },
+  "fieldSite": { "message": "Jira site" },
+  "sitePlaceholder": { "message": "yoursite" },
+  "btnDetectSite": { "message": "Detect from browser" },
+  "hintSite": {
+    "message": "The prefix is enough: Jira Cloud always lives on .atlassian.net, and it is the only host this extension has permissions for. If you paste the full URL it gets cleaned up. Only tabs open on this site are used for the session: another Atlassian site is ignored."
+  },
+  "fieldProjects": { "message": "Projects to scan" },
+  "hintProjects": {
+    "message": "Comma-separated keys. Narrows both the activity search and the issue keys accepted in commit messages."
+  },
+  "checkComments": { "message": "Count my comments as activity too" },
+  "btnTestConnection": { "message": "Test connection" },
+
+  "secCommits": { "message": "Commits" },
+  "checkDevPanel": { "message": "Read commits from the issue Development panel" },
+  "hintDevPanel": {
+    "message": "Commits are read from Jira itself — the same panel you see at the bottom of every ticket. No Bitbucket tab to keep open, no workspace to configure."
+  },
+  "fieldDevCandidates": { "message": "Issues to check besides today's" },
+  "hintDevCandidates": {
+    "message": "The panel is queried one issue at a time, so the number matters. Besides the issues you touched today, your issues updated in the last three weeks are checked too: that is how commits on tickets you did not open in Jira get found. Higher means more coverage but a slower analysis. 0 means today's issues only."
+  },
+  "fieldAuthors": { "message": "Names or emails you sign commits with" },
+  "authorsPlaceholder": { "message": "usually can be left empty" },
+  "hintAuthors": {
+    "message": "Comma-separated. Your Jira name and email are already taken into account: this field is only needed if you sign git commits with a different name (an old address, your home laptop)."
+  },
+
+  "secDay": { "message": "Working day" },
+  "fieldDailyHours": { "message": "Hours to cover" },
+  "fieldRounding": { "message": "Rounding (minutes)" },
+  "fieldStartTime": { "message": "Day starts at" },
+
+  "secBreaks": { "message": "Breaks" },
+  "hintBreaks": {
+    "message": "Breaks do not consume your daily budget: they are holes in the timeline. A block of work that lands on one gets split, and several worklogs reach Jira — the way the day actually looks on the calendar. Add as many as you need."
+  },
+  "btnAddBreak": { "message": "Add break" },
+
+  "secMeetings": { "message": "Recurring meetings" },
+  "hintMeetings": {
+    "message": "Fixed duration, subtracted from the daily budget before the rest is split across tasks. The ticket is picked in the popup and remembered for the whole week."
+  },
+  "btnAddMeeting": { "message": "Add meeting" },
+
+  "fieldName": { "message": "Name" },
+  "fieldDays": { "message": "Days" },
+  "fieldFrom": { "message": "From" },
+  "fieldTo": { "message": "To" },
+  "btnRemove": { "message": "Remove" },
+  "btnSave": { "message": "Save" },
+
+  "dayMon": { "message": "Mon" },
+  "dayTue": { "message": "Tue" },
+  "dayWed": { "message": "Wed" },
+  "dayThu": { "message": "Thu" },
+  "dayFri": { "message": "Fri" },
+  "daySat": { "message": "Sat" },
+  "daySun": { "message": "Sun" },
+
+  "defaultMeetingName": { "message": "New meeting" },
+  "defaultBreakName": { "message": "Break" },
+
+  "msgSaved": { "message": "Saved." },
+  "msgNotSavedTimes": {
+    "message": "Not saved: in $NAMES$ the end time is not after the start time.",
+    "placeholders": { "names": { "content": "$1" } }
+  },
+  "msgSiteFound": {
+    "message": "Found $SITE$. Check and save.",
+    "placeholders": { "site": { "content": "$1" } }
+  },
+  "msgSiteFoundOthers": {
+    "message": "Found $SITE$ (also open: $OTHERS$). Check and save.",
+    "placeholders": { "site": { "content": "$1" }, "others": { "content": "$2" } }
+  },
+  "msgNoAtlassianTab": { "message": "No tab open on an Atlassian site." },
+  "msgConnectedAs": {
+    "message": "Connected as $NAME$ on $HOST$.",
+    "placeholders": { "name": { "content": "$1" }, "host": { "content": "$2" } }
+  },
+
+  "colophonCredit": { "message": "Made with ❤️ by Matt" },
+  "colophonContact": { "message": "For bugs or requests contact me on Telegram" },
+
+  "popupTitle": { "message": "Clockwork Autofill" },
+  "labelDay": { "message": "Day" },
+  "titlePrevDay": { "message": "Previous day" },
+  "titleNextDay": { "message": "Next day" },
+  "titleOptions": { "message": "Options" },
+  "titleToggleAll": { "message": "Select or deselect everything" },
+  "btnRefresh": { "message": "Refresh" },
+  "btnAnalysing": { "message": "Analysing…" },
+  "thIssue": { "message": "Issue" },
+  "thWhat": { "message": "What" },
+  "thHours": { "message": "Hours" },
+  "thTime": { "message": "Time" },
+  "btnAddRow": { "message": "Add a row" },
+  "btnCancel": { "message": "Cancel" },
+  "btnSend": { "message": "Send worklogs" },
+  "btnSendCount": {
+    "message": "Send $COUNT$ worklogs",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "btnSending": { "message": "Sending…" },
+  "btnConfirmDay": {
+    "message": "Confirm: the day will reach $TOTAL$",
+    "placeholders": { "total": { "content": "$1" } }
+  },
+
+  "emptyAnalysing": { "message": "Analysing the day…" },
+  "emptyNoPlan": { "message": "No plan for this day." },
+  "emptyNothing": { "message": "Nothing to log for this day." },
+  "siteChecking": { "message": "Checking the site…" },
+  "siteNoneConfigured": { "message": "No Jira site configured" },
+  "siteDetectedSuffix": { "message": " (detected from the browser)" },
+  "siteNoTab": {
+    "message": "$HOST$$ORIGIN$ · no tab open",
+    "placeholders": { "host": { "content": "$1" }, "origin": { "content": "$2" } }
+  },
+  "siteSession": {
+    "message": "$HOST$$ORIGIN$ · browser session",
+    "placeholders": { "host": { "content": "$1" }, "origin": { "content": "$2" } }
+  },
+
+  "totalDistribute": {
+    "message": " to distribute out of $BUDGET$",
+    "placeholders": { "budget": { "content": "$1" } }
+  },
+  "totalAlready": {
+    "message": " · $LOGGED$ already logged out of $DAY$",
+    "placeholders": { "logged": { "content": "$1" }, "day": { "content": "$2" } }
+  },
+  "totalRows": {
+    "message": " · $COUNT$ row(s)",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "totalEndOfDay": {
+    "message": " · day ends at $TIME$",
+    "placeholders": { "time": { "content": "$1" } }
+  },
+  "totalOverflow": {
+    "message": " · the day would reach $TOTAL$",
+    "placeholders": { "total": { "content": "$1" } }
+  },
+  "totalOverflowRedo": {
+    "message": " · the day would reach $TOTAL$: you are re-adding $REDONE$ already logged",
+    "placeholders": { "total": { "content": "$1" }, "redone": { "content": "$2" } }
+  },
+
+  "rowNoTitle": { "message": "(title unavailable)" },
+  "phMeetingTicket": { "message": "Ceremony ticket…" },
+  "phIssueExample": { "message": "ABC-123" },
+  "phIssuePrefix": {
+    "message": "$PREFIX$-…",
+    "placeholders": { "prefix": { "content": "$1" } }
+  },
+  "phComment": { "message": "Worklog note (optional)" },
+  "detailManual": { "message": "Added by hand" },
+  "meetingRecurring": {
+    "message": "Recurring meeting · $FROM$–$TO$",
+    "placeholders": { "from": { "content": "$1" }, "to": { "content": "$2" } }
+  },
+
+  "activityChange": {
+    "message": "$COUNT$ Jira change",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "activityChanges": {
+    "message": "$COUNT$ Jira changes",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "activityComment": {
+    "message": "$COUNT$ comment",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "activityComments": {
+    "message": "$COUNT$ comments",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "activityCommit": {
+    "message": "$COUNT$ commit",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "activityCommits": {
+    "message": "$COUNT$ commits",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+
+  "commentProgressAndComments": { "message": "Progress and comments" },
+  "commentAnalysis": { "message": "Analysis and discussion on the ticket" },
+  "commentProgress": { "message": "Work in progress" },
+
+  "badgeProposed": { "message": "proposed" },
+  "badgeAlready": {
+    "message": "already $AMOUNT$",
+    "placeholders": { "amount": { "content": "$1" } }
+  },
+  "whyTime": { "message": "proposed because a worklog already exists on this ticket at that time" },
+  "whyName": { "message": "proposed because it resembles the meeting name" },
+  "whyDate": { "message": "proposed because the title contains today's date" },
+  "whyAuto": { "message": "automatic proposal" },
+  "titleSplitByBreak": { "message": "Split by the break: several worklogs will be written." },
+  "titleWipe": {
+    "message": "Show the $AMOUNT$ already logged today on $ISSUE$, to delete them",
+    "placeholders": { "amount": { "content": "$1" }, "issue": { "content": "$2" } }
+  },
+  "titleRemoveRow": { "message": "Remove from the plan (does not touch Jira)" },
+
+  "worklogsOne": {
+    "message": "Worklogs already on Jira for $ISSUE$:",
+    "placeholders": { "issue": { "content": "$1" } }
+  },
+  "worklogsMany": {
+    "message": "$COUNT$ worklogs already on Jira for $ISSUE$ — delete them individually:",
+    "placeholders": { "count": { "content": "$1" }, "issue": { "content": "$2" } }
+  },
+  "worklogsUnlistable": {
+    "message": "Cannot list the individual worklogs for $ISSUE$ ($AMOUNT$ in total). Reload the extension, or delete them all:",
+    "placeholders": { "issue": { "content": "$1" }, "amount": { "content": "$2" } }
+  },
+  "btnDelete": { "message": "Delete" },
+  "btnDeleteAllCount": {
+    "message": "Delete all $COUNT$",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "btnDeleteAllAmount": {
+    "message": "Delete all $AMOUNT$",
+    "placeholders": { "amount": { "content": "$1" } }
+  },
+
+  "msgDeleted": {
+    "message": "$ISSUE$: deleted $COUNT$ worklogs ($AMOUNT$).",
+    "placeholders": { "issue": { "content": "$1" }, "count": { "content": "$2" }, "amount": { "content": "$3" } }
+  },
+  "msgDeletedPartial": {
+    "message": "$ISSUE$: deleted $DONE$ of $TOTAL$ worklogs ($AMOUNT$), then stopped: $ERROR$",
+    "placeholders": {
+      "issue": { "content": "$1" }, "done": { "content": "$2" },
+      "total": { "content": "$3" }, "amount": { "content": "$4" }, "error": { "content": "$5" }
+    }
+  },
+  "msgSent": {
+    "message": "$COUNT$ rows logged: $ISSUES$.",
+    "placeholders": { "count": { "content": "$1" }, "issues": { "content": "$2" } }
+  },
+  "msgSentSplit": {
+    "message": "$COUNT$ rows logged ($PARTS$ worklogs, some split by the break): $ISSUES$.",
+    "placeholders": { "count": { "content": "$1" }, "parts": { "content": "$2" }, "issues": { "content": "$3" } }
+  },
+  "msgSendFailed": {
+    "message": "$ISSUE$: $ERROR$",
+    "placeholders": { "issue": { "content": "$1" }, "error": { "content": "$2" } }
+  },
+  "msgClash": {
+    "message": "$ISSUE$ was also among the tasks: removed, it stays as a meeting.",
+    "placeholders": { "issue": { "content": "$1" } }
+  },
+  "msgMeetingsNoTicket": {
+    "message": "$COUNT$ meeting(s) without a ticket: pick the issue from the suggestions field.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "msgProposedTickets": {
+    "message": "Meeting ticket proposed automatically ($ISSUES$): check it is the right one before sending.",
+    "placeholders": { "issues": { "content": "$1" } }
+  },
+  "msgPlanNotUpdated": {
+    "message": "Plan not updated: $ERROR$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "msgReloadNone": {
+    "message": "No Jira tab to reload: the calendar below may still show the previous data."
+  },
+  "msgReloadFailed": {
+    "message": "Could not reload the Jira page: $ERROR$",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+
+  "legendTask": { "message": "to write" },
+  "legendMeeting": { "message": "meetings" },
+  "legendLogged": { "message": "already logged" },
+  "legendPause": { "message": "break" },
+  "tlBlock": {
+    "message": "$ISSUE$ · $FROM$–$TO$",
+    "placeholders": { "issue": { "content": "$1" }, "from": { "content": "$2" }, "to": { "content": "$3" } }
+  },
+  "tlLogged": {
+    "message": "$ISSUE$ · already logged",
+    "placeholders": { "issue": { "content": "$1" } }
+  },
+  "tlPause": { "message": "Break" },
+
+  "errNoTab": {
+    "message": "No tab open on $HOST$, so I cannot use your session.$EXTRA$",
+    "placeholders": { "host": { "content": "$1" }, "extra": { "content": "$2" } }
+  },
+  "errNoTabOthers": {
+    "message": " You have $OTHERS$ open, but the configuration points to $HOST$.",
+    "placeholders": { "others": { "content": "$1" }, "host": { "content": "$2" } }
+  },
+  "errSessionInvalid": {
+    "message": "The tab on $HOST$ is there but the session is not valid: log in again and retry.",
+    "placeholders": { "host": { "content": "$1" } }
+  },
+  "btnOpenRetry": { "message": "Open and retry" },
+  "btnGoLogin": { "message": "Go to login" },
+  "btnReopenRetry": { "message": "Reopen and retry" },
+  "btnOpenOptions": { "message": "Open options" },
+
+  "planDayAlreadyFull": {
+    "message": "The $LOGGED$ already logged cover the $BUDGET$ daily budget: nothing left to distribute, all rows start disabled.",
+    "placeholders": { "logged": { "content": "$1" }, "budget": { "content": "$2" } }
+  },
+  "planNoTasks": {
+    "message": "No work task found for this day, neither from Jira activity nor from commits."
+  },
+  "planMeetingsCoverAll": {
+    "message": "Meetings ($MEETINGS$) cover all the remaining time ($BUDGET$): tasks stay at zero.",
+    "placeholders": { "meetings": { "content": "$1" }, "budget": { "content": "$2" } }
+  },
+  "planTooManyTasks": {
+    "message": "Too many tasks ($COUNT$) for the $REMAINING$ left in $STEP$-minute steps: some rows are at zero, remove a few or reduce the rounding.",
+    "placeholders": { "count": { "content": "$1" }, "remaining": { "content": "$2" }, "step": { "content": "$3" } }
+  },
+  "planPastMidnight": {
+    "message": "The schedule runs past midnight: move the day start earlier, shorten the breaks or remove some rows."
+  },
+
+  "noteNoProjects": {
+    "message": "No project configured: the activity search looks at every issue updated on the site (100 at most) and on a busy instance it can miss yours. Set your project keys in the options."
+  },
+  "noteOtherAuthors": {
+    "message": "$COUNT$ commits today are by other authors and were not counted. If any were yours, add the name you sign commits with in the options.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "noteNoCommits": {
+    "message": "No linked commit found on the $COUNT$ issues checked: either the Development panel is not connected, or the ticket was not among the candidates.",
+    "placeholders": { "count": { "content": "$1" } }
+  },
+  "noteDevPanelUnreadable": {
+    "message": "Development panel not readable ($ERROR$). Continuing with Jira activity only.",
+    "placeholders": { "error": { "content": "$1" } }
+  },
+  "noteWorklogsUnreadable": {
+    "message": "Could not read the worklogs already present: check that you are not doubling the hours."
+  }
+}
