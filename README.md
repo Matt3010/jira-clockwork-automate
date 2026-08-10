@@ -257,20 +257,34 @@ over the others.
 ## Build
 
 ```
+npm install     # once: esbuild
 npm run build
 ```
 
 Produces `dist/clockwork-autofill-<version>.zip`, to upload to the Chrome Web Store
-or hand over directly, and `dist/unpacked/` for "Load unpacked". Only the manifest,
-`src/`, `icons/` and `_locales/` go into the package: tests and tooling stay out.
+or hand over directly, and `dist/unpacked/` for "Load unpacked". Tests and tooling
+stay out of the package.
 
 **The build won't run if the suite isn't green** — translations included, which are
 exactly the ones that break silently. It also checks that every file the manifest
-names actually ends up in the zip. A zip with a defect inside gets discovered by
-whoever installs it, and by then it's late.
+names actually ends up in the zip, and that `default_locale` has its folder. If
+anything fails, `dist/` is removed rather than left half-built: a zip with a defect
+inside gets discovered by whoever installs it, and by then it's late.
 
-No dependencies: the zip is written by hand with `node:zlib`, like the rest of the
-project, which needs nothing but `node`.
+`background.js`, `popup.js` and `options.js` are each bundled with their `src/lib`
+dependencies into one file and **minified** — roughly halving the JavaScript. CSS is
+minified too. The HTML is copied untouched: its text nodes are translated content,
+and collapsing whitespace there would change what you read on screen.
+
+**Minified, not obfuscated.** The Chrome Web Store forbids obfuscation outright —
+*"Developers must not obfuscate code or conceal functionality of their extension"* —
+while explicitly allowing minification, including shortening names and collapsing
+files together. An obfuscated package gets rejected at review. It would also buy
+nothing: an extension is installed on the user's machine, so anyone can read it
+regardless.
+
+esbuild is a devDependency — it builds the package, it isn't in it. The zip itself
+is still written by hand with `node:zlib`.
 
 ## Known limits
 
