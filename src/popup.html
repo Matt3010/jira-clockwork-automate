@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <title>Clockwork Autofill</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="bar">
+    <div class="bar-left">
+      <label for="date">Giornata</label>
+      <input type="date" id="date" />
+      <button id="prev-day" class="ghost icon-only" title="Giorno precedente"></button>
+      <button id="next-day" class="ghost icon-only" title="Giorno successivo"></button>
+    </div>
+    <div class="bar-right">
+      <button id="analyze" class="ghost" title="Rianalizza la giornata">Aggiorna</button>
+      <button id="open-options" class="ghost icon-only" title="Opzioni"></button>
+    </div>
+  </header>
+
+  <div id="messages"></div>
+
+  <main>
+    <div id="timeline" class="timeline" hidden>
+      <div class="scale">
+        <div class="ruler"></div>
+        <div class="track"></div>
+      </div>
+    </div>
+
+    <div class="grid-area">
+    <div id="legend" class="legend" hidden></div>
+    <table id="plan" hidden>
+      <thead>
+        <tr>
+          <th class="col-check">
+            <input type="checkbox" id="toggle-all" title="Seleziona o deseleziona tutto" />
+          </th>
+          <th class="col-issue">Issue</th>
+          <th class="col-what">Cosa</th>
+          <th class="col-hours">Ore</th>
+          <th class="col-time">Orario</th>
+          <th class="col-actions"></th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p id="empty" class="empty">Analizzo la giornata…</p>
+    <button id="add-row" class="ghost add-row" hidden>Aggiungi una riga</button>
+    </div>
+  </main>
+
+  <footer class="bar">
+    <div class="foot-info">
+      <div id="total" class="total"></div>
+      <div id="site" class="site">Controllo il sito…</div>
+    </div>
+    <div class="actions">
+      <button id="cancel-send" class="ghost" hidden>Annulla</button>
+      <button id="submit" class="primary" disabled>Invia worklog</button>
+    </div>
+  </footer>
+
+  <datalist id="recent-issues"></datalist>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

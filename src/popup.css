@@ -1,0 +1,384 @@
+:root {
+  --bg: #ffffff;
+  --surface: #f4f5f7;
+  --border: #dfe1e6;
+  --text: #172b4d;
+  --muted: #6b778c;
+  --accent: #0052cc;
+  --accent-text: #ffffff;
+  --ok: #216e4e;
+  --warn: #974f0c;
+  --err: #ae2e24;
+  --danger: #c9372c;
+  --danger-text: #ffffff;
+  --track-line: #ffffff;
+  --warn-bg: #fff7d6;
+  --err-bg: #ffecea;
+  --ok-bg: #e6f5ec;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #1d2125;
+    --surface: #22272b;
+    --border: #38414a;
+    --text: #dee4ea;
+    --muted: #9aa5b1;
+    --accent: #579dff;
+    --accent-text: #10202f;
+    --ok: #7ee2b8;
+    --warn: #f5cd47;
+    --err: #ff9c8f;
+    --danger: #ff9c8f;
+    --danger-text: #2a1215;
+    --track-line: #ffffff;
+    --warn-bg: #3b2f1b;
+    --err-bg: #42232a;
+    --ok-bg: #1f3529;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  width: 800px;
+  margin: 0;
+  font: 13px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--text);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  max-height: 580px;
+}
+
+.bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+footer.bar {
+  border-bottom: none;
+  border-top: 1px solid var(--border);
+}
+
+.bar-left, .bar-right { display: flex; align-items: center; gap: 6px; }
+.bar label { color: var(--muted); }
+
+button {
+  font: inherit;
+  padding: 5px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+
+button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+button.primary {
+  background: var(--accent);
+  color: var(--accent-text);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+button.danger {
+  background: var(--danger);
+  color: var(--danger-text);
+  border-color: var(--danger);
+  font-weight: 600;
+}
+
+.actions { display: flex; align-items: center; gap: 8px; }
+
+button.ghost { padding: 5px 9px; }
+button.icon-only {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  line-height: 0;
+}
+
+input[type="date"], input[type="text"], input[type="number"] {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+main {
+  overflow-y: auto;
+  flex: 1;
+  padding: 0 12px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.grid-area { flex: 1; min-width: 0; }
+
+/* Anteprima verticale della giornata, come una colonna di calendario:
+   si legge dall'alto in basso, e l'asse copre sempre la giornata configurata. */
+.timeline {
+  flex: none;
+  width: 104px;
+  padding: 12px 0 4px;
+  position: sticky;
+  top: 0;
+}
+.timeline .scale { position: relative; display: flex; }
+.timeline .ruler {
+  position: relative;
+  width: 38px;
+  flex: none;
+  font-size: 10px;
+  color: var(--muted);
+}
+.timeline .tick {
+  position: absolute;
+  right: 6px;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+.timeline .track {
+  position: relative;
+  flex: 1;
+  border-radius: 3px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.timeline .block {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: 2px;
+  /* Linea bianca tratteggiata: due blocchi attaccati restano distinguibili
+     anche quando hanno lo stesso riempimento, come le ore già registrate una
+     dopo l'altra. */
+  border: 1px dashed var(--track-line);
+}
+/* Non vincolate a `.timeline`: gli stessi colori servono ai campioni della
+   legenda, che vive fuori dalla colonna. */
+.block.task { background: var(--accent); }
+.block.meeting { background: var(--warn); }
+.block.logged {
+  background:
+    repeating-linear-gradient(
+      45deg, var(--border), var(--border) 3px, transparent 3px, transparent 6px
+    ),
+    var(--bg);
+}
+.block.pause { background: var(--bg); }
+.timeline .block.pause { opacity: .6; }
+.timeline .block.hot {
+  border-style: solid;
+  border-color: var(--text);
+  z-index: 2;
+}
+
+/* Legenda in orizzontale sopra la tabella: nella colonna verticale finiva
+   fuori dall'area visibile del popup. */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  padding: 12px 0 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.legend .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+
+/* Il campione resta nel flusso: `.block` da solo è posizionato in assoluto. */
+.legend .block {
+  position: static;
+  flex: none;
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  /* Nel campione il tratteggio non si leggerebbe: bordo pieno del colore
+     della cornice, solo per delimitarlo. */
+  border: 1px solid var(--border);
+}
+
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 10px 6px 6px;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+}
+td { padding: 6px; border-top: 1px solid var(--border); vertical-align: top; }
+
+.col-check { width: 26px; }
+.col-issue { width: 150px; }
+.col-hours { width: 78px; }
+.col-time  { width: 96px; }
+
+tr.disabled td { opacity: .45; }
+
+/* Icone: ereditano il colore del testo, quindi seguono tema e stato. */
+.icon { display: inline-block; vertical-align: -.15em; flex: none; }
+.summary .icon { margin-right: 5px; color: var(--muted); }
+
+/* Stacco fra il blocco riunioni e il blocco attività. */
+tr.section-start > td {
+  border-top: 2px solid var(--border);
+  padding-top: 14px;
+}
+
+.issue-input { width: 100%; }
+.summary { font-weight: 500; }
+.detail { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.comment { width: 100%; margin-top: 4px; font-size: 12px; }
+
+.badges { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
+.badge {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.badge.jira { color: var(--accent); border-color: var(--accent); }
+.badge.git  { color: var(--ok); border-color: var(--ok); }
+.badge.dup  { color: var(--warn); border-color: var(--warn); background: var(--warn-bg); }
+
+.hours { width: 100%; text-align: right; }
+.hours.locked { border-color: var(--accent); }
+.time { color: var(--muted); padding-top: 5px; display: block; }
+
+.col-actions { width: 58px; }
+
+.remove {
+  border: none;
+  background: none;
+  color: var(--muted);
+  padding: 3px;
+  line-height: 0;
+  border-radius: 3px;
+}
+.remove:hover { color: var(--err); background: var(--surface); }
+.remove.wipe.open { color: var(--err); background: var(--surface); }
+
+/* Elenco dei worklog già su Jira, aperto sotto la riga. */
+tr.worklogs td { border-top: none; padding-top: 0; }
+.worklogs-title { color: var(--muted); font-size: 11px; margin-bottom: 5px; }
+.worklog-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 12px;
+}
+.worklog-item span { font-variant-numeric: tabular-nums; }
+button.danger-text { color: var(--err); border-color: var(--err); margin-top: 6px; }
+
+.remove.armed {
+  color: var(--err);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  border: 1px solid var(--err);
+  padding: 2px 5px;
+}
+tr.disabled .remove.wipe { opacity: 1; }
+
+#messages { padding: 0 12px; }
+/* Tre pesi visivi: quello che richiede un tuo intervento deve saltare all'occhio,
+   quello informativo deve poter essere ignorato senza sforzo. */
+.msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  border-left-width: 3px;
+  font-size: 12px;
+}
+
+.msg .glyph { flex: none; display: flex; align-items: center; height: 17px; }
+.msg .body { flex: 1; }
+
+/* Informativo: nessun riempimento, testo attenuato. Si legge se si vuole. */
+.msg.info {
+  background: none;
+  border-color: var(--border);
+  color: var(--muted);
+}
+.msg.info .glyph { opacity: .8; }
+
+/* Richiede un intervento. */
+.msg.action, .msg.warn {
+  background: var(--warn-bg);
+  border-color: var(--border);
+  border-left-color: var(--warn);
+  color: var(--text);
+}
+.msg.action .glyph, .msg.warn .glyph { color: var(--warn); }
+
+.msg.err {
+  background: var(--err-bg);
+  border-color: var(--border);
+  border-left-color: var(--err);
+}
+.msg.err .glyph { color: var(--err); }
+
+.msg.ok {
+  background: var(--ok-bg);
+  border-color: var(--border);
+  border-left-color: var(--ok);
+}
+.msg.ok .glyph { color: var(--ok); }
+
+.empty { color: var(--muted); text-align: center; padding: 36px 12px; }
+.add-row { margin: 10px 0 14px; font-size: 12px; }
+.total { color: var(--muted); }
+.total strong { color: var(--text); }
+.total.over strong { color: var(--err); }
+
+.foot-info { display: flex; flex-direction: column; gap: 1px; }
+.site { font-size: 11px; color: var(--muted); }
+.site .dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  margin-right: 5px;
+  background: var(--muted);
+  vertical-align: middle;
+}
+.site.live .dot { background: var(--ok); }
+.site.down .dot { background: var(--err); }
+
+.msg button.inline {
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 12px;
+  vertical-align: baseline;
+}

@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Clockwork Autofill",
+  "version": "1.0.0",
+  "default_locale": "en",
+  "description": "__MSG_extensionDescription__",
+  "permissions": ["storage", "scripting"],
+  "host_permissions": [
+    "https://*.atlassian.net/*"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup.html",
+    "default_title": "Clockwork Autofill"
+  },
+  "options_page": "src/options.html"
+}
