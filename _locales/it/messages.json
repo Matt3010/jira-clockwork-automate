@@ -241,7 +241,7 @@
     "message": "Invio…"
   },
   "btnConfirmDay": {
-    "message": "Conferma: la giornata arriverà a $TOTAL$",
+    "message": "Conferma: si arriva a $TOTAL$",
     "placeholders": {
       "total": {
         "content": "$1"

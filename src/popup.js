@@ -93,9 +93,18 @@ function normalizeMessage(input, fallbackLevel) {
   return null;
 }
 
-/** Pulsante con icona + testo, ricostruito ogni volta che il testo cambia. */
+/**
+ * Pulsante con icona + testo. L'etichetta sta in un elemento suo perché possa
+ * essere troncata invece di mandare a capo il pulsante: con una conferma lunga
+ * il testo si spezzava e il pulsante si deformava. Il testo intero resta nel
+ * title, così non si perde niente.
+ */
 function setButton(button, name, text) {
-  button.replaceChildren(icon(name, { size: 14 }), document.createTextNode(text));
+  const label = document.createElement('span');
+  label.className = 'label';
+  label.textContent = text;
+  button.replaceChildren(icon(name, { size: 14 }), label);
+  button.title = text;
 }
 
 function message(text, kind = 'info', action = null) {

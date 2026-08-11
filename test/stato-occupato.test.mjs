@@ -67,4 +67,18 @@ assert.match(finale, /token === analyzeToken/,
   'e si esce solo se non è già partita un altra analisi: sarebbe lei a decidere');
 assert.match(finale, /setBusy\(false\)/, 'sbloccando i comandi');
 
+// --- il pulsante non si deve deformare quando l etichetta è lunga ---------
+// Le conferme sono frasi, non parole: senza un contenitore troncabile il testo
+// va a capo e il pulsante si accartoccia.
+const setButton = blocco('setButton');
+assert.match(setButton, /className = 'label'/, 'l etichetta ha un elemento suo, troncabile');
+assert.match(setButton, /button\.title = text/, 'e il testo intero resta nel title');
+
+assert.match(css, /button \.label \{[^}]*text-overflow: ellipsis/,
+  'l etichetta si tronca invece di mandare a capo');
+assert.match(css, /button \{[^}]*white-space: nowrap/, 'e il pulsante non va su due righe');
+assert.match(css, /\.foot-info \{[^}]*min-width: 0/,
+  'il totale può restringersi: senza, spinge via i comandi');
+assert.match(css, /\.actions \{[^}]*flex: none/, 'e i comandi non cedono spazio al testo');
+
 console.log('stato occupato: tutti i controlli passati.');

@@ -85,7 +85,12 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  white-space: nowrap;
 }
+
+/* L'etichetta si tronca, il pulsante non si deforma. */
+button .label { overflow: hidden; text-overflow: ellipsis; }
+#submit .label { max-width: 260px; }
 
 button.primary {
   background: var(--accent);
@@ -100,7 +105,7 @@ button.danger {
   font-weight: 600;
 }
 
-.actions { display: flex; align-items: center; gap: 8px; }
+.actions { display: flex; align-items: center; gap: 8px; flex: none; }
 
 button.ghost { padding: 5px 9px; }
 button.icon-only {
@@ -387,7 +392,9 @@ tr.disabled .remove.wipe { opacity: 1; }
 .total strong { color: var(--text); }
 .total.over strong { color: var(--err); }
 
-.foot-info { display: flex; flex-direction: column; gap: 1px; }
+/* Il totale cede spazio, i comandi no: schiacciare il pulsante di invio per
+   far entrare una riga di testo è il contrario di quello che serve. */
+.foot-info { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
 .site { font-size: 11px; color: var(--muted); }
 .site .dot {
   display: inline-block;

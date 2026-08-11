@@ -241,7 +241,7 @@
     "message": "Sending…"
   },
   "btnConfirmDay": {
-    "message": "Confirm: the day will reach $TOTAL$",
+    "message": "Confirm: this reaches $TOTAL$",
     "placeholders": {
       "total": {
         "content": "$1"
