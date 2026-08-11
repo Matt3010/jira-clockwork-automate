@@ -222,6 +222,14 @@ async function refreshLogged({ isoDate }) {
   const jira = new JiraClient(channel);
   const me = await resolveMe(jira, config).catch((error) => withSiteContext(error, channel.host));
   const logged = await loggedMinutesForDay(jira, { isoDate, accountId: me.accountId });
+
+  // Se il giorno guardato e' oggi, il badge si aggiorna con questi stessi
+  // numeri: nessuna richiesta in piu'. Serve quando le ore le hai messe da
+  // Clockwork e non da qui — altrimenti il badge le vedrebbe solo alla sveglia.
+  if (isoDate === todayIso() && config.work.showBadge) {
+    await paintBadge(missingToday(config, logged.total));
+  }
+
   return {
     alreadyLoggedMinutes: logged.total,
     loggedByIssue: logged.byIssue,
@@ -239,15 +247,32 @@ async function refreshLogged({ isoDate }) {
  * Se non si riesce a leggere (nessuna scheda Jira aperta) il badge viene
  * cancellato invece di restare fermo: un numero vecchio e' peggio di nessuno.
  */
-async function refreshBadge() {
-  const config = await loadConfig();
-  const spegni = async () => {
+/**
+ * Disegna il badge. `missing` a null lo spegne: quando non sappiamo, non si
+ * afferma niente.
+ */
+async function paintBadge(missing) {
+  if (missing === null) {
     await chrome.action.setBadgeText({ text: '' });
     await chrome.action.setTitle({ title: t('popupTitle') });
-  };
+    return;
+  }
+  await chrome.action.setBadgeBackgroundColor({ color: '#c9372c' });
+  await chrome.action.setBadgeText({ text: missing ? shortMinutes(missing) : '' });
+  await chrome.action.setTitle({
+    title: missing ? t('badgeMissing', formatMinutes(missing)) : t('badgeComplete')
+  });
+}
 
+/** Quante ore mancano oggi, dato quanto risulta gia' registrato. */
+function missingToday(config, loggedMinutes) {
+  return Math.max(0, Math.round((config.work.dailyHours || 8) * 60) - loggedMinutes);
+}
+
+async function refreshBadge() {
+  const config = await loadConfig();
   if (!config.work.showBadge) {
-    await spegni();
+    await paintBadge(null);
     return { missing: null, shown: false };
   }
 
@@ -255,20 +280,12 @@ async function refreshBadge() {
     const channel = await jiraChannel(config);
     const jira = new JiraClient(channel);
     const me = await resolveMe(jira, config);
-    const isoDate = todayIso();
-    const logged = await loggedMinutesForDay(jira, { isoDate, accountId: me.accountId });
-
-    const budget = Math.round((config.work.dailyHours || 8) * 60);
-    const missing = Math.max(0, budget - logged.total);
-
-    await chrome.action.setBadgeBackgroundColor({ color: '#c9372c' });
-    await chrome.action.setBadgeText({ text: missing ? shortMinutes(missing) : '' });
-    await chrome.action.setTitle({
-      title: missing ? t('badgeMissing', formatMinutes(missing)) : t('badgeComplete')
-    });
+    const logged = await loggedMinutesForDay(jira, { isoDate: todayIso(), accountId: me.accountId });
+    const missing = missingToday(config, logged.total);
+    await paintBadge(missing);
     return { missing, shown: true };
   } catch {
-    await spegni();
+    await paintBadge(null);
     return { missing: null, shown: false };
   }
 }
@@ -338,6 +355,7 @@ async function deleteLogged({ isoDate, issueKey, worklogIds = null }) {
       break;
     }
   }
+  await refreshBadge();
   return { deleted, minutes, total: miei.length, error: errore };
 }
 
@@ -557,6 +575,10 @@ async function submit({ isoDate, rows }) {
       .filter((row) => row.kind === 'meeting' && row.enabled && row.memoryKey && row.issueKey)
       .map((row) => [row.memoryKey, row.issueKey])
   );
+
+  // Il badge deve seguire subito: aspettare la sveglia dei 15 minuti lo
+  // lascerebbe fermo su un numero che non e' piu' vero.
+  await refreshBadge();
 
   return { results, host: channel.host };
 }

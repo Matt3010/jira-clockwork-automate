@@ -43,6 +43,7 @@ const state = {
   alreadyLoggedMinutes: 0,
   endOfDay: null,
   overflowMinutes: 0,
+  duplicateRows: [],
   loggedEntries: [],
   // Righe con l'elenco dei worklog già su Jira aperto.
   expanded: new Set(),
@@ -193,6 +194,9 @@ function updateTotal() {
   // Ogni ricalcolo annulla una conferma in sospeso: il piano è cambiato, e
   // confermare un totale che non è più quello sarebbe una trappola.
   state.overflowMinutes = Math.max(0, sforo);
+  // Righe che stanno per scrivere ore su una issue che oggi ne ha già: non
+  // sforano per forza il monte ore, ma restano doppioni.
+  state.duplicateRows = inviabili.filter((row) => row.existingMinutes);
   disarmSubmit();
   el.submit.disabled = sendable === 0;
   setButton(el.submit, 'send', sendable ? t('btnSendCount', sendable) : t('btnSend'));
@@ -202,24 +206,42 @@ function updateTotal() {
 // diventa rosso e chiede conferma, con la via d'uscita accanto.
 let confirmingSend = false;
 
-function armSubmit() {
-  confirmingSend = true;
-  el.submit.classList.remove('primary');
-  el.submit.classList.add('danger');
-  setButton(el.submit, 'send', t('btnConfirmDay', formatMinutes(
-    state.alreadyLoggedMinutes + sendableRows().reduce((s, r) => s + r.minutes, 0)
-  )));
-  el.cancelSend.hidden = false;
+/** Un invio è da confermare se sfora il monte ore o se riscrive ore già messe. */
+function needsConfirm() {
+  return state.overflowMinutes > 0 || state.duplicateRows.length > 0;
 }
 
-// Senza uscita anticipata: dev'essere idempotente, altrimenti basta un giro in
-// cui `confirmingSend` è già falso perché "Annulla" resti visibile per sempre.
-function disarmSubmit() {
-  confirmingSend = false;
-  el.submit.classList.remove('danger');
-  el.submit.classList.add('primary');
-  el.cancelSend.hidden = true;
+/** Cosa dire sul pulsante rosso. Lo sforo vince: è il problema più grande. */
+function confirmLabel() {
+  if (state.overflowMinutes > 0) {
+    return t('btnConfirmDay', formatMinutes(
+      state.alreadyLoggedMinutes + sendableRows().reduce((s, r) => s + r.minutes, 0)
+    ));
+  }
+  const doppioni = state.duplicateRows;
+  return doppioni.length === 1
+    ? t('btnConfirmDuplicateOne', doppioni[0].issueKey, formatMinutes(doppioni[0].existingMinutes))
+    : t('btnConfirmDuplicateMany', doppioni.length);
 }
+
+/**
+ * Unico interruttore dello stato di conferma: colore del pulsante, etichetta e
+ * presenza di "Annulla" cambiano sempre insieme.
+ *
+ * Erano tre istruzioni sparse in due funzioni, e bastava un giro in cui una non
+ * veniva eseguita perché "Annulla" restasse in vista con il pulsante ancora blu.
+ * Legandole qui, quello stato non è più rappresentabile.
+ */
+function setConfirming(on) {
+  confirmingSend = on;
+  el.submit.classList.toggle('danger', on);
+  el.submit.classList.toggle('primary', !on);
+  el.cancelSend.hidden = !on;
+  if (on) setButton(el.submit, 'send', confirmLabel());
+}
+
+const armSubmit = () => setConfirming(true);
+const disarmSubmit = () => setConfirming(false);
 
 /** I segmenti di una riga, o l'unico blocco se non sono stati calcolati. */
 function segmentsOf(row) {
@@ -1152,8 +1174,8 @@ el.toggleAll.addEventListener('change', () => {
 });
 el.analyze.addEventListener('click', () => analyze());
 el.submit.addEventListener('click', () => {
-  // Se la giornata sforerebbe, il primo clic arma la conferma invece di inviare.
-  if (state.overflowMinutes > 0 && !confirmingSend) {
+  // Se c'è qualcosa da confermare, il primo clic arma invece di inviare.
+  if (needsConfirm() && !confirmingSend) {
     armSubmit();
     return;
   }

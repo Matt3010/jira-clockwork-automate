@@ -863,5 +863,24 @@
         "content": "$1"
       }
     }
+  },
+  "btnConfirmDuplicateOne": {
+    "message": "Confirm: $ISSUE$ already has $AMOUNT$ today",
+    "placeholders": {
+      "issue": {
+        "content": "$1"
+      },
+      "amount": {
+        "content": "$2"
+      }
+    }
+  },
+  "btnConfirmDuplicateMany": {
+    "message": "Confirm: $COUNT$ rows already have hours today",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   }
 }

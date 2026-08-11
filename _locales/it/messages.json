@@ -863,5 +863,24 @@
         "content": "$1"
       }
     }
+  },
+  "btnConfirmDuplicateOne": {
+    "message": "Conferma: $ISSUE$ ha già $AMOUNT$ oggi",
+    "placeholders": {
+      "issue": {
+        "content": "$1"
+      },
+      "amount": {
+        "content": "$2"
+      }
+    }
+  },
+  "btnConfirmDuplicateMany": {
+    "message": "Conferma: $COUNT$ righe hanno già ore oggi",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
   }
 }
