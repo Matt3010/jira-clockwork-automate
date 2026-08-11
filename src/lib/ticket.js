@@ -89,69 +89,14 @@ export function usefulTransitions(transitions, currentStatus) {
   return (transitions || []).filter((tr) => tr?.id && norm(tr.to) !== attuale);
 }
 
-// ------------------------------------------------------- salti di piu' stati
-
-/**
- * Gli stati del workflow per il tipo di issue, nell'ordine di Jira.
- *
- * Il tipo conta: in un progetto un bug e una storia possono avere workflow
- * diversi, e offrire uno stato che per quel tipo non esiste porta a un salto
- * che si ferma al primo passo. Se il tipo non si trova si usa il primo
- * elenco: meglio un ordine approssimato che nessun ordine.
- */
-export function statesForType(perType, issueType) {
-  const elenchi = perType || [];
-  const scelto = elenchi.find((voce) => norm(voce.type) === norm(issueType)) || elenchi[0];
-  return scelto?.statuses || [];
-}
-
-/**
- * Il prossimo passo per andare da `from` a `to`.
- *
- * Il workflow non ce lo da' nessuno: Jira dice solo dove puoi andare da dove
- * sei. Quindi si cammina a vista, usando l'ordine degli stati come bussola —
- * se il bersaglio sta piu' avanti si prende la transizione che avanza di piu'
- * senza superarlo, e si rilegge. Sui workflow lineari, che sono la norma,
- * arriva; su quelli che si biforcano puo' fermarsi, e allora si dice dove si
- * e' arrivati invece di far finta di niente.
- *
- * Restituisce la transizione da applicare, oppure null se non c'e' un passo
- * che avvicini — fermarsi e' meglio che girare in tondo.
- */
-export function planStep({ from, to, transitions, order }) {
-  const elenco = (transitions || []).filter((tr) => tr?.id);
-  if (norm(from) === norm(to)) return null;
-
-  // Se ci si arriva in un colpo non serve nessuna bussola.
-  const diretta = elenco.find((tr) => norm(tr.to) === norm(to));
-  if (diretta) return diretta;
-
-  const posizioni = new Map((order || []).map((stato, i) => [norm(stato.name), i]));
-  const partenza = posizioni.get(norm(from));
-  const arrivo = posizioni.get(norm(to));
-  // Senza sapere dove stanno i due estremi non c'e' direzione da seguire, e
-  // tirare a indovinare vorrebbe dire spostare il ticket a caso.
-  if (partenza === undefined || arrivo === undefined) return null;
-
-  const avanti = arrivo > partenza;
-  let migliore = null;
-  let distanza = Infinity;
-
-  for (const tr of elenco) {
-    const dove = posizioni.get(norm(tr.to));
-    if (dove === undefined) continue;
-    // Solo passi nella direzione giusta, e che si muovano davvero.
-    if (avanti ? dove <= partenza : dove >= partenza) continue;
-    // E mai oltre il bersaglio: superarlo significherebbe dover tornare
-    // indietro, e ogni passaggio in Jira lascia una traccia nel changelog.
-    if (avanti ? dove > arrivo : dove < arrivo) continue;
-
-    const quanto = Math.abs(arrivo - dove);
-    if (quanto < distanza) {
-      distanza = quanto;
-      migliore = tr;
-    }
-  }
-
-  return migliore;
-}
+// Nota su cosa NON c'e' qui: un modo per saltare a uno stato lontano.
+//
+// C'e' stato, e camminava il workflow a vista usando l'ordine degli stati come
+// bussola. Funzionava sui workflow lineari e indovinava su quelli che si
+// biforcano — cioe' spostava il ticket dove pareva a lui. Le transizioni che
+// Jira restituisce sono invece corrette per costruzione, e incatenarne
+// diverse costa un click ciascuna ma non sbaglia mai.
+//
+// Il salto vero torna possibile il giorno in cui si ha il grafo del workflow
+// (`/rest/api/3/workflow/search?expand=transitions`, che vuole i permessi di
+// amministrazione). Allora sara' un cammino su archi reali, non una stima.

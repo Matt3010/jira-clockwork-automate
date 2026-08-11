@@ -46,13 +46,14 @@ for (const livello of ["'err'", "'warn'"]) {
   const moveTicket = popup.slice(popup.indexOf('async function moveTicket('));
   const corpo = moveTicket.slice(0, moveTicket.indexOf('\n}'));
   const conferme = [...corpo.matchAll(/message\(/g)];
-  assert.ok(conferme.length >= 2, 'lo spostamento ha più esiti da raccontare');
+  assert.ok(conferme.length >= 1, 'lo spostamento conferma quello che ha fatto');
   assert.equal(
-    [...corpo.matchAll(/channel: canale/g)].length, conferme.length,
-    'ogni esito dello spostamento deve passare dallo stesso canale, o si impilano di nuovo'
+    [...corpo.matchAll(/channel: `ticket:\$\{issue\.key\}`/g)].length, conferme.length,
+    'ogni avviso dello spostamento deve passare dal canale della riga, o si impilano di nuovo'
   );
-  assert.match(corpo, /const canale = `ticket:\$\{issue\.key\}`/,
-    'il canale è la riga: due ticket diversi possono avere due avvisi insieme');
+  // Il canale è la riga e non "i ticket" in generale: spostare due ticket
+  // diversi sono due notizie diverse, e possono stare a schermo insieme.
+  assert.match(corpo, /channel: `ticket:\$\{issue\.key\}`/);
 }
 
 console.log('avvisi: tutti i controlli passati.');

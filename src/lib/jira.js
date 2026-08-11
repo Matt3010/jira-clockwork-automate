@@ -129,28 +129,6 @@ export class JiraClient {
     }));
   }
 
-  /**
-   * Tutti gli stati del progetto, divisi per tipo di issue.
-   *
-   * Le transizioni dicono solo dove puoi andare *adesso*; questo dice quali
-   * stati esistono, che e' quello che serve per offrire anche i salti piu'
-   * lunghi. L'ordine e' quello in cui Jira li restituisce, cioe' quello del
-   * workflow: e' l'unico indizio che abbiamo sulla direzione.
-   */
-  async getProjectStatuses(projectKey) {
-    const data = await this.request(
-      `/rest/api/3/project/${encodeURIComponent(projectKey)}/statuses`
-    );
-    return (Array.isArray(data) ? data : []).map((tipo) => ({
-      type: tipo.name || '',
-      statuses: (tipo.statuses || []).map((stato) => ({
-        id: stato.id,
-        name: stato.name || '',
-        category: stato.statusCategory?.key || ''
-      }))
-    }));
-  }
-
   async transitionIssue(key, transitionId) {
     return this.request(`/rest/api/3/issue/${encodeURIComponent(key)}/transitions`, {
       method: 'POST',
@@ -359,6 +337,53 @@ export async function collectOpenIssues(client, { projects, limit = 60 }) {
     // ogni progetto, le categorie no.
     category: issue.fields?.status?.statusCategory?.key || '',
     type: issue.fields?.issuetype?.name || '',
+    created: issue.fields?.created || null,
+    updated: issue.fields?.updated || null
+  }));
+}
+
+/** Dentro una stringa JQL virgolette e barre vanno protette, o la query si spezza. */
+const jqlString = (testo) => String(testo).replace(/["\\]/g, '\\$&');
+
+/** Sembra una chiave di issue: due lettere o piu', trattino, numero. */
+const PARE_UNA_CHIAVE = /^[A-Za-z][A-Za-z0-9_]+-\d+$/;
+
+/**
+ * Cerca un ticket, anche di altri.
+ *
+ * A differenza di tutto il resto qui non c'e' `assignee = currentUser()`: e'
+ * il caso in cui ti serve il ticket di un collega — per capire a che punto e',
+ * o perche' ci devi registrare sopra delle ore. Per questo torna anche
+ * l'assegnatario: senza, un elenco di ticket non tuoi non dice di chi sono.
+ */
+export async function searchIssues(client, { query, projects, limit = 25 }) {
+  const termine = String(query || '').trim();
+  if (!termine) return [];
+
+  // Una chiave si cerca per quello che e': `text ~ "ABC-12"` non la trova, e
+  // incollare una chiave e' il modo piu' comune di cercare un ticket.
+  const filtro = PARE_UNA_CHIAVE.test(termine)
+    ? `key = "${jqlString(termine.toUpperCase())}"`
+    : `text ~ "${jqlString(termine)}"`;
+
+  // Il filtro progetti non si applica alla ricerca per chiave: se incolli una
+  // chiave sai gia' quale ticket vuoi, e non trovarlo perche' sta fuori dai
+  // progetti configurati sarebbe solo fastidioso.
+  const ambito = PARE_UNA_CHIAVE.test(termine) ? '' : projectClause(projects);
+  const jql = `${ambito}${filtro} ORDER BY updated DESC`;
+
+  const issues = await client.search(jql, {
+    fields: ['summary', 'status', 'created', 'updated', 'issuetype', 'assignee'],
+    maxResults: limit
+  }).catch(() => []);
+
+  return issues.map((issue) => ({
+    key: issue.key,
+    summary: issue.fields?.summary || '',
+    status: issue.fields?.status?.name || '',
+    category: issue.fields?.status?.statusCategory?.key || '',
+    type: issue.fields?.issuetype?.name || '',
+    assignee: issue.fields?.assignee?.displayName || '',
     created: issue.fields?.created || null,
     updated: issue.fields?.updated || null
   }));

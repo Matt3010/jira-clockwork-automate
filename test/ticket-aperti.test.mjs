@@ -6,10 +6,8 @@
 // c'è un annulla.
 
 import assert from 'node:assert/strict';
-import { JiraClient, collectOpenIssues } from '../src/lib/jira.js';
-import {
-  groupOpenIssues, openedOn, planStep, statesForType, usefulTransitions
-} from '../src/lib/ticket.js';
+import { JiraClient, collectOpenIssues, searchIssues } from '../src/lib/jira.js';
+import { groupOpenIssues, openedOn, usefulTransitions } from '../src/lib/ticket.js';
 
 function fakeClient(issues) {
   const chiamate = [];
@@ -206,151 +204,83 @@ assert.equal(openedOn(null), '');
     'senza stato di partenza non si scarta nulla');
 }
 
-// ======================================================== gli stati del progetto
+// ======================================================== ricerca libera
+// Qui manca apposta `assignee = currentUser()`: serve a trovare il ticket di
+// un collega. Se ci scappasse dentro, la barra di ricerca cercherebbe solo
+// fra i tuoi e non lo direbbe a nessuno.
 {
-  const ch = canale(() => json([
-    { name: 'Bug', statuses: [{ id: '1', name: 'Aperto', statusCategory: { key: 'new' } }] },
-    { name: 'Task', statuses: [{ id: '2', name: 'Da fare', statusCategory: { key: 'new' } }] }
-  ]));
-  const jira = new JiraClient(ch);
-  const perTipo = await jira.getProjectStatuses('ABC');
-  assert.equal(ch.chiamate[0].path, '/rest/api/3/project/ABC/statuses');
-  assert.deepEqual(perTipo[0], {
-    type: 'Bug', statuses: [{ id: '1', name: 'Aperto', category: 'new' }]
-  });
+  const client = fakeClient([{
+    key: 'ABC-7',
+    fields: {
+      summary: 'Errore in fase di login',
+      status: { name: 'In corso', statusCategory: { key: 'indeterminate' } },
+      issuetype: { name: 'Bug' },
+      assignee: { displayName: 'Nome Cognome' },
+      created: '2026-05-02T09:00:00.000+0200',
+      updated: '2026-08-01T09:00:00.000+0200'
+    }
+  }]);
 
-  // Il workflow dipende dal tipo: offrire a un bug gli stati di una storia
-  // porta a un salto che si ferma al primo passo.
-  assert.deepEqual(statesForType(perTipo, 'Task').map((s) => s.name), ['Da fare']);
-  assert.deepEqual(statesForType(perTipo, 'task').map((s) => s.name), ['Da fare'],
-    'il tipo si confronta senza badare alle maiuscole');
-  assert.deepEqual(statesForType(perTipo, 'Epic').map((s) => s.name), ['Aperto'],
-    'un tipo sconosciuto ripiega sul primo elenco: un ordine approssimato è meglio di nessuno');
-  assert.deepEqual(statesForType([], 'Task'), []);
-  assert.deepEqual(statesForType(undefined, 'Task'), []);
+  const trovati = await searchIssues(client, { query: 'login', projects: ['ABC'] });
+  const { jql, opzioni } = client.chiamate[0];
+
+  assert.doesNotMatch(jql, /assignee/, 'la ricerca non deve limitarsi ai tuoi ticket');
+  assert.doesNotMatch(jql, /statusCategory/, 'né ai soli ticket aperti: si cerca anche il chiuso');
+  assert.match(jql, /text ~ "login"/);
+  assert.match(jql, /project in \(ABC\)/, 'la ricerca per testo resta nei progetti configurati');
+  assert.match(jql, /ORDER BY updated DESC/, 'l ultimo toccato per primo');
+  assert.ok(opzioni.fields.includes('assignee'),
+    'senza assegnatario un elenco di ticket non tuoi non dice di chi sono');
+
+  assert.equal(trovati[0].assignee, 'Nome Cognome');
+  assert.equal(trovati[0].status, 'In corso');
+  assert.equal(trovati[0].category, 'indeterminate');
 }
 
-// ======================================================== salti di più stati
-// Il workflow di esempio, lineare come quasi tutti:
-const ORDINE = ['To Do', 'IN PROGRESS', 'DEV PR', 'DEV TEST', 'STAGE PR', 'Stage test', 'Done']
-  .map((name) => ({ name, category: name === 'Done' ? 'done' : 'indeterminate' }));
-
-const tr = (id, to) => ({ id, name: to, to, category: 'indeterminate' });
-
-// --- se ci si arriva in un colpo, si va e basta ---------------------------
+// --- una chiave si cerca per quello che è ---------------------------------
 {
-  const passo = planStep({
-    from: 'To Do', to: 'IN PROGRESS', order: ORDINE,
-    transitions: [tr('11', 'IN PROGRESS'), tr('21', 'DEV PR')]
-  });
-  assert.equal(passo.to, 'IN PROGRESS');
+  const client = fakeClient([]);
+  await searchIssues(client, { query: 'abc-123', projects: ['XYZ'] });
+  const { jql } = client.chiamate[0];
+  // `text ~ "ABC-123"` non trova la issue ABC-123, e incollare una chiave è
+  // il modo più comune di cercare un ticket.
+  assert.match(jql, /^key = "ABC-123"/, 'la chiave si normalizza in maiuscolo e si cerca per uguaglianza');
+  assert.doesNotMatch(jql, /project in/,
+    'e non si filtra per progetto: se incolli una chiave sai già quale ticket vuoi');
 }
 
-// --- altrimenti si avanza il più possibile senza superare il bersaglio ----
+// --- il termine non deve poter rompere la query ---------------------------
 {
-  // Da "To Do" verso "Stage test": Jira offre solo i primi due passi.
-  const passo = planStep({
-    from: 'To Do', to: 'Stage test', order: ORDINE,
-    transitions: [tr('11', 'IN PROGRESS'), tr('21', 'DEV PR')]
-  });
-  assert.equal(passo.to, 'DEV PR', 'fra i passi possibili si prende quello che avvicina di più');
-}
-{
-  // Superare il bersaglio significherebbe dover tornare indietro, e ogni
-  // passaggio lascia una riga nel changelog del ticket.
-  const passo = planStep({
-    from: 'To Do', to: 'DEV PR', order: ORDINE,
-    transitions: [tr('11', 'IN PROGRESS'), tr('31', 'Done')]
-  });
-  assert.equal(passo.to, 'IN PROGRESS', 'meglio un passo corto che oltrepassare');
+  const client = fakeClient([]);
+  await searchIssues(client, { query: 'dice "ciao" \\ a tutti', projects: [] });
+  const { jql } = client.chiamate[0];
+  assert.match(jql, /text ~ "dice \\"ciao\\" \\\\ a tutti"/,
+    'virgolette e barre vanno protette, o la JQL si spezza a metà termine');
 }
 
-// --- si torna anche indietro ----------------------------------------------
+// --- niente da cercare, nessuna richiesta ---------------------------------
 {
-  const passo = planStep({
-    from: 'Stage test', to: 'IN PROGRESS', order: ORDINE,
-    transitions: [tr('11', 'DEV TEST'), tr('21', 'Done')]
-  });
-  assert.equal(passo.to, 'DEV TEST', 'verso il bersaglio, non nella direzione opposta');
+  const client = fakeClient([]);
+  assert.deepEqual(await searchIssues(client, { query: '   ', projects: [] }), []);
+  assert.deepEqual(await searchIssues(client, { query: '', projects: [] }), []);
+  assert.deepEqual(await searchIssues(client, {}), []);
+  assert.equal(client.chiamate.length, 0, 'un campo vuoto non deve interrogare Jira');
 }
 
-// --- quando non c'è strada ci si ferma ------------------------------------
+// --- una ricerca che fallisce non è un errore da mostrare -----------------
 {
-  assert.equal(
-    planStep({
-      from: 'To Do', to: 'Stage test', order: ORDINE, transitions: [tr('11', 'Done')]
-    }),
-    null,
-    'l unica transizione supera il bersaglio: fermarsi è meglio che finire altrove'
-  );
-
-  assert.equal(planStep({ from: 'To Do', to: 'To Do', order: ORDINE, transitions: [tr('11', 'Done')] }),
-    null, 'sei già dove volevi andare');
-
-  assert.equal(
-    planStep({
-      from: 'Uno stato fuori elenco', to: 'Stage test', order: ORDINE, transitions: [tr('11', 'DEV PR')]
-    }),
-    null,
-    'senza sapere da dove si parte non c è direzione: tirare a indovinare sposterebbe a caso'
-  );
-
-  assert.equal(
-    planStep({
-      from: 'To Do', to: 'Stato che non esiste', order: ORDINE, transitions: [tr('11', 'DEV PR')]
-    }),
-    null,
-    'e nemmeno senza sapere dove si vuole arrivare'
-  );
-
-  assert.equal(planStep({ from: 'To Do', to: 'DEV PR', order: ORDINE, transitions: [] }), null);
-  assert.equal(planStep({ from: 'To Do', to: 'DEV PR', order: ORDINE, transitions: undefined }), null);
-  assert.equal(
-    planStep({ from: 'To Do', to: 'DEV PR', order: ORDINE, transitions: [{ to: 'DEV PR' }] }),
-    null,
-    'una transizione senza id non è applicabile'
-  );
+  const client = { async search() { throw new Error('JQL non valida'); } };
+  assert.deepEqual(await searchIssues(client, { query: 'qualcosa', projects: [] }), [],
+    'si scrive a mano: un termine che Jira non digerisce dà zero risultati, non un errore');
 }
 
-// --- il percorso completo, un passo alla volta ----------------------------
-// È il caso dello screenshot: sei spostamenti a mano per attraversare il
-// workflow. Qui si verifica che la catena arrivi davvero in fondo.
+// --- campi mancanti non producono valori sporchi --------------------------
 {
-  const disponibili = {
-    'To Do': ['IN PROGRESS'],
-    'IN PROGRESS': ['DEV PR', 'To Do'],
-    'DEV PR': ['DEV TEST'],
-    'DEV TEST': ['STAGE PR'],
-    'STAGE PR': ['Stage test']
-  };
-
-  let corrente = 'To Do';
-  const percorso = [];
-  for (let i = 0; i < 8; i += 1) {
-    const passo = planStep({
-      from: corrente,
-      to: 'Stage test',
-      order: ORDINE,
-      transitions: (disponibili[corrente] || []).map((to, n) => tr(`${n}`, to))
-    });
-    if (!passo) break;
-    corrente = passo.to;
-    percorso.push(passo.to);
-    if (corrente === 'Stage test') break;
-  }
-
-  assert.deepEqual(percorso, ['IN PROGRESS', 'DEV PR', 'DEV TEST', 'STAGE PR', 'Stage test']);
-  assert.ok(!percorso.includes('To Do'), 'non deve tornare indietro strada facendo');
-}
-
-// --- e uno che si ferma a metà --------------------------------------------
-{
-  // Da "DEV PR" in avanti il workflow si biforca e Jira non offre niente che
-  // avvicini: il ticket resta lì, e chi ha cliccato deve saperlo.
-  const passo = planStep({
-    from: 'DEV PR', to: 'Stage test', order: ORDINE, transitions: [tr('11', 'To Do')]
-  });
-  assert.equal(passo, null);
+  const client = fakeClient([{ key: 'ABC-9', fields: {} }]);
+  const [trovato] = await searchIssues(client, { query: 'x', projects: [] });
+  assert.equal(trovato.assignee, '', 'non assegnato è un dato, e il popup lo scrive a parole');
+  assert.equal(trovato.summary, '');
+  assert.equal(trovato.status, '');
 }
 
 console.log('ticket aperti: tutti i controlli passati.');

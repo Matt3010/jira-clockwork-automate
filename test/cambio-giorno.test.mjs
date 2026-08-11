@@ -37,7 +37,9 @@ const blocco = (nome) => {
 }
 
 // --- ogni ritardo accorpa: il timer precedente va annullato ---------------
-for (const nome of ['scheduleAnalyze', 'scheduleLoadLog']) {
+// Vale anche per la ricerca: un tasto premuto è l'equivalente di un clic su
+// ‹, e una ricerca per lettera digitata sarebbe la stessa raffica.
+for (const nome of ['scheduleAnalyze', 'scheduleLoadLog', 'scheduleSearch']) {
   const corpo = blocco(nome);
   assert.match(corpo, /clearTimeout\(/,
     `${nome} non annulla il timer di prima: i clic si accodano invece di accorparsi`);
@@ -50,26 +52,35 @@ assert.match(blocco('scheduleLoadLog'), /logToken\+\+|\+\+logToken/,
   'programmare una lettura nuova deve invalidare subito quella in corso');
 
 // --- e chi legge scarta le risposte superate ------------------------------
-for (const [nome, token] of [['analyze', 'analyzeToken'], ['loadLog', 'logToken']]) {
+for (const [nome, token] of [
+  ['analyze', 'analyzeToken'], ['loadLog', 'logToken'], ['runSearch', 'searchToken']
+]) {
   const corpo = blocco(nome);
   assert.match(corpo, new RegExp(`const token = \\+\\+${token}`),
     `${nome} deve prendere un contrassegno prima di partire`);
   assert.match(corpo, new RegExp(`token !== ${token}`),
     `${nome} non controlla il contrassegno: una risposta vecchia può sovrascrivere quella buona`);
+}
 
-  // Il giorno va congelato all'inizio: leggendo `state.isoDate` dopo l'attesa
-  // si scriverebbe in tabella il risultato di ieri con l'etichetta di oggi.
-  assert.match(corpo, /const forDate = state\.isoDate/,
-    `${nome} deve fissare il giorno prima della richiesta`);
+// --- il dato su cui si legge va congelato all'inizio ----------------------
+// Leggendolo dopo l'attesa si mostrerebbe il risultato di una richiesta con
+// l'etichetta di un'altra: il giorno o il termine nel frattempo è cambiato.
+for (const [nome, campo] of [
+  ['analyze', 'forDate = state.isoDate'],
+  ['loadLog', 'forDate = state.isoDate'],
+  ['runSearch', 'query = state.searchQuery']
+]) {
+  const corpo = blocco(nome);
+  assert.ok(corpo.includes(`const ${campo}`), `${nome} deve fissare il dato prima della richiesta`);
   const dopoAttesa = corpo.slice(corpo.indexOf('await send('));
-  assert.doesNotMatch(dopoAttesa, /isoDate: state\.isoDate/,
-    `${nome} usa il giorno corrente dopo l attesa: nel frattempo può essere cambiato`);
+  assert.doesNotMatch(dopoAttesa, /state\.(isoDate|searchQuery)/,
+    `${nome} rilegge lo stato dopo l attesa: nel frattempo può essere cambiato`);
 }
 
 // --- il controllo va fatto anche sull'errore ------------------------------
 // Un errore di una richiesta superata cancellerebbe a schermo il risultato
-// buono, e mostrerebbe un messaggio che non riguarda il giorno che stai vedendo.
-for (const nome of ['analyze', 'loadLog']) {
+// buono, e mostrerebbe un messaggio che non riguarda quello che stai vedendo.
+for (const nome of ['analyze', 'loadLog', 'runSearch']) {
   const corpo = blocco(nome);
   const dopoCatch = corpo.slice(corpo.indexOf('} catch'));
   assert.match(dopoCatch, /token !== \w+Token/,

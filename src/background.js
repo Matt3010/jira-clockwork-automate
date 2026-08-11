@@ -14,9 +14,10 @@ import {
   collectDevPanelCommits,
   collectCreatedIssues,
   collectOpenIssues,
+  searchIssues,
   loggedMinutesForDay
 } from './lib/jira.js';
-import { groupOpenIssues, planStep, statesForType, usefulTransitions } from './lib/ticket.js';
+import { groupOpenIssues, usefulTransitions } from './lib/ticket.js';
 import { Channel, TransportError, detectAtlassianHosts, hostOf, tabsOnHost } from './lib/transport.js';
 import { buildPlan } from './lib/planner.js';
 import { formatMinutes, jiraStarted, shortMinutes, todayIso } from './lib/dates.js';
@@ -31,8 +32,9 @@ const HANDLERS = {
   copyFrom,
   activity,
   openIssues,
-  issueStates,
-  moveIssueTo,
+  findIssues,
+  issueTransitions,
+  moveIssue,
   refreshBadge,
   testJira,
   siteStatus,
@@ -383,115 +385,70 @@ async function openIssues() {
   return { groups: groupOpenIssues(issues), total: issues.length };
 }
 
-/** La chiave del progetto sta davanti al trattino: EGLVPN-2075 → EGLVPN. */
-const projectOf = (issueKey) => String(issueKey || '').split('-')[0];
+/**
+ * Cerca un ticket per chiave o per testo, senza limitarsi ai tuoi.
+ *
+ * L'elenco sopra risponde a "cosa ho in mano"; questa risponde a "dov'e'
+ * finito quel ticket la'", che e' una domanda diversa e capita spesso quando
+ * il ticket e' di un collega.
+ */
+async function findIssues({ query }) {
+  const config = await loadConfig();
+  const channel = await jiraChannel(config);
+  const jira = new JiraClient(channel);
+  const issues = await searchIssues(jira, { query, projects: config.jira.projects || [] })
+    .catch((error) => withSiteContext(error, channel.host));
 
-// Gli stati di un progetto non cambiano mentre guardi il popup, e chiederli a
-// ogni passo di un salto lungo sarebbe una richiesta di troppo per volta.
-const statiPerProgetto = new Map();
-
-async function projectStatuses(jira, projectKey) {
-  if (!statiPerProgetto.has(projectKey)) {
-    statiPerProgetto.set(projectKey, await jira.getProjectStatuses(projectKey).catch(() => []));
-  }
-  return statiPerProgetto.get(projectKey);
+  return { query, issues };
 }
 
 /**
- * Gli stati in cui la issue puo' finire — non solo quelli a un passo.
+ * Gli stati in cui la issue puo' andare da dove si trova adesso.
  *
- * Le transizioni di Jira dicono dove puoi andare adesso, e su un workflow
- * lungo significa passare per DEV PR, DEV TEST, STAGE PR uno alla volta anche
- * quando quello che vuoi e' l'ultimo. Qui si offre tutto il workflow, e
- * `direct` distingue quello che costa un passo da quello che ne costa
- * diversi: e' comunque un'informazione che vuoi avere prima di cliccare.
+ * Solo quelli a un passo, che sono quelli che dice Jira: corretti per
+ * costruzione. Per arrivare piu' lontano si incatenano — il popup riapre il
+ * menu sulla riga appena spostata, quindi e' un click per passo e restano
+ * tutti nello stesso punto dello schermo.
  *
- * Si chiedono solo al click su una riga: per tutto l'elenco sarebbero due
- * richieste per ticket all'apertura, per una vista che il piu' delle volte
+ * Si chiedono al click su una riga, non per tutto l'elenco: sarebbe una
+ * richiesta per ticket all'apertura, per una vista che il piu' delle volte
  * guardi e basta.
  */
-async function issueStates({ issueKey, issueType, status }) {
+async function issueTransitions({ issueKey, status }) {
   if (!issueKey) throw new Error(t('errMissingIssue'));
   const config = await loadConfig();
   const channel = await jiraChannel(config);
   const jira = new JiraClient(channel);
+  const transitions = await jira.getTransitions(issueKey)
+    .catch((error) => withSiteContext(error, channel.host));
 
-  const [transitions, perType] = await Promise.all([
-    jira.getTransitions(issueKey).catch((error) => withSiteContext(error, channel.host)),
-    projectStatuses(jira, projectOf(issueKey))
-  ]);
-
-  const utili = usefulTransitions(transitions, status);
-  const dirette = new Set(utili.map((tr) => tr.to.toLowerCase()));
-  const ordine = statesForType(perType, issueType);
-  const attuale = String(status || '').toLowerCase();
-
-  // Se il progetto non ha voluto dirci i suoi stati restano le transizioni
-  // dirette: meno scelta, ma non un menu vuoto.
-  const stati = ordine.length
-    ? ordine.filter((stato) => stato.name.toLowerCase() !== attuale)
-    : utili.map((tr) => ({ name: tr.to, category: tr.category }));
-
-  return {
-    issueKey,
-    states: stati.map((stato) => ({
-      name: stato.name,
-      category: stato.category,
-      direct: dirette.has(stato.name.toLowerCase())
-    }))
-  };
+  return { issueKey, transitions: usefulTransitions(transitions, status) };
 }
 
-/** Oltre questo un "salto" non e' piu' un salto: e' un workflow percorso a caso. */
-const MAX_PASSI = 8;
-
 /**
- * Porta la issue fino allo stato chiesto, attraversando gli stati intermedi.
+ * Sposta la issue di uno stato e restituisce l'elenco aggiornato.
  *
- * Jira non espone il grafo del workflow, solo le transizioni disponibili da
- * dove sei. Quindi si cammina: un passo, si rilegge, si sceglie il prossimo.
- * Sui workflow lineari — la norma — arriva; dove si biforca puo' fermarsi, e
- * in quel caso si dice fin dove si e' arrivati, perche' il ticket *e'* stato
- * mosso e far finta di niente sarebbe la bugia peggiore.
+ * Rileggere subito evita il caso in cui la riga resta a schermo con lo stato
+ * vecchio: dopo una transizione Jira puo' averne cambiati altri (regole di
+ * automazione), e mostrare quello che credevamo di aver scritto sarebbe una
+ * bugia comoda. Per lo stesso motivo lo stato d'arrivo si rilegge da Jira
+ * invece di darlo per buono dalla transizione.
  */
-async function moveIssueTo({ issueKey, issueType, status, target }) {
-  if (!issueKey || !target) throw new Error(t('errMissingIssue'));
+async function moveIssue({ issueKey, transitionId }) {
+  if (!issueKey || !transitionId) throw new Error(t('errMissingIssue'));
   const config = await loadConfig();
   const channel = await jiraChannel(config);
   const jira = new JiraClient(channel);
 
-  const order = statesForType(await projectStatuses(jira, projectOf(issueKey)), issueType);
-  const path = [];
-  let corrente = status || '';
+  await jira.transitionIssue(issueKey, transitionId)
+    .catch((error) => withSiteContext(error, channel.host));
 
-  for (let passo = 0; passo < MAX_PASSI; passo += 1) {
-    const transitions = await jira.getTransitions(issueKey)
-      .catch((error) => withSiteContext(error, channel.host));
-    const step = planStep({ from: corrente, to: target, transitions, order });
-    if (!step) break;
-
-    await jira.transitionIssue(issueKey, step.id)
-      .catch((error) => withSiteContext(error, channel.host));
-    corrente = step.to;
-    path.push(step.to);
-    if (corrente.toLowerCase() === String(target).toLowerCase()) break;
-  }
-
-  // Lo stato vero lo dice Jira, non la nostra ultima mossa: fra un passo e
-  // l'altro un'automazione puo' aver spostato ancora.
-  const finale = await jira.getIssue(issueKey, ['status'])
-    .then((issue) => issue?.fields?.status?.name || corrente)
-    .catch(() => corrente);
+  const reached = await jira.getIssue(issueKey, ['status'])
+    .then((issue) => issue?.fields?.status?.name || '')
+    .catch(() => '');
 
   const issues = await collectOpenIssues(jira, { projects: config.jira.projects || [] });
-  return {
-    groups: groupOpenIssues(issues),
-    total: issues.length,
-    moved: issueKey,
-    reached: finale,
-    target,
-    steps: path.length
-  };
+  return { groups: groupOpenIssues(issues), total: issues.length, moved: issueKey, reached };
 }
 
 /**

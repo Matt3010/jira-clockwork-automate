@@ -1052,37 +1052,26 @@
       }
     }
   },
-  "ticketsFarState": {
-    "message": "$STATUS$ — reached by going through the states in between",
+  "placeholderSearch": {
+    "message": "Search any ticket, yours or not"
+  },
+  "searchCount": {
+    "message": "$COUNT$ found",
     "placeholders": {
-      "status": {
+      "count": {
         "content": "$1"
       }
     }
   },
-  "msgTicketPartly": {
-    "message": "$KEY$ got as far as $REACHED$: from there Jira offers no step towards $TARGET$.",
+  "searchEmpty": {
+    "message": "No ticket matches “$QUERY$”.",
     "placeholders": {
-      "key": {
+      "query": {
         "content": "$1"
-      },
-      "reached": {
-        "content": "$2"
-      },
-      "target": {
-        "content": "$3"
       }
     }
   },
-  "msgTicketStuck": {
-    "message": "$KEY$ did not move: from here Jira offers no route to $TARGET$.",
-    "placeholders": {
-      "key": {
-        "content": "$1"
-      },
-      "target": {
-        "content": "$2"
-      }
-    }
+  "ticketsUnassigned": {
+    "message": "Unassigned"
   }
 }

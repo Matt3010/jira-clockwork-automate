@@ -485,7 +485,25 @@ tr.disabled .remove.wipe { opacity: 1; }
   color: var(--muted);
   font-size: 11px;
 }
+.search-row { padding: 10px 0 0; }
+.search { width: 100%; }
 .ticket-list { list-style: none; margin: 0; padding: 0 0 0 15px; }
+/* I risultati di ricerca non stanno dentro un gruppo: niente rientro. */
+.ticket-list.piatta { padding-left: 0; }
+.ticket-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 0 6px;
+  font-size: 11px;
+}
+.assegnato {
+  min-width: 0;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .ticket { border-top: 1px solid var(--border); }
 .ticket-list .ticket:first-child { border-top: none; }
 .ticket-line {
@@ -528,13 +546,6 @@ tr.disabled .remove.wipe { opacity: 1; }
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: .02em;
-}
-/* Il bordo tratteggiato dice "ci si arriva, ma passando per gli stati in
-   mezzo": è il costo del salto, non un divieto. */
-.moves .move-to.lontano {
-  border-style: dashed;
-  border-color: currentColor;
-  background: none;
 }
 .moves .move-to:hover:not(:disabled) { filter: brightness(1.08); border-color: currentColor; }
 .moves .move-to:disabled { opacity: .5; }

@@ -47,6 +47,7 @@ const el = {
   tickets: document.getElementById('tickets'),
   ticketsEmpty: document.getElementById('tickets-empty'),
   ticketsCount: document.getElementById('tickets-count'),
+  ticketsSearch: document.getElementById('tickets-search'),
   main: document.querySelector('main'),
   footer: document.querySelector('footer')
 };
@@ -80,6 +81,10 @@ const state = {
   // per non richiederle a ogni apertura.
   openMoveKey: null,
   transitionsByKey: new Map(),
+  // Ricerca: quando è attiva prende il posto dell'elenco, e i risultati non
+  // sono raggruppati — hanno già un ordine loro, di rilevanza.
+  searchQuery: '',
+  searchResults: [],
   host: ''
 };
 
@@ -1330,7 +1335,15 @@ function statusBadge(name, category) {
   return badge;
 }
 
-function ticketRow(issue) {
+/**
+ * Una riga di ticket.
+ *
+ * Nei gruppi lo stato è già il titolo del gruppo e l'assegnatario sei tu:
+ * ripeterli su ogni riga sarebbe rumore. Fra i risultati di ricerca invece
+ * servono entrambi — sono ticket sparsi per stati diversi, e possono essere
+ * di chiunque.
+ */
+function ticketRow(issue, { conStato = false } = {}) {
   const li = document.createElement('li');
   li.className = 'ticket';
   // Serve a ritrovare la riga dopo che lo spostamento l'ha cambiata di gruppo.
@@ -1368,6 +1381,24 @@ function ticketRow(issue) {
 
   riga.append(chiave, cosa, sposta);
   li.append(riga, menu);
+
+  if (conStato) {
+    // Seconda riga: stato e di chi è. Sotto, non accanto, perché il titolo si
+    // mangia già tutta la larghezza che c'è.
+    const sotto = document.createElement('div');
+    sotto.className = 'ticket-meta';
+    sotto.append(statusBadge(issue.status || t('ticketsNoStatus'), issue.category));
+
+    const chi = document.createElement('span');
+    chi.className = 'assegnato';
+    // «Non assegnato» è un'informazione, non un campo vuoto: spesso è proprio
+    // il motivo per cui stavi cercando quel ticket.
+    chi.textContent = issue.assignee || t('ticketsUnassigned');
+    sotto.append(chi);
+
+    li.insertBefore(sotto, menu);
+  }
+
   return li;
 }
 
@@ -1403,9 +1434,32 @@ function ticketGroup(gruppo) {
 }
 
 function renderTickets() {
+  if (state.searchQuery) return renderSearch();
+
   el.tickets.replaceChildren(...state.ticketGroups.map(ticketGroup));
   el.ticketsEmpty.hidden = state.ticketGroups.length > 0;
+  el.ticketsEmpty.textContent = t('ticketsEmpty');
   el.ticketsCount.textContent = state.ticketsTotal ? t('ticketsCount', state.ticketsTotal) : '';
+}
+
+/**
+ * I risultati della ricerca, in elenco piatto.
+ *
+ * Non raggruppati: un risultato di ricerca ha già un ordine suo — l'ultimo
+ * toccato per primo — e spezzarlo per stato nasconderebbe proprio quello che
+ * stavi cercando in fondo a un gruppo.
+ */
+function renderSearch() {
+  const elenco = document.createElement('ul');
+  elenco.className = 'ticket-list piatta';
+  elenco.append(...state.searchResults.map((issue) => ticketRow(issue, { conStato: true })));
+
+  el.tickets.replaceChildren(elenco);
+  el.ticketsEmpty.hidden = state.searchResults.length > 0;
+  el.ticketsEmpty.textContent = t('searchEmpty', state.searchQuery);
+  el.ticketsCount.textContent = state.searchResults.length
+    ? t('searchCount', state.searchResults.length)
+    : '';
 }
 
 async function loadTickets() {
@@ -1424,31 +1478,80 @@ async function loadTickets() {
 }
 
 /** Un elenco appena letto sostituisce il precedente, menu e cache compresi. */
-function applyTickets(groups, total, moved = '') {
+async function applyTickets(groups, total, moved = '', { riapri = false } = {}) {
   state.ticketGroups = groups || [];
   state.ticketsTotal = total || 0;
   state.ticketsLoaded = true;
   state.openMoveKey = null;
-  // Dopo uno spostamento gli stati raggiungibili sono altri: la cache di prima
-  // descriveva un punto del workflow in cui non siamo più.
+  // Dopo uno spostamento le transizioni disponibili sono altre: la cache di
+  // prima descriveva un punto del workflow in cui non siamo più.
   state.transitionsByKey.clear();
+
+  // Con la ricerca attiva a schermo ci sono i risultati, non i gruppi: vanno
+  // riletti, o resterebbero a mostrare lo stato di prima dello spostamento.
+  if (state.searchQuery) await runSearch();
+  else renderTickets();
+
+  if (moved) followMoved(moved, riapri);
+}
+
+// Stessa protezione del piano e del registro: si digita una lettera alla
+// volta, e senza ritardo sarebbe una ricerca per tasto premuto.
+let searchToken = 0;
+let searchTimer = null;
+
+function scheduleSearch(delay = 300) {
+  clearTimeout(searchTimer);
+  searchToken++;
+  searchTimer = setTimeout(runSearch, delay);
+}
+
+/** Annulla la ricerca e rimette in vista l'elenco dei tuoi ticket. */
+function clearSearch() {
+  clearTimeout(searchTimer);
+  searchToken++;
+  state.searchQuery = '';
+  state.searchResults = [];
   renderTickets();
-  if (moved) followMoved(moved);
+}
+
+async function runSearch() {
+  clearTimeout(searchTimer);
+  const token = ++searchToken;
+  const query = state.searchQuery;
+  if (!query) return clearSearch();
+
+  el.ticketsCount.textContent = t('emptyAnalysing');
+  el.ticketsEmpty.hidden = true;
+  try {
+    const { issues } = await send('findIssues', { query });
+    if (token !== searchToken) return;
+    state.searchResults = issues;
+    renderSearch();
+  } catch (error) {
+    if (token !== searchToken) return;
+    state.searchResults = [];
+    renderSearch();
+    reportAuthError(error, runSearch);
+  }
 }
 
 /**
- * Riporta lo sguardo sul ticket appena spostato.
+ * Riporta lo sguardo sul ticket appena spostato, e riapre il menu.
  *
  * Cambiare stato vuol dire cambiare gruppo, e il gruppo nuovo può stare fuori
  * schermo: senza questo, ogni spostamento fa perdere di vista il ticket su cui
- * si sta lavorando — e se ne devi fare quattro di fila lo insegui ogni volta.
+ * si sta lavorando. Riaprire il menu è l'altra metà: attraversare un workflow
+ * di sei stati resta un click per stato, ma tutti nello stesso punto invece
+ * che rincorrendo la riga giù per l'elenco.
  */
-function followMoved(key) {
+function followMoved(key, riapri = false) {
   const riga = el.tickets.querySelector(`.ticket[data-key="${CSS.escape(key)}"]`);
   if (!riga) return;
   const fermo = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   riga.scrollIntoView({ block: 'center', behavior: fermo ? 'auto' : 'smooth' });
   riga.classList.add('appena-spostato');
+  if (riapri) riga.querySelector('.move')?.click();
 }
 
 /**
@@ -1472,11 +1575,11 @@ async function toggleMoves(issue, menu, bottone) {
   menu.replaceChildren(hint(t('ticketsLoadingMoves')));
   bottone.disabled = true;
   try {
-    const { states } = await send('issueStates', {
-      issueKey: issue.key, issueType: issue.type, status: issue.status
+    const { transitions } = await send('issueTransitions', {
+      issueKey: issue.key, status: issue.status
     });
-    state.transitionsByKey.set(issue.key, states);
-    renderMoves(issue, menu, states);
+    state.transitionsByKey.set(issue.key, transitions);
+    renderMoves(issue, menu, transitions);
   } catch (error) {
     menu.replaceChildren(hint(error.message));
     reportAuthError(error, () => {});
@@ -1492,52 +1595,41 @@ function hint(testo) {
   return span;
 }
 
-function renderMoves(issue, menu, states) {
-  if (!states.length) return menu.replaceChildren(hint(t('ticketsNoMoves')));
+function renderMoves(issue, menu, transitions) {
+  if (!transitions.length) return menu.replaceChildren(hint(t('ticketsNoMoves')));
 
-  menu.replaceChildren(...states.map((stato) => {
+  menu.replaceChildren(...transitions.map((transizione) => {
     const bottone = document.createElement('button');
-    // `lontano` non è un divieto: è il costo. Ci si arriva lo stesso, ma
-    // passando per gli stati in mezzo, e vale la pena saperlo prima.
-    bottone.className = `move-to cat-${stato.category || 'unknown'}${stato.direct ? '' : ' lontano'}`;
+    // Il colore anticipa dove stai per mandare il ticket.
+    bottone.className = `move-to cat-${transizione.category || 'unknown'}`;
     bottone.type = 'button';
-    bottone.textContent = stato.name;
-    bottone.title = stato.direct ? stato.name : t('ticketsFarState', stato.name);
-    bottone.addEventListener('click', () => moveTicket(issue, stato, menu));
+    // Conta lo stato d'arrivo, non il nome della transizione: chi guarda
+    // pensa "voglio che stia in DEV TEST", non "voglio fare Passa a test".
+    bottone.textContent = transizione.to || transizione.name;
+    bottone.addEventListener('click', () => moveTicket(issue, transizione, menu));
     return bottone;
   }));
 }
 
-async function moveTicket(issue, stato, menu) {
+async function moveTicket(issue, transizione, menu) {
   for (const b of menu.querySelectorAll('button')) b.disabled = true;
-  menu.replaceChildren(hint(t('ticketsMoving', stato.name)));
+  menu.replaceChildren(hint(t('ticketsMoving', transizione.to || transizione.name)));
   try {
-    const esito = await send('moveIssueTo', {
-      issueKey: issue.key, issueType: issue.type, status: issue.status, target: stato.name
+    const esito = await send('moveIssue', {
+      issueKey: issue.key, transitionId: transizione.id
     });
-    applyTickets(esito.groups, esito.total, esito.moved);
-
-    // Il canale è la riga: spostare quattro ticket di fila lasciava quattro
-    // conferme impilate, e insieme dicevano meno dell'ultima da sola.
-    const canale = `ticket:${issue.key}`;
-    if (arrivato(esito)) {
-      message(t('msgTicketMoved', issue.key, esito.reached), 'ok', null, { channel: canale });
-    } else if (esito.steps) {
-      // Mosso, ma non fin dove volevi: il workflow si è biforcato e da lì in
-      // avanti la strada la sa solo Jira.
-      message(t('msgTicketPartly', issue.key, esito.reached, stato.name), 'warn', null,
-        { channel: canale });
-    } else {
-      message(t('msgTicketStuck', issue.key, stato.name), 'warn', null, { channel: canale });
-    }
+    // Il menu si riapre sulla riga spostata: attraversare un workflow lungo è
+    // un click per stato, e restano tutti nello stesso punto dello schermo.
+    applyTickets(esito.groups, esito.total, esito.moved, { riapri: true });
+    // Il canale è la riga: quattro passi di fila lasciavano quattro conferme
+    // impilate, e insieme dicevano meno dell'ultima da sola.
+    message(t('msgTicketMoved', issue.key, esito.reached || transizione.to), 'ok', null,
+      { channel: `ticket:${issue.key}` });
   } catch (error) {
     menu.hidden = true;
     reportAuthError(error, () => {});
   }
 }
-
-const arrivato = (esito) =>
-  String(esito.reached || '').toLowerCase() === String(esito.target || '').toLowerCase();
 
 /** Passa fra le viste. Il footer appartiene alle ore, non alle altre schede. */
 function showTab(nome) {
@@ -1627,6 +1719,20 @@ el.copyDo.addEventListener('click', copyFromDay);
 el.tabHours.addEventListener('click', () => showTab('hours'));
 el.tabLog.addEventListener('click', () => showTab('log'));
 el.tabTickets.addEventListener('click', () => showTab('tickets'));
+
+el.ticketsSearch.addEventListener('input', () => {
+  state.searchQuery = el.ticketsSearch.value.trim();
+  // Svuotare il campo deve rimettere subito l'elenco: aspettare il ritardo
+  // farebbe sembrare che non sia successo niente.
+  if (!state.searchQuery) return clearSearch();
+  scheduleSearch();
+});
+// Esc svuota il campo: è quello che fa ogni campo di ricerca.
+el.ticketsSearch.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape' || !state.searchQuery) return;
+  el.ticketsSearch.value = '';
+  clearSearch();
+});
 
 el.logCopy.addEventListener('click', async () => {
   try {
