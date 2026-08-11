@@ -987,5 +987,67 @@
   },
   "fieldReporter": {
     "message": "segnalatore"
+  },
+  "tabTickets": {
+    "message": "Ticket"
+  },
+  "btnRefreshTickets": {
+    "message": "Ricarica"
+  },
+  "btnMove": {
+    "message": "Sposta"
+  },
+  "ticketsEmpty": {
+    "message": "Non hai ticket aperti assegnati."
+  },
+  "ticketsCount": {
+    "message": "$COUNT$ ticket aperti",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "ticketsOpenedOn": {
+    "message": "Aperto il $DATE$",
+    "placeholders": {
+      "date": {
+        "content": "$1"
+      }
+    }
+  },
+  "ticketsNoDate": {
+    "message": "Senza data di apertura"
+  },
+  "ticketsNoStatus": {
+    "message": "Senza stato"
+  },
+  "ticketsNoMoves": {
+    "message": "Da qui non si va in nessun altro stato."
+  },
+  "ticketsLoadingMoves": {
+    "message": "Leggo gli stati disponibili…"
+  },
+  "ticketsMoving": {
+    "message": "Sposto…"
+  },
+  "titleOpenInJira": {
+    "message": "Apri $KEY$ su Jira",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      }
+    }
+  },
+  "msgTicketMoved": {
+    "message": "$KEY$ spostato in $STATUS$.",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      },
+      "status": {
+        "content": "$2"
+      }
+    }
   }
 }

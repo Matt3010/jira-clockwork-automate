@@ -987,5 +987,67 @@
   },
   "fieldReporter": {
     "message": "reporter"
+  },
+  "tabTickets": {
+    "message": "Tickets"
+  },
+  "btnRefreshTickets": {
+    "message": "Reload"
+  },
+  "btnMove": {
+    "message": "Move"
+  },
+  "ticketsEmpty": {
+    "message": "No open tickets assigned to you."
+  },
+  "ticketsCount": {
+    "message": "$COUNT$ open tickets",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "ticketsOpenedOn": {
+    "message": "Opened $DATE$",
+    "placeholders": {
+      "date": {
+        "content": "$1"
+      }
+    }
+  },
+  "ticketsNoDate": {
+    "message": "No opening date"
+  },
+  "ticketsNoStatus": {
+    "message": "No status"
+  },
+  "ticketsNoMoves": {
+    "message": "No other state available from here."
+  },
+  "ticketsLoadingMoves": {
+    "message": "Reading the available states…"
+  },
+  "ticketsMoving": {
+    "message": "Moving…"
+  },
+  "titleOpenInJira": {
+    "message": "Open $KEY$ in Jira",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      }
+    }
+  },
+  "msgTicketMoved": {
+    "message": "$KEY$ moved to $STATUS$.",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      },
+      "status": {
+        "content": "$2"
+      }
+    }
   }
 }

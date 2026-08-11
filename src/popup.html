@@ -7,7 +7,7 @@
 </head>
 <body>
   <header class="bar">
-    <div class="bar-left">
+    <div class="bar-left" id="day-picker">
       <label for="date" data-i18n="labelDay">Day</label>
       <input type="date" id="date" />
       <button id="prev-day" class="ghost icon-only" data-i18n-title="titlePrevDay" title="Previous day"></button>
@@ -22,6 +22,7 @@
   <nav class="tabs" role="tablist">
     <button id="tab-hours" class="tab" role="tab" aria-selected="true" data-i18n="tabHours">Hours</button>
     <button id="tab-log" class="tab" role="tab" aria-selected="false" data-i18n="tabLog">Activity</button>
+    <button id="tab-tickets" class="tab" role="tab" aria-selected="false" data-i18n="tabTickets">Tickets</button>
   </nav>
 
   <div id="messages"></div>
@@ -33,6 +34,15 @@
     </div>
     <ol id="log" class="log"></ol>
     <p id="log-empty" class="empty" data-i18n="logEmpty">Nothing recorded on Jira for this day.</p>
+  </section>
+
+  <section id="tickets-view" class="tickets-view" hidden>
+    <div class="log-head">
+      <span id="tickets-count" class="log-count"></span>
+      <button id="tickets-refresh" class="ghost" data-i18n="btnRefreshTickets">Reload</button>
+    </div>
+    <div id="tickets" class="tickets"></div>
+    <p id="tickets-empty" class="empty" data-i18n="ticketsEmpty">No open tickets assigned to you.</p>
   </section>
 
   <main>

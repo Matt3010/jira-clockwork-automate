@@ -118,6 +118,24 @@ export class JiraClient {
     return data.worklogs || [];
   }
 
+  /** Gli stati verso cui la issue puo' passare, per come e' messa adesso. */
+  async getTransitions(key) {
+    const data = await this.request(`/rest/api/3/issue/${encodeURIComponent(key)}/transitions`);
+    return (data.transitions || []).map((transizione) => ({
+      id: transizione.id,
+      name: transizione.name,
+      to: transizione.to?.name || '',
+      category: transizione.to?.statusCategory?.key || ''
+    }));
+  }
+
+  async transitionIssue(key, transitionId) {
+    return this.request(`/rest/api/3/issue/${encodeURIComponent(key)}/transitions`, {
+      method: 'POST',
+      body: { transition: { id: String(transitionId) } }
+    });
+  }
+
   async deleteWorklog(key, worklogId) {
     return this.request(
       `/rest/api/3/issue/${encodeURIComponent(key)}/worklog/${encodeURIComponent(worklogId)}`,
@@ -295,6 +313,33 @@ export async function collectCreatedIssues(client, { isoDate, projects }) {
     // creazioni ma resta valido per tutto il resto.
     return [];
   }
+}
+
+/**
+ * I tuoi ticket ancora aperti — tutto quello che non e' chiuso.
+ *
+ * Non dipende dal giorno scelto: e' quello che hai in ballo adesso. Serve a
+ * sapere su cosa stai lavorando, e da qui si possono anche spostare di stato.
+ */
+export async function collectOpenIssues(client, { projects, limit = 60 }) {
+  const jql = `${projectClause(projects)}assignee = currentUser() ` +
+    'AND statusCategory != Done ORDER BY updated DESC';
+  const issues = await client.search(jql, {
+    fields: ['summary', 'status', 'created', 'updated', 'issuetype'],
+    maxResults: limit
+  });
+
+  return issues.map((issue) => ({
+    key: issue.key,
+    summary: issue.fields?.summary || '',
+    status: issue.fields?.status?.name || '',
+    // La categoria e' quella canonica di Jira: gli stati hanno nomi diversi in
+    // ogni progetto, le categorie no.
+    category: issue.fields?.status?.statusCategory?.key || '',
+    type: issue.fields?.issuetype?.name || '',
+    created: issue.fields?.created || null,
+    updated: issue.fields?.updated || null
+  }));
 }
 
 // ------------------------------------------------ commit dal pannello Sviluppo

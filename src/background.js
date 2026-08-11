@@ -13,8 +13,10 @@ import {
   collectJiraActivity,
   collectDevPanelCommits,
   collectCreatedIssues,
+  collectOpenIssues,
   loggedMinutesForDay
 } from './lib/jira.js';
+import { groupOpenIssues, usefulTransitions } from './lib/ticket.js';
 import { Channel, TransportError, detectAtlassianHosts, hostOf, tabsOnHost } from './lib/transport.js';
 import { buildPlan } from './lib/planner.js';
 import { formatMinutes, jiraStarted, shortMinutes, todayIso } from './lib/dates.js';
@@ -28,6 +30,9 @@ const HANDLERS = {
   reloadSite,
   copyFrom,
   activity,
+  openIssues,
+  issueTransitions,
+  moveIssue,
   refreshBadge,
   testJira,
   siteStatus,
@@ -357,6 +362,64 @@ async function activity({ isoDate }) {
     isoDate,
     events: eventi.map((evento) => ({ ...evento, summary: titoli.get(evento.key) || '' }))
   };
+}
+
+// ------------------------------------------------------------------ i tuoi ticket
+
+/**
+ * I ticket che hai aperti, divisi per stato e per giorno di apertura.
+ *
+ * A differenza di tutto il resto non guarda il giorno scelto in alto: non e'
+ * "cosa ho fatto lunedi", e' "cosa ho in mano adesso". Per questo sta in una
+ * scheda sua.
+ */
+async function openIssues() {
+  const config = await loadConfig();
+  const channel = await jiraChannel(config);
+  const jira = new JiraClient(channel);
+  const issues = await collectOpenIssues(jira, { projects: config.jira.projects || [] })
+    .catch((error) => withSiteContext(error, channel.host));
+
+  return { groups: groupOpenIssues(issues), total: issues.length };
+}
+
+/**
+ * Gli stati verso cui una issue puo' andare da dove si trova ora.
+ *
+ * Si chiedono solo quando servono davvero — al click su una riga. Chiederle
+ * per tutte all'apertura sarebbe una richiesta per ticket, per un elenco che
+ * nella maggior parte dei casi guardi e basta.
+ */
+async function issueTransitions({ issueKey, status }) {
+  if (!issueKey) throw new Error(t('errMissingIssue'));
+  const config = await loadConfig();
+  const channel = await jiraChannel(config);
+  const jira = new JiraClient(channel);
+  const transitions = await jira.getTransitions(issueKey)
+    .catch((error) => withSiteContext(error, channel.host));
+
+  return { issueKey, transitions: usefulTransitions(transitions, status) };
+}
+
+/**
+ * Sposta la issue di stato e restituisce l'elenco aggiornato.
+ *
+ * Rileggere subito evita il caso in cui la riga resta a schermo con lo stato
+ * vecchio: dopo una transizione Jira puo' anche averne cambiati altri (regole
+ * di automazione), e mostrare quello che credevamo di aver scritto sarebbe una
+ * bugia comoda.
+ */
+async function moveIssue({ issueKey, transitionId }) {
+  if (!issueKey || !transitionId) throw new Error(t('errMissingIssue'));
+  const config = await loadConfig();
+  const channel = await jiraChannel(config);
+  const jira = new JiraClient(channel);
+
+  await jira.transitionIssue(issueKey, transitionId)
+    .catch((error) => withSiteContext(error, channel.host));
+
+  const issues = await collectOpenIssues(jira, { projects: config.jira.projects || [] });
+  return { groups: groupOpenIssues(issues), total: issues.length, moved: issueKey };
 }
 
 /**

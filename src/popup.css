@@ -23,6 +23,12 @@
   --series-2: #1baf7a;
   --series-3: #e34948;
   --series-other: #7a8699;
+  /* Categorie di stato: sono stati, non serie di dati, quindi hanno colori
+     riservati e mai il colore da solo — accanto al pallino c'è sempre il nome
+     dello stato scritto. */
+  --cat-new: #8590a2;
+  --cat-indeterminate: #0b66e4;
+  --cat-unknown: #b38600;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -48,6 +54,9 @@
     --warn-bg: #3b2f1b;
     --err-bg: #42232a;
     --ok-bg: #1f3529;
+    --cat-new: #9aa5b1;
+    --cat-indeterminate: #579dff;
+    --cat-unknown: #e2b203;
   }
 }
 
@@ -420,6 +429,75 @@ tr.disabled .remove.wipe { opacity: 1; }
 .log .chiave { flex: none; font-weight: 600; }
 .log .cosa { flex: 1; min-width: 0; color: var(--muted); }
 .log .cosa strong { color: var(--text); font-weight: 500; }
+
+/* Ticket aperti. Due livelli: lo stato dice a che punto sei, la data dice da
+   quanto quel ticket è lì. Il secondo livello è rientrato, così si vede a
+   colpo d'occhio che appartiene al primo. */
+.tickets-view { overflow-y: auto; flex: 1; padding: 0 12px 12px; }
+.ticket-group { margin-bottom: 14px; }
+.group-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 0 2px;
+  font-size: 12px;
+}
+.group-head .dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cat-unknown);
+}
+.group-head .dot.cat-new { background: var(--cat-new); }
+.group-head .dot.cat-indeterminate { background: var(--cat-indeterminate); }
+.group-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.day-head {
+  padding: 6px 0 2px 15px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.ticket-list { list-style: none; margin: 0; padding: 0 0 0 15px; }
+.ticket { border-top: 1px solid var(--border); }
+.ticket-list .ticket:first-child { border-top: none; }
+.ticket-line {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 5px 0;
+  font-size: 12px;
+}
+.ticket .chiave {
+  flex: none;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+}
+.ticket .chiave:hover { color: var(--accent); text-decoration: underline; }
+.ticket .cosa {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  /* Il titolo può essere lungo quanto vuole: la riga resta una riga, e il
+     testo intero sta nel tooltip. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ticket .move { flex: none; padding: 2px 8px; font-size: 11px; }
+.moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 0 8px;
+}
+.moves .move-to { padding: 3px 8px; font-size: 11px; }
+.moves-hint { color: var(--muted); font-size: 11px; }
 
 #messages { padding: 0 12px; }
 /* Tre pesi visivi: quello che richiede un tuo intervento deve saltare all'occhio,

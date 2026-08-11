@@ -36,11 +36,18 @@ const el = {
   datalist: document.getElementById('recent-issues'),
   tabHours: document.getElementById('tab-hours'),
   tabLog: document.getElementById('tab-log'),
+  tabTickets: document.getElementById('tab-tickets'),
+  dayPicker: document.getElementById('day-picker'),
   logView: document.getElementById('log-view'),
   log: document.getElementById('log'),
   logEmpty: document.getElementById('log-empty'),
   logCount: document.getElementById('log-count'),
   logCopy: document.getElementById('log-copy'),
+  ticketsView: document.getElementById('tickets-view'),
+  tickets: document.getElementById('tickets'),
+  ticketsEmpty: document.getElementById('tickets-empty'),
+  ticketsCount: document.getElementById('tickets-count'),
+  ticketsRefresh: document.getElementById('tickets-refresh'),
   main: document.querySelector('main'),
   footer: document.querySelector('footer')
 };
@@ -65,7 +72,16 @@ const state = {
   logEvents: [],
   logDate: null,
   config: null,
-  recentIssues: []
+  recentIssues: [],
+  // I ticket aperti non dipendono dal giorno: si leggono una volta e restano.
+  ticketGroups: [],
+  ticketsTotal: 0,
+  ticketsLoaded: false,
+  // Un solo menu di spostamento aperto alla volta, e le transizioni gia' lette
+  // per non richiederle a ogni apertura.
+  openMoveKey: null,
+  transitionsByKey: new Map(),
+  host: ''
 };
 
 function send(type, payload) {
@@ -901,6 +917,8 @@ function setSite(text, kind = '') {
 async function refreshSite() {
   try {
     const status = await send('siteStatus');
+    // Serve anche ai link dei ticket: senza host non si sa dove puntano.
+    state.host = status.host || '';
     if (!status.host) return setSite(t('siteNoneConfigured'), 'down');
 
     const origin = status.configured ? '' : t('siteDetectedSuffix');
@@ -1166,7 +1184,7 @@ el.copyDate.value = previousWorkday(state.isoDate);
 function onDateChanged(delay) {
   el.copyDate.value = previousWorkday(state.isoDate);
   scheduleAnalyze(delay);
-  if (state.tab === 'log') loadLog();
+  if (state.tab === 'log') scheduleLoadLog(delay);
 }
 
 el.date.addEventListener('change', () => {
@@ -1235,34 +1253,255 @@ function renderLog() {
   el.logCount.textContent = eventi.length ? t('logCount', eventi.length) : '';
 }
 
+// Stessa protezione del piano, e per lo stesso motivo: tenendo premuto ‹ o ›
+// si attraversano cinque giorni in un secondo. Il timer fa partire una sola
+// lettura, il token impedisce a una risposta di un giorno superato di
+// atterrare comunque — arrivano fuori ordine, e vincerebbe l'ultima.
+let logToken = 0;
+let logTimer = null;
+
+function scheduleLoadLog(delay = 250) {
+  clearTimeout(logTimer);
+  // Il token sale subito, non allo scadere: una richiesta già in volo per il
+  // giorno di prima va invalidata adesso, non fra 250 ms.
+  logToken++;
+  logTimer = setTimeout(loadLog, delay);
+}
+
 async function loadLog() {
+  clearTimeout(logTimer);
+  const token = ++logToken;
+  const forDate = state.isoDate;
+
   el.logCount.textContent = t('emptyAnalysing');
   el.log.replaceChildren();
   el.logEmpty.hidden = true;
   el.logCopy.hidden = true;
   try {
-    const { events } = await send('activity', { isoDate: state.isoDate });
+    const { events } = await send('activity', { isoDate: forDate });
+    if (token !== logToken) return;
     state.logEvents = events;
-    state.logDate = state.isoDate;
+    state.logDate = forDate;
     renderLog();
   } catch (error) {
+    if (token !== logToken) return;
     state.logEvents = [];
     renderLog();
     reportAuthError(error, loadLog);
   }
 }
 
-/** Passa fra le due viste. Il footer appartiene alle ore, non al registro. */
+// ------------------------------------------------------------ ticket aperti
+
+/** La data di apertura per esteso: "04 ago 2026". */
+function ticketDay(day) {
+  if (!day) return t('ticketsNoDate');
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(y, m - 1, d)
+    .toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function ticketRow(issue) {
+  const li = document.createElement('li');
+  li.className = 'ticket';
+
+  const riga = document.createElement('div');
+  riga.className = 'ticket-line';
+
+  const chiave = document.createElement('a');
+  chiave.className = 'chiave';
+  chiave.textContent = issue.key;
+  chiave.title = t('titleOpenInJira', issue.key);
+  // Il link porta alla issue vera: da qui si legge il titolo, non il contenuto.
+  if (state.host) {
+    chiave.href = `https://${state.host}/browse/${issue.key}`;
+    chiave.target = '_blank';
+    chiave.rel = 'noreferrer';
+  }
+
+  const cosa = document.createElement('span');
+  cosa.className = 'cosa';
+  cosa.textContent = issue.summary || '';
+  cosa.title = issue.summary || '';
+
+  const sposta = document.createElement('button');
+  sposta.className = 'ghost move';
+  sposta.type = 'button';
+  sposta.textContent = t('btnMove');
+
+  const menu = document.createElement('div');
+  menu.className = 'moves';
+  menu.hidden = true;
+
+  sposta.addEventListener('click', () => toggleMoves(issue, menu, sposta));
+
+  riga.append(chiave, cosa, sposta);
+  li.append(riga, menu);
+  return li;
+}
+
+function ticketGroup(gruppo) {
+  const sezione = document.createElement('section');
+  sezione.className = 'ticket-group';
+
+  const testa = document.createElement('div');
+  testa.className = 'group-head';
+  const pallino = document.createElement('span');
+  // La categoria decide il colore: gli stati hanno nomi diversi ovunque, le
+  // categorie no, quindi il colore resta coerente fra progetti.
+  pallino.className = `dot cat-${gruppo.category || 'unknown'}`;
+  const nome = document.createElement('strong');
+  nome.textContent = gruppo.status || t('ticketsNoStatus');
+  const quanti = document.createElement('span');
+  quanti.className = 'group-count';
+  quanti.textContent = String(gruppo.count);
+  testa.append(pallino, nome, quanti);
+  sezione.append(testa);
+
+  for (const giorno of gruppo.days) {
+    const data = document.createElement('div');
+    data.className = 'day-head';
+    data.textContent = t('ticketsOpenedOn', ticketDay(giorno.day));
+
+    const elenco = document.createElement('ul');
+    elenco.className = 'ticket-list';
+    elenco.append(...giorno.issues.map(ticketRow));
+
+    sezione.append(data, elenco);
+  }
+
+  return sezione;
+}
+
+function renderTickets() {
+  el.tickets.replaceChildren(...state.ticketGroups.map(ticketGroup));
+  el.ticketsEmpty.hidden = state.ticketGroups.length > 0;
+  el.ticketsCount.textContent = state.ticketsTotal ? t('ticketsCount', state.ticketsTotal) : '';
+}
+
+async function loadTickets() {
+  el.ticketsCount.textContent = t('emptyAnalysing');
+  el.tickets.replaceChildren();
+  el.ticketsEmpty.hidden = true;
+  el.ticketsRefresh.disabled = true;
+  try {
+    const { groups, total } = await send('openIssues');
+    applyTickets(groups, total);
+  } catch (error) {
+    state.ticketGroups = [];
+    state.ticketsTotal = 0;
+    renderTickets();
+    reportAuthError(error, loadTickets);
+  } finally {
+    el.ticketsRefresh.disabled = false;
+  }
+}
+
+/** Un elenco appena letto sostituisce il precedente, menu e cache compresi. */
+function applyTickets(groups, total) {
+  state.ticketGroups = groups || [];
+  state.ticketsTotal = total || 0;
+  state.ticketsLoaded = true;
+  state.openMoveKey = null;
+  // Dopo uno spostamento le transizioni disponibili sono altre: la cache di
+  // prima descriveva uno stato che non c'è più.
+  state.transitionsByKey.clear();
+  renderTickets();
+}
+
+/**
+ * Apre (o chiude) l'elenco degli stati raggiungibili da una issue.
+ * Le transizioni si chiedono qui, al primo click, non per tutto l'elenco.
+ */
+async function toggleMoves(issue, menu, bottone) {
+  if (!menu.hidden) {
+    menu.hidden = true;
+    state.openMoveKey = null;
+    return;
+  }
+  // Uno alla volta: due menu aperti in un popup stretto si leggono male.
+  for (const altro of el.tickets.querySelectorAll('.moves')) altro.hidden = true;
+  state.openMoveKey = issue.key;
+  menu.hidden = false;
+
+  const cache = state.transitionsByKey.get(issue.key);
+  if (cache) return renderMoves(issue, menu, cache);
+
+  menu.replaceChildren(hint(t('ticketsLoadingMoves')));
+  bottone.disabled = true;
+  try {
+    const { transitions } = await send('issueTransitions', {
+      issueKey: issue.key, status: issue.status
+    });
+    state.transitionsByKey.set(issue.key, transitions);
+    renderMoves(issue, menu, transitions);
+  } catch (error) {
+    menu.replaceChildren(hint(error.message));
+    reportAuthError(error, () => {});
+  } finally {
+    bottone.disabled = false;
+  }
+}
+
+function hint(testo) {
+  const span = document.createElement('span');
+  span.className = 'moves-hint';
+  span.textContent = testo;
+  return span;
+}
+
+function renderMoves(issue, menu, transitions) {
+  if (!transitions.length) return menu.replaceChildren(hint(t('ticketsNoMoves')));
+
+  menu.replaceChildren(...transitions.map((tr) => {
+    const bottone = document.createElement('button');
+    bottone.className = 'ghost move-to';
+    bottone.type = 'button';
+    // Il nome della transizione e quello dello stato d'arrivo spesso
+    // coincidono: ripeterli due volte sarebbe rumore.
+    bottone.textContent = tr.to && tr.to !== tr.name ? `${tr.name} → ${tr.to}` : tr.name;
+    bottone.addEventListener('click', () => moveTicket(issue, tr, menu));
+    return bottone;
+  }));
+}
+
+async function moveTicket(issue, transizione, menu) {
+  for (const b of menu.querySelectorAll('button')) b.disabled = true;
+  menu.append(hint(t('ticketsMoving')));
+  try {
+    const { groups, total } = await send('moveIssue', {
+      issueKey: issue.key, transitionId: transizione.id
+    });
+    applyTickets(groups, total);
+    message(t('msgTicketMoved', issue.key, transizione.to || transizione.name), 'ok');
+  } catch (error) {
+    menu.hidden = true;
+    reportAuthError(error, () => {});
+  }
+}
+
+/** Passa fra le viste. Il footer appartiene alle ore, non alle altre schede. */
 function showTab(nome) {
   state.tab = nome;
   const ore = nome === 'hours';
+  const registro = nome === 'log';
+  const ticket = nome === 'tickets';
+
   el.tabHours.setAttribute('aria-selected', String(ore));
-  el.tabLog.setAttribute('aria-selected', String(!ore));
+  el.tabLog.setAttribute('aria-selected', String(registro));
+  el.tabTickets.setAttribute('aria-selected', String(ticket));
+
   el.main.hidden = !ore;
   el.footer.hidden = !ore;
-  el.logView.hidden = ore;
+  el.logView.hidden = !registro;
+  el.ticketsView.hidden = !ticket;
+  // I ticket aperti sono quelli di adesso: il giorno scelto non c'entra, e
+  // lasciare il selettore lì accanto farebbe pensare il contrario.
+  el.dayPicker.hidden = ticket;
+
   // Il registro si legge quando lo apri, e si rilegge se hai cambiato giorno.
-  if (!ore && state.logDate !== state.isoDate) loadLog();
+  if (registro && state.logDate !== state.isoDate) loadLog();
+  if (ticket && !state.ticketsLoaded) loadTickets();
 }
 
 /** Il giorno lavorativo precedente: sabato e domenica non si copiano. */
@@ -1328,6 +1567,8 @@ el.copyDo.addEventListener('click', copyFromDay);
 
 el.tabHours.addEventListener('click', () => showTab('hours'));
 el.tabLog.addEventListener('click', () => showTab('log'));
+el.tabTickets.addEventListener('click', () => showTab('tickets'));
+el.ticketsRefresh.addEventListener('click', loadTickets);
 
 el.logCopy.addEventListener('click', async () => {
   try {
@@ -1347,7 +1588,12 @@ el.toggleAll.addEventListener('change', () => {
   redistribute();
   render();
 });
-el.analyze.addEventListener('click', () => analyze());
+// Il tasto in alto ricarica quello che stai guardando, non sempre le ore.
+el.analyze.addEventListener('click', () => {
+  if (state.tab === 'tickets') return loadTickets();
+  if (state.tab === 'log') return loadLog();
+  analyze();
+});
 el.submit.addEventListener('click', () => {
   // Se c'è qualcosa da confermare, il primo clic arma invece di inviare.
   if (needsConfirm() && !confirmingSend) {
