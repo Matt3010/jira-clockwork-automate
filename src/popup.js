@@ -532,6 +532,9 @@ function renderRow(row) {
   hours.min = '0';
   hours.step = String((state.config?.work.roundingMinutes || 15) / 60);
   hours.value = row.minutes ? +(row.minutes / 60).toFixed(2) : 0;
+  // Stretto l'intestazione non c'è: un campo numerico da solo non dice di
+  // cosa sia il numero.
+  hours.title = t('thHours');
   hours.classList.toggle('locked', Boolean(row.locked));
   hours.addEventListener('change', () => {
     row.minutes = Math.max(0, Math.round(Number(hours.value || 0) * 60));
@@ -788,26 +791,38 @@ function renderTimeline() {
   const span = a - da;
   const pct = (minuti) => `${((minuti - da) / span) * 100}%`;
 
-  // Circa 40px per ora, ma mai più alta dello spazio disponibile: una giornata
-  // lunga deve comprimersi, non far scorrere via tutto il resto.
+  // Verticale o orizzontale non lo decide il JS: lo dichiara il foglio di
+  // stile in `--asse`, e qui si legge. Così la larghezza a cui l'anteprima si
+  // corica sta scritta in un posto solo, insieme a tutte le altre soglie.
+  const orizzontale = getComputedStyle(el.timeline).getPropertyValue('--asse').trim() === 'orizzontale';
+
   const scale = el.timeline.querySelector('.scale');
-  // Il pavimento serve alla prima apertura, quando il popup non ha ancora le
-  // sue dimensioni e l'area misurata risulta quasi zero: senza, l'anteprima
+  // Il pavimento serve alla prima apertura, quando la finestra non ha ancora
+  // le sue dimensioni e l'area misurata risulta quasi zero: senza, l'anteprima
   // nasceva schiacciata. Subito dopo `render` rimisura a layout avvenuto.
   const disponibile = Math.max(300, (el.timeline.parentElement?.clientHeight || 0) - 20);
-  const altezza = Math.min(Math.round((span / 60) * 40), disponibile);
-  scale.style.height = `${altezza}px`;
+  // Coricata la lunghezza è quella che c'è: una giornata non può allargare la
+  // finestra. In piedi sono circa 40px per ora, ma mai più dello spazio
+  // disponibile — una giornata lunga deve comprimersi, non far scorrere via
+  // tutto il resto.
+  const lungoAsse = orizzontale
+    ? Math.max(240, el.timeline.clientWidth - 8)
+    : Math.min(Math.round((span / 60) * 40), disponibile);
+  // La misura la applica il CSS, che sa su quale lato metterla.
+  scale.style.setProperty('--lungo-asse', `${lungoAsse}px`);
 
   const ruler = el.timeline.querySelector('.ruler');
   ruler.replaceChildren();
-  // Le etichette si diradano quando lo spazio si stringe, così non si accavallano.
-  const pxPerMinuto = altezza / span;
+  // Le etichette si diradano quando lo spazio si stringe, così non si
+  // accavallano. Coricate ne serve di più: "09:00" è largo, ma alto una riga.
+  const pxPerMinuto = lungoAsse / span;
+  const minimo = orizzontale ? 46 : 22;
   let passo = 60;
-  while (passo * pxPerMinuto < 22 && passo < 8 * 60) passo *= 2;
+  while (passo * pxPerMinuto < minimo && passo < 8 * 60) passo *= 2;
   for (let m = da; m <= a; m += passo) {
     const tick = document.createElement('span');
     tick.className = 'tick';
-    tick.style.top = pct(m);
+    tick.style.setProperty('--inizio', pct(m));
     tick.textContent = minutesToTime(m);
     ruler.appendChild(tick);
   }
@@ -819,8 +834,10 @@ function renderTimeline() {
   for (const blocco of [...blocchi].sort((x, y) => ordine[x.tipo] - ordine[y.tipo])) {
     const nodo = document.createElement('div');
     nodo.className = `block ${blocco.tipo} ${blocco.serie || ''}`.trim();
-    nodo.style.top = pct(blocco.from);
-    nodo.style.height = `${((blocco.to - blocco.from) / span) * 100}%`;
+    // Dove comincia e quanto dura, in percentuale della giornata mostrata: su
+    // quale asse diventino non è affare di qui.
+    nodo.style.setProperty('--inizio', pct(blocco.from));
+    nodo.style.setProperty('--durata', `${((blocco.to - blocco.from) / span) * 100}%`);
     nodo.title = blocco.label;
     if (blocco.rowId) nodo.dataset.rowId = blocco.rowId;
     track.appendChild(nodo);

@@ -214,13 +214,17 @@ body.busy #analyze .icon { animation: girando 1s linear infinite; }
 /* Anteprima verticale della giornata, come una colonna di calendario:
    si legge dall'alto in basso, e l'asse copre sempre la giornata configurata. */
 .timeline {
+  /* Su quale asse corre il tempo. Lo legge anche `renderTimeline` per sapere
+     come diradare le etichette: la soglia sta scritta qui e in nessun altro
+     posto. */
+  --asse: verticale;
   flex: none;
   width: 104px;
   padding: 12px 0 4px;
   position: sticky;
   top: 0;
 }
-.timeline .scale { position: relative; display: flex; }
+.timeline .scale { position: relative; display: flex; height: var(--lungo-asse); }
 .timeline .ruler {
   position: relative;
   width: 38px;
@@ -230,6 +234,7 @@ body.busy #analyze .icon { animation: girando 1s linear infinite; }
 }
 .timeline .tick {
   position: absolute;
+  top: var(--inizio);
   right: 6px;
   transform: translateY(-50%);
   white-space: nowrap;
@@ -244,6 +249,8 @@ body.busy #analyze .icon { animation: girando 1s linear infinite; }
 }
 .timeline .block {
   position: absolute;
+  top: var(--inizio);
+  height: var(--durata);
   left: 0;
   right: 0;
   border-radius: 2px;
@@ -585,19 +592,81 @@ tr.disabled .remove.wipe { opacity: 1; }
 }
 
 /* Stretto — il pannello laterale, che l'utente allarga quanto vuole.
-   Le due soglie sono scelte in modo che l'orario non sparisca mai del tutto:
-   finché c'è l'anteprima gli orari si leggono lì e la colonna può cedere il
-   posto; quando anche l'anteprima non ci sta più, la colonna torna. */
+   Niente sparisce: si riorganizza. Quello che in largo sta su una riga, qui
+   sta su tre; l'anteprima non si toglie di mezzo, si corica.
+
+   Una sola soglia, non due: due significherebbe una fascia di larghezze in
+   cui l'interfaccia è a metà strada, e nessuna delle due forme è quella
+   giusta. */
 @media (max-width: 720px) {
-  .col-time { display: none; }
-  .col-issue { width: 118px; }
-}
-@media (max-width: 560px) {
-  .timeline { display: none; }
-  .col-time { display: table-cell; width: 88px; }
-  .col-what { display: none; }
-  main { padding: 0 8px; }
+  main { flex-direction: column; padding: 0 8px; }
   .bar { padding: 8px; gap: 6px; flex-wrap: wrap; }
+  .grid-area { width: 100%; }
+
+  /* L'anteprima passa in fondo e si corica. `order` la sposta senza toccare
+     l'ordine del markup, che in largo è quello giusto. */
+  .timeline {
+    --asse: orizzontale;
+    order: 2;
+    width: 100%;
+    position: static;
+    padding: 4px 0 8px;
+  }
+  /* Il righello sotto la traccia: le ore si leggono come su un asse x. In
+     `column-reverse` la traccia, che nel markup viene dopo, finisce sopra. */
+  .timeline .scale {
+    flex-direction: column-reverse;
+    height: auto;
+    width: var(--lungo-asse);
+    max-width: 100%;
+  }
+  .timeline .ruler { width: auto; height: 14px; }
+  .timeline .tick {
+    top: 2px;
+    right: auto;
+    left: var(--inizio);
+    transform: translateX(-50%);
+  }
+  .timeline .track { height: 26px; flex: none; }
+  .timeline .block {
+    top: 0;
+    bottom: 0;
+    height: auto;
+    left: var(--inizio);
+    width: var(--durata);
+    right: auto;
+  }
+
+  /* La riga della tabella diventa un blocchetto su tre piani: sopra quello
+     che si tocca, sotto quello che si legge. Nessuna colonna viene nascosta —
+     cambia come sono disposte. */
+  table, tbody, tr, td { display: block; }
+  /* Le intestazioni descrivono colonne che qui non ci sono più; ogni cella
+     resta comprensibile da sé, e gli input hanno il loro `title`. */
+  thead { display: none; }
+  tr {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      "check issue hours actions"
+      "what  what  what  what"
+      "time  time  time  time";
+    align-items: center;
+    gap: 2px 6px;
+    padding: 6px 0;
+    border-top: 1px solid var(--border);
+  }
+  tbody tr:first-child { border-top: none; }
+  td { padding: 0; border: none; }
+  .col-check { grid-area: check; }
+  .col-issue { grid-area: issue; }
+  .col-what { grid-area: what; }
+  .col-hours { grid-area: hours; }
+  .col-time { grid-area: time; }
+  .col-actions { grid-area: actions; }
+  /* Larghezze pensate per le colonne: qui le decide la griglia. */
+  .col-issue, .col-hours, .col-time, .col-check, .col-actions { width: auto; }
+  .col-time { color: var(--muted); }
 }
 
 #messages { padding: 0 12px; }

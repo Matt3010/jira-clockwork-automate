@@ -56,24 +56,56 @@ assert.match(leggi('src/background.js'), /chrome\.sidePanel\?\.\w+|chrome\.sideP
     'il popup invece la larghezza se la deve ancora dichiarare: non ha una finestra sua');
 }
 
-// --- lo stretto non deve far sparire l'orario ----------------------------
-// Le due soglie lavorano in coppia: finché c'è l'anteprima gli orari si
-// leggono lì e la colonna può cedere il posto; quando anche l'anteprima non
-// ci sta più, la colonna deve tornare. Se una delle due cambia senza l'altra,
-// sotto una certa larghezza non si sa più a che ora è nulla.
+// --- stretto non vuol dire che qualcosa sparisce -------------------------
+// La regola: si riorganizza, non si nasconde. Quello che in largo sta su una
+// riga, stretto sta su tre; l'anteprima non si toglie di mezzo, si corica.
+// Nascondere è la scorciatoia che si prende senza accorgersene, e chi guarda
+// non sa nemmeno che c'era qualcosa.
 {
   const css = leggi('src/popup.css');
-  const soglie = [...css.matchAll(/@media \(max-width: (\d+)px\) \{([^@]*?)\n\}/gs)]
-    .map(([, larghezza, corpo]) => ({ larghezza: Number(larghezza), corpo }));
-  assert.ok(soglie.length >= 2, 'servono due soglie, non una');
+  const soglie = [...css.matchAll(/@media \(max-width: (\d+)px\) \{(.*?)\n\}/gs)];
+  assert.equal(soglie.length, 1,
+    'una soglia sola: con due c è una fascia di larghezze in cui l interfaccia è a metà strada');
 
-  const [larga, stretta] = soglie.sort((a, b) => b.larghezza - a.larghezza);
-  assert.match(larga.corpo, /\.col-time \{ display: none/,
-    'alla prima soglia cede la colonna dell orario, che l anteprima sa già dire');
-  assert.match(stretta.corpo, /\.timeline \{ display: none/,
-    'alla seconda non ci sta più l anteprima');
-  assert.match(stretta.corpo, /\.col-time \{ display: table-cell/,
-    'e allora la colonna dell orario deve tornare: senza, l orario sparirebbe del tutto');
+  const stretto = soglie[0][2];
+  for (const pezzo of ['.timeline', '.col-time', '.col-what', '.col-issue', '.col-hours']) {
+    assert.doesNotMatch(stretto, new RegExp(`\\${pezzo}[^{]*\\{[^}]*display: none`),
+      `stretto, ${pezzo} viene nascosto invece di essere ricollocato`);
+  }
+  // L'unica cosa che si può togliere sono le intestazioni: descrivono colonne
+  // che in quella forma non esistono più, e ogni cella si spiega da sé.
+  assert.match(stretto, /thead \{ display: none/, 'le intestazioni di colonna non hanno più colonne da intestare');
+
+  // Ogni cella deve avere un posto nella nuova disposizione, o finisce dove
+  // capita: la griglia le colloca per nome.
+  assert.match(stretto, /grid-template-areas:/, 'la riga stretta non ha una disposizione dichiarata');
+  for (const colonna of ['check', 'issue', 'what', 'hours', 'time', 'actions']) {
+    assert.match(stretto, new RegExp(`\\.col-${colonna} \\{ grid-area: ${colonna}`),
+      `la cella ${colonna} non ha un posto nella disposizione stretta`);
+  }
+}
+
+// --- l'anteprima si corica, e il JS lo scopre dal foglio di stile ---------
+// La larghezza a cui succede deve stare scritta in un posto solo. Se il JS
+// avesse la sua soglia, cambiarne una lascerebbe l'anteprima disegnata per
+// un asse e disposta sull'altro.
+{
+  const css = leggi('src/popup.css');
+  const popup = leggi('src/popup.js');
+
+  assert.match(css, /--asse: verticale/, 'l asse va dichiarato, non dedotto');
+  assert.match(css, /--asse: orizzontale/, 'e stretto deve cambiare');
+  assert.match(popup, /getPropertyValue\('--asse'\)/,
+    'il JS deve leggere l asse dal foglio di stile invece di avere una soglia sua');
+  assert.doesNotMatch(popup, /matchMedia\('\(max-width/,
+    'una soglia duplicata nel JS si sfasa dal CSS alla prima modifica');
+
+  // Il JS dice dove comincia un blocco e quanto dura; su quale lato diventino
+  // top/height o left/width lo decide il CSS.
+  assert.match(popup, /setProperty\('--inizio'/, 'la posizione del blocco passa per una variabile');
+  assert.match(popup, /setProperty\('--durata'/, 'e anche la durata');
+  assert.doesNotMatch(popup, /nodo\.style\.(top|height|left|width) =/,
+    'scrivendo direttamente il lato, il JS decide l orientamento al posto del CSS');
 }
 
 // --- le celle sanno a quale colonna appartengono -------------------------
