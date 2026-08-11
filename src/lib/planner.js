@@ -122,9 +122,15 @@ export function guessMeetingIssue(label, recentIssues, { isoDate, taken = new Se
  * non deve produrre prosa, o non si puo' tradurre.
  */
 function countActivity(jiraEvents, gitCommits) {
-  const comments = (jiraEvents || []).filter((e) => e.kind === 'comment').length;
+  const eventi = jiraEvents || [];
+  const comments = eventi.filter((e) => e.kind === 'comment').length;
+  // La creazione si conta a parte: dire "1 modifica" di un ticket che hai
+  // aperto tu e' sbagliato, e nasconde il fatto che scriverlo e' stato
+  // lavoro suo.
+  const created = eventi.filter((e) => e.kind === 'created').length;
   return {
-    changes: (jiraEvents || []).length - comments,
+    changes: eventi.length - comments - created,
+    created,
     comments,
     commits: (gitCommits || []).length
   };
@@ -234,7 +240,8 @@ export function buildPlan({
       activity,
       // Peso per l'ordinamento: piu' fonti e piu' eventi vuol dire piu'
       // probabilmente il lavoro principale della giornata.
-      weight: sources.length * 100 + activity.changes + activity.comments + activity.commits,
+      weight: sources.length * 100 +
+        activity.changes + activity.created + activity.comments + activity.commits,
       comment: nota.text || '',
       commentKey: nota.key || null,
       enabled: true,

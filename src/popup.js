@@ -389,8 +389,11 @@ function describeRow(row) {
     return row.summary ? `${slot} · ${row.summary}` : slot;
   }
   if (row.detail) return row.detail; // righe aggiunte a mano
-  const { changes = 0, comments = 0, commits = 0 } = row.activity || {};
+  const { changes = 0, created = 0, comments = 0, commits = 0 } = row.activity || {};
   const parti = [];
+  // Prima la creazione: se il ticket l'hai aperto tu quel giorno, è il fatto
+  // che spiega tutti gli altri.
+  if (created) parti.push(t('activityCreated'));
   if (changes) parti.push(t(changes === 1 ? 'activityChange' : 'activityChanges', changes));
   if (comments) parti.push(t(comments === 1 ? 'activityComment' : 'activityComments', comments));
   if (commits) parti.push(t(commits === 1 ? 'activityCommit' : 'activityCommits', commits));

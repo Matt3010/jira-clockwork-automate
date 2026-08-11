@@ -304,6 +304,9 @@ export async function collectCreatedIssues(client, { isoDate, projects }) {
   try {
     const issues = await client.search(jql, { fields: ['summary', 'created'], maxResults: 50 });
     return issues.map((issue) => ({
+      // L'id serve al pannello Sviluppo: senza, una issue vista solo di qui
+      // non potrebbe portarsi dietro i suoi commit.
+      id: issue.id,
       key: issue.key,
       summary: issue.fields?.summary || '',
       at: issue.fields?.created || null
@@ -313,6 +316,34 @@ export async function collectCreatedIssues(client, { isoDate, projects }) {
     // creazioni ma resta valido per tutto il resto.
     return [];
   }
+}
+
+/**
+ * Aggiunge le issue che hai aperto tu a quelle su cui hai lavorato.
+ *
+ * Aprire un ticket non lascia traccia nel changelog — creare non e'
+ * modificare — quindi senza questo passaggio una issue creata e non piu'
+ * toccata non esiste per il piano, e una creata e poi committata sembra
+ * solo lavoro di git. Ma scrivere il ticket *e'* lavoro della giornata.
+ */
+export function mergeCreatedIssues(activity, created) {
+  for (const issue of created || []) {
+    if (!issue?.key) continue;
+    const quando = issue.at ? Date.parse(issue.at) : NaN;
+    if (!Number.isFinite(quando)) continue;
+
+    if (!activity.has(issue.key)) {
+      activity.set(issue.key, {
+        id: issue.id, key: issue.key, summary: issue.summary || '', events: []
+      });
+    }
+    const voce = activity.get(issue.key);
+    // L'id puo' mancare se la issue e' arrivata prima dai commit.
+    if (!voce.id && issue.id) voce.id = issue.id;
+    if (!voce.summary && issue.summary) voce.summary = issue.summary;
+    voce.events.push({ kind: 'created', at: quando, items: [] });
+  }
+  return activity;
 }
 
 /**

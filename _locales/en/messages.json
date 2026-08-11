@@ -1092,5 +1092,8 @@
         "content": "$1"
       }
     }
+  },
+  "activityCreated": {
+    "message": "created"
   }
 }

@@ -13,6 +13,7 @@ import {
   collectJiraActivity,
   collectDevPanelCommits,
   collectCreatedIssues,
+  mergeCreatedIssues,
   collectOpenIssues,
   searchIssues,
   loggedMinutesForDay
@@ -629,6 +630,12 @@ async function analyze({ isoDate }) {
     accountId,
     scanComments: config.jira.scanComments
   });
+
+  // Aprire un ticket non lascia traccia nel changelog, quindi va cercato a
+  // parte. Prima dei commit, non dopo: una issue creata oggi è una candidata
+  // legittima per il pannello Sviluppo — anzi, è quella su cui è più
+  // probabile che tu abbia committato.
+  mergeCreatedIssues(jiraActivity, await collectCreatedIssues(jira, { isoDate, projects }));
 
   // I commit arrivano dal pannello "Sviluppo" delle issue: sono dentro Jira,
   // quindi non serve nessun'altra scheda aperta.
