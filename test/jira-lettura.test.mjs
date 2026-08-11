@@ -113,6 +113,55 @@ function fakeClient(risposte) {
     'senza progetti configurati la ricerca non ha il filtro');
 }
 
+// ======================================================== contabilità dei worklog
+// Registrare ore genera modifiche al changelog (WorklogId, timespent…). Non
+// sono attività: le produce anche questa estensione scrivendo i worklog, e
+// tenerle è circolare — registri ore, l'analisi dopo le legge come lavoro.
+{
+  const client = fakeClient({
+    issues: [
+      {
+        id: '1', key: 'ABC-1', fields: { summary: 'Solo contabilità' },
+        changelog: {
+          total: 1,
+          histories: [{
+            author: { accountId: IO }, created: quando(10, 9),
+            items: [
+              { field: 'WorklogId', toString: '102322' },
+              { field: 'timespent', toString: '275520' },
+              { field: 'timeestimate', toString: '0' }
+            ]
+          }]
+        }
+      },
+      {
+        id: '2', key: 'ABC-2', fields: { summary: 'Lavoro vero' },
+        changelog: {
+          total: 1,
+          histories: [{
+            author: { accountId: IO }, created: quando(10, 31),
+            items: [
+              { field: 'status', fromString: 'To Do', toString: 'In Progress' },
+              { field: 'timespent', toString: '3600' }
+            ]
+          }]
+        }
+      }
+    ]
+  });
+
+  const attivita = await collectJiraActivity(client, {
+    isoDate: '2026-08-10', projects: [], accountId: IO, scanComments: false
+  });
+
+  assert.deepEqual([...attivita.keys()], ['ABC-2'],
+    'una issue toccata solo dalla contabilità non è attività: sparisce');
+  assert.deepEqual(
+    attivita.get('ABC-2').events[0].items.map((i) => i.field), ['status'],
+    'e dove c è del lavoro vero, la contabilità viene tolta da sotto'
+  );
+}
+
 // ======================================================== commenti
 {
   const client = fakeClient({

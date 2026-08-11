@@ -940,5 +940,52 @@
         "content": "$1"
       }
     }
+  },
+  "logStatusFrom": {
+    "message": "from $FROM$",
+    "placeholders": {
+      "from": {
+        "content": "$1"
+      }
+    }
+  },
+  "fieldAssignee": {
+    "message": "assignee"
+  },
+  "fieldSummary": {
+    "message": "title"
+  },
+  "fieldDescription": {
+    "message": "description"
+  },
+  "fieldPriority": {
+    "message": "priority"
+  },
+  "fieldLabels": {
+    "message": "labels"
+  },
+  "fieldSprint": {
+    "message": "sprint"
+  },
+  "fieldResolution": {
+    "message": "resolution"
+  },
+  "fieldAttachment": {
+    "message": "attachment"
+  },
+  "fieldIssueType": {
+    "message": "type"
+  },
+  "fieldDueDate": {
+    "message": "due date"
+  },
+  "fieldParent": {
+    "message": "parent"
+  },
+  "fieldLink": {
+    "message": "link"
+  },
+  "fieldReporter": {
+    "message": "reporter"
   }
 }

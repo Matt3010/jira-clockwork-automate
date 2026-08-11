@@ -18,16 +18,53 @@ export function eventTime(at) {
 }
 
 /**
+ * I nomi dei campi come li chiama Jira internamente, tradotti in parole.
+ * Quelli che non stanno qui si mostrano come sono: meglio un nome tecnico che
+ * una riga vuota, e capita coi campi personalizzati di ogni installazione.
+ */
+const CAMPI = {
+  assignee: 'fieldAssignee',
+  summary: 'fieldSummary',
+  description: 'fieldDescription',
+  priority: 'fieldPriority',
+  labels: 'fieldLabels',
+  sprint: 'fieldSprint',
+  resolution: 'fieldResolution',
+  attachment: 'fieldAttachment',
+  issuetype: 'fieldIssueType',
+  duedate: 'fieldDueDate',
+  parent: 'fieldParent',
+  'epic link': 'fieldParent',
+  link: 'fieldLink',
+  reporter: 'fieldReporter'
+};
+
+function fieldName(field) {
+  const chiave = CAMPI[String(field || '').toLowerCase()];
+  return chiave ? t(chiave) : String(field || '');
+}
+
+/**
  * Un evento in parole: cosa è successo e su cosa.
  * `verbo` è la parte che conta, `dettaglio` il contorno.
  */
 export function describeEvent(evento) {
   switch (evento.tipo) {
-    case 'created': return { verbo: t('logCreated'), dettaglio: evento.summary || '' };
-    case 'status': return { verbo: t('logStatus', evento.to || '?'), dettaglio: evento.from || '' };
-    case 'comment': return { verbo: t('logComment'), dettaglio: evento.summary || '' };
-    case 'commit': return { verbo: t('logCommit'), dettaglio: evento.subject || '' };
-    default: return { verbo: t('logField', evento.field || '?'), dettaglio: evento.to || '' };
+    case 'created':
+      return { verbo: t('logCreated'), dettaglio: evento.summary || '' };
+    case 'status':
+      // La direzione va detta per intero: "passata a In corso · Da fare"
+      // lasciava indovinare quale dei due fosse il punto di partenza.
+      return {
+        verbo: t('logStatus', evento.to || '?'),
+        dettaglio: evento.from ? t('logStatusFrom', evento.from) : ''
+      };
+    case 'comment':
+      return { verbo: t('logComment'), dettaglio: evento.summary || '' };
+    case 'commit':
+      return { verbo: t('logCommit'), dettaglio: evento.subject || '' };
+    default:
+      return { verbo: t('logField', fieldName(evento.field)), dettaglio: evento.to || '' };
   }
 }
 

@@ -24,10 +24,21 @@ assert.equal(eventTime(alle(23, 59)), '23:59');
 }
 {
   // Il passaggio di stato è il segnale più forte: deve dire dove è arrivata,
-  // e da dove veniva.
+  // e da dove veniva — con la direzione esplicita, non due nomi accostati.
   const stato = describeEvent({ tipo: 'status', from: 'Da fare', to: 'In corso' });
   assert.equal(stato.verbo, 'logStatus');
-  assert.equal(stato.dettaglio, 'Da fare');
+  assert.equal(stato.dettaglio, 'logStatusFrom');
+
+  // Il primo passaggio non ha un "da": non deve restare una parola sospesa.
+  assert.equal(describeEvent({ tipo: 'status', to: 'In corso' }).dettaglio, '');
+}
+
+{
+  // I nomi tecnici dei campi diventano parole; quelli che non conosciamo —
+  // i campi personalizzati di ogni installazione — restano come sono, che è
+  // meglio di una riga vuota.
+  assert.equal(describeEvent({ tipo: 'field', field: 'assignee' }).verbo, 'logField');
+  assert.equal(describeEvent({ tipo: 'field', field: 'Qualcosa Di Personalizzato' }).verbo, 'logField');
 }
 {
   const commit = describeEvent({ tipo: 'commit', subject: 'fix tunnel' });
@@ -57,7 +68,7 @@ for (const evento of [
   const riga = logLine({ at: alle(9, 41), key: 'ABC-1', tipo: 'status', from: 'Da fare', to: 'In corso' });
   assert.ok(riga.startsWith('- 09:41 ABC-1 '), `riga inattesa: ${riga}`);
   assert.ok(riga.includes('logStatus'));
-  assert.ok(riga.includes('Da fare'));
+  assert.ok(riga.includes('logStatusFrom'), 'la riga porta anche lo stato di partenza');
 }
 {
   // Senza dettaglio non deve restare il separatore appeso.

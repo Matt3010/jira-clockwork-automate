@@ -166,6 +166,24 @@ function describeError(body, status) {
   return `Jira ${status}`;
 }
 
+/**
+ * Campi del changelog che non sono attivita': sono il contraccolpo contabile
+ * della registrazione delle ore, e li genera anche questa estensione quando
+ * scrive un worklog.
+ *
+ * Tenerli sarebbe sbagliato due volte: nel registro seppelliscono le cose vere
+ * sotto righe come "modificato timespent", e nel piano gonfiano il peso della
+ * issue — che decide chi prende il resto della divisione. Ed e' circolare:
+ * registri ore, l'analisi dopo le legge come lavoro e te le ripropone.
+ *
+ * `rank` sta qui per un motivo diverso: cambia ogni volta che trascini una
+ * scheda nella board, e non dice niente su cosa hai fatto.
+ */
+const CONTABILITA = new Set([
+  'worklogid', 'worklogtimespent', 'timespent', 'timeestimate',
+  'timeoriginalestimate', 'remainingestimate', 'aggregatetimespent', 'rank'
+]);
+
 function projectClause(projects) {
   const list = (projects || []).map((p) => String(p).trim()).filter(Boolean);
   if (!list.length) return '';
@@ -223,12 +241,15 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
       // scatta e ci si ritrova la funzione al posto del testo.
       const testo = (valore) => (typeof valore === 'string' ? valore : '');
       const items = (history.items || [])
-        .filter((item) => item.field)
+        .filter((item) => item.field && !CONTABILITA.has(String(item.field).toLowerCase()))
         .map((item) => ({
           field: item.field,
           from: testo(item.fromString),
           to: testo(item.toString)
         }));
+      // Se restava solo contabilita', non e' successo niente da registrare: la
+      // issue non deve nemmeno entrare nell'elenco.
+      if (!items.length) continue;
       record(issue, 'changelog', history.created, items);
     }
   }
