@@ -5,6 +5,10 @@
 // same-origin e usa il cookie del login che l'utente ha gia' fatto.
 // Nessun token, nessuna credenziale salvata da nessuna parte.
 
+// I messaggi degli errori qui dentro sono diagnostici, non testo da leggere:
+// il popup li rimpiazza con la versione tradotta a partire dal `code`. Restano
+// in inglese come il resto delle diagnostiche, e non passano da `t` perche'
+// devono conservare l'host anche quando le traduzioni non ci sono.
 export class TransportError extends Error {
   constructor(code, message) {
     super(message);
@@ -100,7 +104,7 @@ export class Channel {
     if (!tabs.length) {
       throw new TransportError(
         'NO_TAB',
-        `${this.label}: nessuna scheda aperta su ${this.host}. Aprine una (e fai il login) per procedere.`
+        `${this.label}: no tab open on ${this.host}.`
       );
     }
 
@@ -119,7 +123,7 @@ export class Channel {
 
     throw new TransportError(
       'SESSION_INVALID',
-      `${this.label}: c'e' una scheda su ${this.host} ma la sessione non e' valida. Rifai il login e riprova.`
+      `${this.label}: a tab on ${this.host} exists but the session is not valid.`
     );
   }
 
@@ -150,11 +154,11 @@ export class Channel {
     } catch (error) {
       throw new TransportError(
         'TAB_GONE',
-        `${this.label}: la scheda usata per la sessione non risponde più (${error.message}).`
+        `${this.label}: the session tab no longer responds (${error.message}).`
       );
     }
     if (!result) {
-      throw new TransportError('TAB_GONE', `${this.label}: la scheda usata per la sessione non risponde più.`);
+      throw new TransportError('TAB_GONE', `${this.label}: the session tab no longer responds.`);
     }
     return result;
   }

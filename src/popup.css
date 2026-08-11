@@ -53,6 +53,12 @@
 
 * { box-sizing: border-box; }
 
+/* L'attributo `hidden` vale `display: none` solo finché nessuno dichiara un
+   display sull'elemento. Qui lo fanno `button`, `main`, `.bar`, `.legend` e le
+   altre: senza questa regola `hidden` non nasconde niente, e restano in vista
+   il pannello delle ore sotto il registro e il pulsante "Annulla". */
+[hidden] { display: none !important; }
+
 body {
   width: 800px;
   margin: 0;

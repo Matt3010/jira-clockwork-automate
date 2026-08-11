@@ -87,4 +87,23 @@ assert.match(css, /\.foot-info \{[^}]*min-width: 0/,
   'il totale può restringersi: senza, spinge via i comandi');
 assert.match(css, /\.actions \{[^}]*flex: none/, 'e i comandi non cedono spazio al testo');
 
+// --- `hidden` deve davvero nascondere ------------------------------------
+// L'attributo vale `display: none` solo finché nessuno dichiara un display
+// sull'elemento. Qui lo fanno `button`, `main`, `.bar` e altre: senza la
+// guardia, `hidden` non nasconde niente — e non si vede provandolo su un
+// elemento qualsiasi, si vede solo su quelli con un display esplicito.
+const html = readFileSync(join(root, 'src/popup.html'), 'utf8');
+assert.match(css, /\[hidden\][^{]*\{[^}]*display: none !important/,
+  'manca la guardia su [hidden]: gli elementi con un display esplicito resterebbero in vista');
+
+for (const foglio of ['src/popup.css', 'src/options.css']) {
+  assert.match(readFileSync(join(root, foglio), 'utf8'), /\[hidden\]/,
+    `${foglio} usa display espliciti: serve la stessa guardia`);
+}
+
+// e gli elementi che si nascondono devono esistere davvero
+for (const id of ['log-view', 'timeline', 'legend', 'plan', 'row-tools', 'cancel-send']) {
+  assert.ok(new RegExp(`id="${id}"[^>]*hidden`).test(html), `#${id} non nasce nascosto`);
+}
+
 console.log('stato occupato: tutti i controlli passati.');

@@ -26,6 +26,9 @@
 
 * { box-sizing: border-box; }
 
+/* Stessa guardia del popup: `hidden` perde contro qualsiasi `display` esplicito. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0 auto;
   padding: 28px 24px 60px;

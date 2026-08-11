@@ -346,17 +346,10 @@ async function activity({ isoDate }) {
     aggiungi(issue.at, issue.key, 'created');
   }
 
-  if (config.jira.devPanel) {
-    try {
-      const candidates = await devCandidates(jira, { jiraActivity: attivita, config });
-      const identities = [me.displayName, me.emailAddress, ...(config.identity.extraAuthors || [])];
-      const dev = await collectDevPanelCommits(jira, { candidates, isoDate, identities });
-      for (const [key, commits] of dev.byIssue) {
-        for (const commit of commits) aggiungi(commit.at, key, 'commit', { subject: commit.subject });
-      }
-    } catch {
-      // Senza pannello Sviluppo il registro perde i commit, non si ferma.
-    }
+  // Senza pannello Sviluppo il registro perde i commit, non si ferma.
+  const dev = await gatherCommits(jira, { jiraActivity: attivita, config, isoDate, me });
+  for (const [key, commits] of dev?.byIssue || []) {
+    for (const commit of commits) aggiungi(commit.at, key, 'commit', { subject: commit.subject });
   }
 
   eventi.sort((a, b) => a.at - b.at);
@@ -447,6 +440,26 @@ async function rememberMeetingIssue({ memoryKey, issueKey }) {
  * capita di committare su un ticket senza aprirlo. Si aggiungono quindi le
  * issue assegnate a te e aggiornate di recente.
  */
+/**
+ * I commit della giornata dal pannello Sviluppo, con le sue candidate e la tua
+ * identita' gia' messe insieme. Serve al piano e al registro allo stesso modo:
+ * due copie di questa sequenza divergerebbero alla prima modifica.
+ *
+ * Ritorna `null` se il pannello non e' leggibile — chi chiama decide se
+ * segnalarlo o tirare dritto.
+ */
+async function gatherCommits(jira, { jiraActivity, config, isoDate, me }) {
+  if (!config.jira.devPanel) return null;
+  try {
+    const candidates = await devCandidates(jira, { jiraActivity, config });
+    const identities = [me.displayName, me.emailAddress, ...(config.identity.extraAuthors || [])];
+    const dev = await collectDevPanelCommits(jira, { candidates, isoDate, identities });
+    return { ...dev, candidates };
+  } catch (error) {
+    return { error };
+  }
+}
+
 async function devCandidates(jira, { jiraActivity, config }) {
   const byKey = new Map();
   for (const entry of jiraActivity.values()) {

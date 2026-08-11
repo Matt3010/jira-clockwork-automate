@@ -14,7 +14,12 @@ const en = JSON.parse(leggi('_locales/en/messages.json'));
 const it = JSON.parse(leggi('_locales/it/messages.json'));
 const manifest = JSON.parse(leggi('manifest.json'));
 
-const sorgenti = ['src/popup.js', 'src/options.js', 'src/background.js', 'src/lib/planner.js'];
+// Elenco ricavato dalla cartella, non scritto a mano: un modulo nuovo che usa
+// `t` deve essere coperto senza che qualcuno si ricordi di aggiungerlo qui.
+const sorgenti = [
+  ...readdirSync(join(root, 'src')).filter((f) => f.endsWith('.js')).map((f) => `src/${f}`),
+  ...readdirSync(join(root, 'src/lib')).filter((f) => f.endsWith('.js')).map((f) => `src/lib/${f}`)
+];
 const html = ['src/popup.html', 'src/options.html'];
 const codice = sorgenti.map(leggi).join('\n');
 const markup = html.map(leggi).join('\n');

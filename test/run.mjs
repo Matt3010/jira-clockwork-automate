@@ -20,6 +20,8 @@ const SUITES = [
   'flusso.test.mjs',
   'anteprima.test.mjs',
   'colori-attivita.test.mjs',
+  'registro.test.mjs',
+  'attivita-raccolta.test.mjs',
   'modifica-manuale.test.mjs',
   'righe-senza-ticket.test.mjs',
   'aggiornamento-leggero.test.mjs',

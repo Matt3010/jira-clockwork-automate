@@ -10,6 +10,7 @@ import {
 } from './lib/dates.js';
 import { icon, setIcon } from './lib/icons.js';
 import { t, applyI18n } from './lib/i18n.js';
+import { describeEvent, eventTime, logAsText } from './lib/registro.js';
 
 const el = {
   date: document.getElementById('date'),
@@ -123,12 +124,18 @@ function setButton(button, name, text) {
 
 function message(text, kind = 'info', action = null) {
   if (typeof text !== 'string' || !text) return;
+  // Lo stesso avviso tre volte non informa tre volte di più: succede quando un
+  // errore si ripete a ogni tentativo, e riempie il popup di rumore.
+  for (const esistente of el.messages.children) {
+    if (esistente.dataset.text === text) return;
+  }
   const level = LEVELS[kind] ? kind : 'info';
   const { rank, glyph } = LEVELS[level];
 
   const node = document.createElement('div');
   node.className = `msg ${level}`;
   node.dataset.rank = String(rank);
+  node.dataset.text = text;
 
   const mark = document.createElement('span');
   mark.className = 'glyph';
@@ -1198,17 +1205,6 @@ el.addRow.addEventListener('click', () => {
 
 // ------------------------------------------------------- registro attività
 
-/** Una riga del registro: "09:41 · ABC-1 · passata a In corso". */
-function describeEvent(evento) {
-  switch (evento.tipo) {
-    case 'created': return { verbo: t('logCreated'), dettaglio: evento.summary };
-    case 'status': return { verbo: t('logStatus', evento.to || '?'), dettaglio: evento.from || '' };
-    case 'comment': return { verbo: t('logComment'), dettaglio: evento.summary };
-    case 'commit': return { verbo: t('logCommit'), dettaglio: evento.subject || '' };
-    default: return { verbo: t('logField', evento.field || '?'), dettaglio: evento.to || '' };
-  }
-}
-
 function renderLog() {
   const eventi = state.logEvents;
   el.log.replaceChildren(...eventi.map((evento) => {
@@ -1216,9 +1212,7 @@ function renderLog() {
 
     const quando = document.createElement('span');
     quando.className = 'quando';
-    quando.textContent = minutesToTime(
-      new Date(evento.at).getHours() * 60 + new Date(evento.at).getMinutes()
-    );
+    quando.textContent = eventTime(evento.at);
 
     const chiave = document.createElement('span');
     chiave.className = 'chiave';
@@ -1239,15 +1233,6 @@ function renderLog() {
   el.logEmpty.hidden = eventi.length > 0;
   el.logCopy.hidden = eventi.length === 0;
   el.logCount.textContent = eventi.length ? t('logCount', eventi.length) : '';
-}
-
-/** Il registro come testo, pronto da incollare nel daily. */
-function logAsText() {
-  return state.logEvents.map((evento) => {
-    const ora = minutesToTime(new Date(evento.at).getHours() * 60 + new Date(evento.at).getMinutes());
-    const { verbo, dettaglio } = describeEvent(evento);
-    return `- ${ora} ${evento.key} — ${verbo}${dettaglio ? ` · ${dettaglio}` : ''}`;
-  }).join('\n');
 }
 
 async function loadLog() {
@@ -1346,7 +1331,7 @@ el.tabLog.addEventListener('click', () => showTab('log'));
 
 el.logCopy.addEventListener('click', async () => {
   try {
-    await navigator.clipboard.writeText(logAsText());
+    await navigator.clipboard.writeText(logAsText(state.logEvents));
     message(t('msgLogCopied', state.logEvents.length), 'ok');
   } catch (error) {
     message(t('msgLogCopyFailed', error.message), 'err');
