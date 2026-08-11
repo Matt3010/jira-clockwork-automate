@@ -12,6 +12,7 @@ import {
   JiraClient,
   collectJiraActivity,
   collectDevPanelCommits,
+  collectCreatedIssues,
   loggedMinutesForDay
 } from './lib/jira.js';
 import { Channel, TransportError, detectAtlassianHosts, hostOf, tabsOnHost } from './lib/transport.js';
@@ -26,6 +27,7 @@ const HANDLERS = {
   refreshLogged,
   reloadSite,
   copyFrom,
+  activity,
   refreshBadge,
   testJira,
   siteStatus,
@@ -288,6 +290,80 @@ async function refreshBadge() {
     await paintBadge(null);
     return { missing: null, shown: false };
   }
+}
+
+/**
+ * Il registro di cosa hai fatto quel giorno, in ordine di orario.
+ *
+ * Sono gli stessi dati che servono a costruire il piano, ma tenuti nel loro
+ * dettaglio invece che contati: al piano basta sapere "tre modifiche", qui
+ * serve poter dire "passata a In corso alle 09:41".
+ *
+ * Non ha niente a che vedere con le ore: risponde a "cosa ho fatto ieri",
+ * che e' la domanda del daily.
+ */
+async function activity({ isoDate }) {
+  const config = await loadConfig();
+  const channel = await jiraChannel(config);
+  const jira = new JiraClient(channel);
+  const projects = config.jira.projects || [];
+  const me = await resolveMe(jira, config).catch((error) => withSiteContext(error, channel.host));
+
+  const [attivita, create] = await Promise.all([
+    collectJiraActivity(jira, {
+      isoDate, projects, accountId: me.accountId, scanComments: config.jira.scanComments
+    }),
+    collectCreatedIssues(jira, { isoDate, projects })
+  ]);
+
+  const titoli = new Map();
+  const eventi = [];
+  const aggiungi = (at, key, tipo, extra = {}) => {
+    if (!at) return;
+    const quando = typeof at === 'number' ? at : Date.parse(at);
+    if (Number.isFinite(quando)) eventi.push({ at: quando, key, tipo, ...extra });
+  };
+
+  for (const voce of attivita.values()) {
+    titoli.set(voce.key, voce.summary);
+    for (const evento of voce.events) {
+      if (evento.kind === 'comment') {
+        aggiungi(evento.at, voce.key, 'comment');
+        continue;
+      }
+      // Ogni campo toccato e' un evento a se': "passata a In corso" e
+      // "riassegnata" nello stesso istante restano due righe leggibili.
+      for (const item of evento.items || []) {
+        aggiungi(evento.at, voce.key, item.field === 'status' ? 'status' : 'field', {
+          field: item.field, from: item.from, to: item.to
+        });
+      }
+    }
+  }
+
+  for (const issue of create) {
+    titoli.set(issue.key, issue.summary);
+    aggiungi(issue.at, issue.key, 'created');
+  }
+
+  if (config.jira.devPanel) {
+    try {
+      const candidates = await devCandidates(jira, { jiraActivity: attivita, config });
+      const identities = [me.displayName, me.emailAddress, ...(config.identity.extraAuthors || [])];
+      const dev = await collectDevPanelCommits(jira, { candidates, isoDate, identities });
+      for (const [key, commits] of dev.byIssue) {
+        for (const commit of commits) aggiungi(commit.at, key, 'commit', { subject: commit.subject });
+      }
+    } catch {
+      // Senza pannello Sviluppo il registro perde i commit, non si ferma.
+    }
+  }
+
+  eventi.sort((a, b) => a.at - b.at);
+  return {
+    isoDate,
+    events: eventi.map((evento) => ({ ...evento, summary: titoli.get(evento.key) || '' }))
+  };
 }
 
 /**

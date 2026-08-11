@@ -879,5 +879,66 @@
         "content": "$1"
       }
     }
+  },
+  "tabHours": {
+    "message": "Ore"
+  },
+  "tabLog": {
+    "message": "Attività"
+  },
+  "btnCopyLog": {
+    "message": "Copia per il daily"
+  },
+  "logEmpty": {
+    "message": "Su Jira non risulta niente per questa giornata."
+  },
+  "logCount": {
+    "message": "$COUNT$ eventi",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "logCreated": {
+    "message": "creata"
+  },
+  "logStatus": {
+    "message": "passata a $TO$",
+    "placeholders": {
+      "to": {
+        "content": "$1"
+      }
+    }
+  },
+  "logComment": {
+    "message": "commentata"
+  },
+  "logCommit": {
+    "message": "commit"
+  },
+  "logField": {
+    "message": "modificato $FIELD$",
+    "placeholders": {
+      "field": {
+        "content": "$1"
+      }
+    }
+  },
+  "msgLogCopied": {
+    "message": "$COUNT$ righe copiate negli appunti.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "msgLogCopyFailed": {
+    "message": "Non ho potuto copiare: $ERROR$",
+    "placeholders": {
+      "error": {
+        "content": "$1"
+      }
+    }
   }
 }

@@ -186,7 +186,7 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
   });
 
   const activity = new Map();
-  const record = (issue, kind, at, detail) => {
+  const record = (issue, kind, at, items = []) => {
     const key = issue.key;
     if (!activity.has(key)) {
       activity.set(key, {
@@ -197,7 +197,10 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
         events: []
       });
     }
-    activity.get(key).events.push({ kind, at, detail });
+    // `items` conserva il dettaglio del cambiamento — quale campo, da cosa a
+    // cosa. Al piano serve solo contarli, ma al registro delle attivita' serve
+    // poter dire "passata a In corso" invece di "una modifica".
+    activity.get(key).events.push({ kind, at, items });
   };
 
   for (const issue of issues) {
@@ -215,8 +218,18 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
     for (const history of histories) {
       if (history.author?.accountId !== accountId) continue;
       if (!isSameLocalDay(history.created, isoDate)) continue;
-      const fields = (history.items || []).map((item) => item.field).filter(Boolean);
-      record(issue, 'changelog', history.created, fields.join(', ') || 'modifica');
+      // Attenzione a `toString`: Jira chiama cosi' il campo, ma e' anche un
+      // metodo che ogni oggetto eredita. Quando Jira non lo manda, `||` non
+      // scatta e ci si ritrova la funzione al posto del testo.
+      const testo = (valore) => (typeof valore === 'string' ? valore : '');
+      const items = (history.items || [])
+        .filter((item) => item.field)
+        .map((item) => ({
+          field: item.field,
+          from: testo(item.fromString),
+          to: testo(item.toString)
+        }));
+      record(issue, 'changelog', history.created, items);
     }
   }
 
@@ -237,6 +250,30 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
   }
 
   return activity;
+}
+
+/**
+ * Le issue che hai creato tu quel giorno.
+ *
+ * Non stanno nel changelog — la creazione non e' una modifica — quindi senza
+ * questa ricerca "ho aperto un ticket" resterebbe fuori dal registro.
+ */
+export async function collectCreatedIssues(client, { isoDate, projects }) {
+  const { from, to } = jqlDayRange(isoDate);
+  const jql = `${projectClause(projects)}creator = currentUser() ` +
+    `AND created >= "${from}" AND created < "${to}" ORDER BY created ASC`;
+  try {
+    const issues = await client.search(jql, { fields: ['summary', 'created'], maxResults: 50 });
+    return issues.map((issue) => ({
+      key: issue.key,
+      summary: issue.fields?.summary || '',
+      at: issue.fields?.created || null
+    }));
+  } catch {
+    // Alcune istanze non espongono `creator` in JQL: il registro perde le
+    // creazioni ma resta valido per tutto il resto.
+    return [];
+  }
 }
 
 // ------------------------------------------------ commit dal pannello Sviluppo

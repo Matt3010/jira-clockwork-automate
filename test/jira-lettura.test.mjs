@@ -72,7 +72,16 @@ function fakeClient(risposte) {
   assert.equal(attivita.get('ABC-1').id, '1', 'l id serve al pannello Sviluppo');
   assert.equal(attivita.get('ABC-1').summary, 'Mia');
   assert.equal(attivita.get('ABC-1').events.length, 1, 'la modifica del collega non conta');
-  assert.equal(attivita.get('ABC-1').events[0].detail, 'status');
+  // Il dettaglio del cambiamento viene conservato, non ridotto a un conteggio:
+  // al piano basta contare, al registro delle attività serve sapere cosa è
+  // cambiato e da cosa a cosa.
+  assert.deepEqual(attivita.get('ABC-1').events[0].items, [{ field: 'status', from: '', to: '' }]);
+  // `toString` e' anche un metodo che ogni oggetto eredita: senza un controllo
+  // di tipo, un item senza quel campo restituisce la funzione al posto del testo.
+  for (const chiave of ['from', 'to']) {
+    assert.equal(typeof attivita.get('ABC-1').events[0].items[0][chiave], 'string',
+      `${chiave} deve essere testo, non quello che l oggetto eredita`);
+  }
 
   assert.match(client.chiamate.search[0].jql, /project in \(ABC\)/, 'la ricerca è ristretta ai progetti');
   assert.match(client.chiamate.search[0].jql, /updated >= "2026-08-10 00:00"/);

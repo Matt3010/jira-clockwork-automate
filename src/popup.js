@@ -32,7 +32,16 @@ const el = {
   site: document.getElementById('site'),
   submit: document.getElementById('submit'),
   cancelSend: document.getElementById('cancel-send'),
-  datalist: document.getElementById('recent-issues')
+  datalist: document.getElementById('recent-issues'),
+  tabHours: document.getElementById('tab-hours'),
+  tabLog: document.getElementById('tab-log'),
+  logView: document.getElementById('log-view'),
+  log: document.getElementById('log'),
+  logEmpty: document.getElementById('log-empty'),
+  logCount: document.getElementById('log-count'),
+  logCopy: document.getElementById('log-copy'),
+  main: document.querySelector('main'),
+  footer: document.querySelector('footer')
 };
 
 const state = {
@@ -49,6 +58,11 @@ const state = {
   // Righe con l'elenco dei worklog già su Jira aperto.
   expanded: new Set(),
   analyzedAt: 0,
+  // Vista corrente e registro attività: il registro si carica solo quando lo
+  // apri, e la giornata per cui vale serve a sapere se è da rileggere.
+  tab: 'hours',
+  logEvents: [],
+  logDate: null,
   config: null,
   recentIssues: []
 };
@@ -146,7 +160,6 @@ function shiftDay(days) {
   date.setDate(date.getDate() + days);
   state.isoDate = toIsoDate(date);
   el.date.value = state.isoDate;
-  el.copyDate.value = previousWorkday(state.isoDate);
 }
 
 /**
@@ -1138,14 +1151,24 @@ async function submit() {
 
 el.date.value = state.isoDate;
 el.copyDate.value = previousWorkday(state.isoDate);
+/**
+ * Cambiare giorno tocca entrambe le viste: il piano si rilegge comunque, o
+ * tornando su «Ore» si troverebbe quello di un altro giorno; il registro solo
+ * se lo stai guardando, e altrimenti al prossimo passaggio.
+ */
+function onDateChanged(delay) {
+  el.copyDate.value = previousWorkday(state.isoDate);
+  scheduleAnalyze(delay);
+  if (state.tab === 'log') loadLog();
+}
+
 el.date.addEventListener('change', () => {
   if (!el.date.value) return;
   state.isoDate = el.date.value;
-  el.copyDate.value = previousWorkday(state.isoDate);
-  scheduleAnalyze(0);
+  onDateChanged(0);
 });
-el.prevDay.addEventListener('click', () => { shiftDay(-1); scheduleAnalyze(); });
-el.nextDay.addEventListener('click', () => { shiftDay(1); scheduleAnalyze(); });
+el.prevDay.addEventListener('click', () => { shiftDay(-1); onDateChanged(); });
+el.nextDay.addEventListener('click', () => { shiftDay(1); onDateChanged(); });
 // Il rilevamento automatico può non vedere qualcosa — una riunione fuori
 // programma, un ticket su cui hai lavorato senza lasciare tracce. Senza questo
 // pulsante l'unica via era andare a mano su Jira, che è il motivo per cui
@@ -1172,6 +1195,90 @@ el.addRow.addEventListener('click', () => {
   // Il campo della riga nuova prende il fuoco: si è appena chiesto di scriverci.
   el.rows.querySelector('tr:last-child .issue-input')?.focus();
 });
+
+// ------------------------------------------------------- registro attività
+
+/** Una riga del registro: "09:41 · ABC-1 · passata a In corso". */
+function describeEvent(evento) {
+  switch (evento.tipo) {
+    case 'created': return { verbo: t('logCreated'), dettaglio: evento.summary };
+    case 'status': return { verbo: t('logStatus', evento.to || '?'), dettaglio: evento.from || '' };
+    case 'comment': return { verbo: t('logComment'), dettaglio: evento.summary };
+    case 'commit': return { verbo: t('logCommit'), dettaglio: evento.subject || '' };
+    default: return { verbo: t('logField', evento.field || '?'), dettaglio: evento.to || '' };
+  }
+}
+
+function renderLog() {
+  const eventi = state.logEvents;
+  el.log.replaceChildren(...eventi.map((evento) => {
+    const li = document.createElement('li');
+
+    const quando = document.createElement('span');
+    quando.className = 'quando';
+    quando.textContent = minutesToTime(
+      new Date(evento.at).getHours() * 60 + new Date(evento.at).getMinutes()
+    );
+
+    const chiave = document.createElement('span');
+    chiave.className = 'chiave';
+    chiave.textContent = evento.key;
+
+    const cosa = document.createElement('span');
+    cosa.className = 'cosa';
+    const { verbo, dettaglio } = describeEvent(evento);
+    const forte = document.createElement('strong');
+    forte.textContent = verbo;
+    cosa.append(forte);
+    if (dettaglio) cosa.append(` · ${dettaglio}`);
+
+    li.append(quando, chiave, cosa);
+    return li;
+  }));
+
+  el.logEmpty.hidden = eventi.length > 0;
+  el.logCopy.hidden = eventi.length === 0;
+  el.logCount.textContent = eventi.length ? t('logCount', eventi.length) : '';
+}
+
+/** Il registro come testo, pronto da incollare nel daily. */
+function logAsText() {
+  return state.logEvents.map((evento) => {
+    const ora = minutesToTime(new Date(evento.at).getHours() * 60 + new Date(evento.at).getMinutes());
+    const { verbo, dettaglio } = describeEvent(evento);
+    return `- ${ora} ${evento.key} — ${verbo}${dettaglio ? ` · ${dettaglio}` : ''}`;
+  }).join('\n');
+}
+
+async function loadLog() {
+  el.logCount.textContent = t('emptyAnalysing');
+  el.log.replaceChildren();
+  el.logEmpty.hidden = true;
+  el.logCopy.hidden = true;
+  try {
+    const { events } = await send('activity', { isoDate: state.isoDate });
+    state.logEvents = events;
+    state.logDate = state.isoDate;
+    renderLog();
+  } catch (error) {
+    state.logEvents = [];
+    renderLog();
+    reportAuthError(error, loadLog);
+  }
+}
+
+/** Passa fra le due viste. Il footer appartiene alle ore, non al registro. */
+function showTab(nome) {
+  state.tab = nome;
+  const ore = nome === 'hours';
+  el.tabHours.setAttribute('aria-selected', String(ore));
+  el.tabLog.setAttribute('aria-selected', String(!ore));
+  el.main.hidden = !ore;
+  el.footer.hidden = !ore;
+  el.logView.hidden = ore;
+  // Il registro si legge quando lo apri, e si rilegge se hai cambiato giorno.
+  if (!ore && state.logDate !== state.isoDate) loadLog();
+}
 
 /** Il giorno lavorativo precedente: sabato e domenica non si copiano. */
 function previousWorkday(isoDate) {
@@ -1233,6 +1340,18 @@ async function copyFromDay() {
 }
 
 el.copyDo.addEventListener('click', copyFromDay);
+
+el.tabHours.addEventListener('click', () => showTab('hours'));
+el.tabLog.addEventListener('click', () => showTab('log'));
+
+el.logCopy.addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(logAsText());
+    message(t('msgLogCopied', state.logEvents.length), 'ok');
+  } catch (error) {
+    message(t('msgLogCopyFailed', error.message), 'err');
+  }
+});
 
 el.toggleAll.addEventListener('change', () => {
   for (const row of state.rows) {

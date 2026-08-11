@@ -360,6 +360,61 @@ button.danger-text { color: var(--err); border-color: var(--err); margin-top: 6p
 }
 tr.disabled .remove.wipe { opacity: 1; }
 
+/* Linguette: due viste dello stesso giorno. La data sta sopra, perché serve a
+   entrambe — dentro una scheda ci si chiederebbe su che giorno si è. */
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.tab {
+  border: none;
+  background: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  padding: 7px 12px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.tab:hover { color: var(--text); background: none; }
+.tab[aria-selected="true"] {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* Registro delle attività */
+.log-view { overflow-y: auto; flex: 1; padding: 0 12px 12px; }
+.log-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0 8px;
+}
+.log-count { color: var(--muted); font-size: 12px; }
+.log { list-style: none; margin: 0; padding: 0; }
+.log li {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+}
+.log li:first-child { border-top: none; }
+.log .quando {
+  flex: none;
+  width: 42px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.log .chiave { flex: none; font-weight: 600; }
+.log .cosa { flex: 1; min-width: 0; color: var(--muted); }
+.log .cosa strong { color: var(--text); font-weight: 500; }
+
 #messages { padding: 0 12px; }
 /* Tre pesi visivi: quello che richiede un tuo intervento deve saltare all'occhio,
    quello informativo deve poter essere ignorato senza sforzo. */
