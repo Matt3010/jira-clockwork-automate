@@ -20,14 +20,17 @@
   </header>
 
   <nav class="tabs" role="tablist">
-    <button id="tab-hours" class="tab" role="tab" aria-selected="true" data-i18n="tabHours">Hours</button>
-    <button id="tab-log" class="tab" role="tab" aria-selected="false" data-i18n="tabLog">Activity</button>
-    <button id="tab-tickets" class="tab" role="tab" aria-selected="false" data-i18n="tabTickets">Tickets</button>
+    <button id="tab-hours" class="tab" role="tab" aria-selected="true"
+            aria-controls="hours-view" data-i18n="tabHours">Hours</button>
+    <button id="tab-log" class="tab" role="tab" aria-selected="false"
+            aria-controls="log-view" data-i18n="tabLog">Activity</button>
+    <button id="tab-tickets" class="tab" role="tab" aria-selected="false"
+            aria-controls="tickets-view" data-i18n="tabTickets">Tickets</button>
   </nav>
 
   <div id="messages"></div>
 
-  <section id="log-view" class="log-view" hidden>
+  <section id="log-view" class="log-view" role="tabpanel" aria-labelledby="tab-log" hidden>
     <div class="log-head">
       <span id="log-count" class="log-count"></span>
       <button id="log-copy" class="ghost" data-i18n="btnCopyLog">Copy for the standup</button>
@@ -36,7 +39,7 @@
     <p id="log-empty" class="empty" data-i18n="logEmpty">Nothing recorded on Jira for this day.</p>
   </section>
 
-  <section id="tickets-view" class="tickets-view" hidden>
+  <section id="tickets-view" class="tickets-view" role="tabpanel" aria-labelledby="tab-tickets" hidden>
     <div class="search-row">
       <input type="search" id="tickets-search" class="search"
              data-i18n-placeholder="placeholderSearch"
@@ -45,11 +48,11 @@
     <div class="log-head">
       <span id="tickets-count" class="log-count"></span>
     </div>
-    <div id="tickets" class="tickets"></div>
+    <div id="tickets"></div>
     <p id="tickets-empty" class="empty" data-i18n="ticketsEmpty">No open tickets assigned to you.</p>
   </section>
 
-  <main>
+  <main id="hours-view" role="tabpanel" aria-labelledby="tab-hours">
     <div id="timeline" class="timeline" hidden>
       <div class="scale">
         <div class="ruler"></div>
@@ -67,7 +70,7 @@
                    title="Select or deselect everything" />
           </th>
           <th class="col-issue" data-i18n="thIssue">Issue</th>
-          <th class="col-what" data-i18n="thWhat">What</th>
+          <th data-i18n="thWhat">What</th>
           <th class="col-hours" data-i18n="thHours">Hours</th>
           <th class="col-time" data-i18n="thTime">Time</th>
           <th class="col-actions"></th>

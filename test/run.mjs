@@ -34,7 +34,8 @@ const SUITES = [
   'transport.test.mjs',
   'devpanel.test.mjs',
   'opzioni.test.mjs',
-  'traduzioni.test.mjs'
+  'traduzioni.test.mjs',
+  'coerenza.test.mjs'
 ];
 
 let failed = 0;

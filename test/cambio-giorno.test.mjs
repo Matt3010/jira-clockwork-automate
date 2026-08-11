@@ -52,8 +52,11 @@ assert.match(blocco('scheduleLoadLog'), /logToken\+\+|\+\+logToken/,
   'programmare una lettura nuova deve invalidare subito quella in corso');
 
 // --- e chi legge scarta le risposte superate ------------------------------
+// Vale per tutte e quattro le letture, non solo per quelle legate al giorno:
+// due Aggiorna ravvicinati bastano a far tornare le risposte fuori ordine.
 for (const [nome, token] of [
-  ['analyze', 'analyzeToken'], ['loadLog', 'logToken'], ['runSearch', 'searchToken']
+  ['analyze', 'analyzeToken'], ['loadLog', 'logToken'],
+  ['runSearch', 'searchToken'], ['loadTickets', 'ticketsToken']
 ]) {
   const corpo = blocco(nome);
   assert.match(corpo, new RegExp(`const token = \\+\\+${token}`),

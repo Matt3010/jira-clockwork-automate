@@ -77,9 +77,8 @@ const state = {
   ticketGroups: [],
   ticketsTotal: 0,
   ticketsLoaded: false,
-  // Un solo menu di spostamento aperto alla volta, e le transizioni gia' lette
-  // per non richiederle a ogni apertura.
-  openMoveKey: null,
+  ticketsAt: 0,
+  // Le transizioni già lette, per non richiederle a ogni apertura del menu.
   transitionsByKey: new Map(),
   // Ricerca: quando è attiva prende il posto dell'elenco, e i risultati non
   // sono raggruppati — hanno già un ordine loro, di rilevanza.
@@ -1462,14 +1461,21 @@ function renderSearch() {
     : '';
 }
 
+// Stesso contrassegno delle altre letture: premendo Aggiorna due volte le
+// risposte possono tornare fuori ordine, e vincerebbe la più vecchia.
+let ticketsToken = 0;
+
 async function loadTickets() {
+  const token = ++ticketsToken;
   el.ticketsCount.textContent = t('emptyAnalysing');
   el.tickets.replaceChildren();
   el.ticketsEmpty.hidden = true;
   try {
     const { groups, total } = await send('openIssues');
-    applyTickets(groups, total);
+    if (token !== ticketsToken) return;
+    await applyTickets(groups, total);
   } catch (error) {
+    if (token !== ticketsToken) return;
     state.ticketGroups = [];
     state.ticketsTotal = 0;
     renderTickets();
@@ -1482,7 +1488,7 @@ async function applyTickets(groups, total, moved = '', { riapri = false } = {}) 
   state.ticketGroups = groups || [];
   state.ticketsTotal = total || 0;
   state.ticketsLoaded = true;
-  state.openMoveKey = null;
+  state.ticketsAt = Date.now();
   // Dopo uno spostamento le transizioni disponibili sono altre: la cache di
   // prima descriveva un punto del workflow in cui non siamo più.
   state.transitionsByKey.clear();
@@ -1561,12 +1567,10 @@ function followMoved(key, riapri = false) {
 async function toggleMoves(issue, menu, bottone) {
   if (!menu.hidden) {
     menu.hidden = true;
-    state.openMoveKey = null;
     return;
   }
   // Uno alla volta: due menu aperti in un popup stretto si leggono male.
   for (const altro of el.tickets.querySelectorAll('.moves')) altro.hidden = true;
-  state.openMoveKey = issue.key;
   menu.hidden = false;
 
   const cache = state.transitionsByKey.get(issue.key);
@@ -1582,7 +1586,8 @@ async function toggleMoves(issue, menu, bottone) {
     renderMoves(issue, menu, transitions);
   } catch (error) {
     menu.replaceChildren(hint(error.message));
-    reportAuthError(error, () => {});
+    // Leggere si può riprovare senza pensarci: non cambia niente su Jira.
+    reportAuthError(error, () => { menu.hidden = true; toggleMoves(issue, menu, bottone); });
   } finally {
     bottone.disabled = false;
   }
@@ -1627,7 +1632,10 @@ async function moveTicket(issue, transizione, menu) {
       { channel: `ticket:${issue.key}` });
   } catch (error) {
     menu.hidden = true;
-    reportAuthError(error, () => {});
+    // Qui si riprova a *rileggere*, non a rispostare: uno spostamento può
+    // essere andato a segno e fallito subito dopo, e rifarlo lo porterebbe
+    // uno stato più avanti di dove volevi. Rileggendo si vede dov'è davvero.
+    reportAuthError(error, loadTickets);
   }
 }
 
@@ -1708,7 +1716,7 @@ async function copyFromDay() {
     render();
     message(t('msgCopied', entries.length, fromDate), 'ok');
   } catch (error) {
-    reportAuthError(error, () => {});
+    reportAuthError(error, copyFromDay);
   } finally {
     el.copyDo.disabled = state.busy;
   }
@@ -1779,6 +1787,13 @@ window.addEventListener('resize', () => renderTimeline());
 // sposti o cancelli un worklog da Clockwork, tornando qui va riletto. Il
 // margine evita di rianalizzare a ogni sfarfallio di focus.
 window.addEventListener('focus', () => {
+  // Anche i ticket invecchiano mentre sei via, e più in fretta del piano: li
+  // sposti da Jira, torni qui, e la scheda mostrerebbe lo stato di prima.
+  // Se sei su un'altra scheda non si rilegge subito: ci pensa `showTab`
+  // quando ci arrivi, invece di spendere una richiesta per una vista chiusa.
+  state.ticketsLoaded = false;
+  if (state.tab === 'tickets' && Date.now() - state.ticketsAt >= 3000) loadTickets();
+
   if (Date.now() - state.analyzedAt < 3000) return;
   refreshLogged();
 });
