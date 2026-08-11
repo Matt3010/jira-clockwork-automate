@@ -83,6 +83,19 @@ assert.match(leggi('src/background.js'), /chrome\.sidePanel\?\.\w+|chrome\.sideP
     assert.match(stretto, new RegExp(`\\.col-${colonna} \\{ grid-area: ${colonna}`),
       `la cella ${colonna} non ha un posto nella disposizione stretta`);
   }
+
+  // Senza colonne, il confine fra una riga e l'altra non lo dà più
+  // l'incolonnamento: serve un contorno, o cinque righe di seguito si
+  // leggono come un unico flusso.
+  const regolaRiga = stretto.match(/\n {2}tr \{[^}]*\}/)?.[0] || '';
+  assert.match(regolaRiga, /border:/, 'la riga stretta non ha un contorno che la chiuda');
+  assert.match(regolaRiga, /background:/, 'né un fondo che la stacchi dalla pagina');
+  assert.match(stretto, /tbody \{[^}]*gap:/, 'e i blocchetti devono essere staccati fra loro');
+
+  // La riga dei worklog non ha colonne — ha due celle vuote di allineamento e
+  // una che prende tutto il resto. Dentro la griglia finirebbero sparse.
+  assert.match(stretto, /tr\.worklogs \{[^}]*display: block/,
+    'la riga dei worklog deve restare fuori dalla griglia delle colonne');
 }
 
 // --- l'anteprima si corica, e il JS lo scopre dal foglio di stile ---------
