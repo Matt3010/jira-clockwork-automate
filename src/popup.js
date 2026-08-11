@@ -807,9 +807,11 @@ function renderTimeline() {
   // disponibile — una giornata lunga deve comprimersi, non far scorrere via
   // tutto il resto.
   const lungoAsse = orizzontale
-    ? Math.max(240, el.timeline.clientWidth - 8)
+    ? Math.max(240, el.timeline.clientWidth)
     : Math.min(Math.round((span / 60) * 40), disponibile);
-  // La misura la applica il CSS, che sa su quale lato metterla.
+  // La misura la applica il CSS, che sa su quale lato metterla. Coricata gli
+  // serve solo per diradare le etichette: la larghezza la prende dal
+  // contenitore, così l'ultima ora cade sul bordo e non poco prima.
   scale.style.setProperty('--lungo-asse', `${lungoAsse}px`);
 
   const ruler = el.timeline.querySelector('.ruler');

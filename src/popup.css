@@ -656,8 +656,10 @@ tr.disabled .remove.wipe { opacity: 1; }
   .timeline .scale {
     flex-direction: column-reverse;
     height: auto;
-    width: var(--lungo-asse);
-    max-width: 100%;
+    /* Larga quanto il contenitore, non quanto la misura calcolata: così il
+       bordo dell'asse coincide con quello del resto della pagina, e l'ultima
+       ora si appoggia lì invece che a qualche pixel di distanza. */
+    width: 100%;
   }
   .timeline .ruler { width: auto; height: 14px; }
   .timeline .tick {

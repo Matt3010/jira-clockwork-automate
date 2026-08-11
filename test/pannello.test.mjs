@@ -140,6 +140,14 @@ assert.match(leggi('src/background.js'), /chrome\.sidePanel\?\.\w+|chrome\.sideP
     'senza la regola, la classe nel JS non fa niente');
   assert.match(css, /\.tick\.bordo-fine \{ transform: translateX\(-100%\)/);
 
+  // Appoggiare l'ultima etichetta al bordo serve a poco se il bordo non è
+  // quello della pagina: coricata, la scala deve riempire il contenitore,
+  // non fermarsi alla misura calcolata per diradare le etichette.
+  const coricata = css.match(/@media \(max-width: \d+px\) \{.*?\.timeline \.scale \{[^}]*\}/s)?.[0] || '';
+  assert.match(coricata, /width: 100%/, 'coricata la scala deve arrivare al bordo del contenitore');
+  assert.doesNotMatch(coricata, /width: var\(--lungo-asse\)/,
+    'con la larghezza calcolata l ultima ora cade qualche pixel prima del bordo');
+
   assert.match(popup, /setProperty\('--inizio'/, 'la posizione del blocco passa per una variabile');
   assert.match(popup, /setProperty\('--durata'/, 'e anche la durata');
   assert.doesNotMatch(popup, /nodo\.style\.(top|height|left|width) =/,
