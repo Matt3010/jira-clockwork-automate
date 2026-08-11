@@ -429,6 +429,7 @@ function renderRow(row) {
 
   // Attiva / disattiva
   const tdCheck = document.createElement('td');
+  tdCheck.className = 'col-check';
   const check = document.createElement('input');
   check.type = 'checkbox';
   check.checked = row.enabled;
@@ -445,6 +446,7 @@ function renderRow(row) {
 
   // Issue (testo libero con suggerimenti dalle issue recenti)
   const tdIssue = document.createElement('td');
+  tdIssue.className = 'col-issue';
   const issue = document.createElement('input');
   issue.type = 'text';
   issue.className = 'issue-input';
@@ -479,6 +481,7 @@ function renderRow(row) {
 
   // Descrizione + nota che finira' nel commento del worklog
   const tdWhat = document.createElement('td');
+  tdWhat.className = 'col-what';
   const summary = document.createElement('div');
   summary.className = 'summary';
   if (row.kind === 'meeting') {
@@ -522,6 +525,7 @@ function renderRow(row) {
 
   // Ore
   const tdHours = document.createElement('td');
+  tdHours.className = 'col-hours';
   const hours = document.createElement('input');
   hours.type = 'number';
   hours.className = 'hours';
@@ -543,6 +547,7 @@ function renderRow(row) {
   // Intervallo occupato: per una riunione è lo slot, per una task il blocco
   // che verrà scritto.
   const tdTime = document.createElement('td');
+  tdTime.className = 'col-time';
   const time = document.createElement('span');
   time.className = 'time';
   time.textContent = timeLabel(row);
@@ -554,6 +559,7 @@ function renderRow(row) {
   // Azioni: togliere la riga dal piano, e — se ci sono già ore su Jira —
   // cancellarle davvero.
   const tdActions = document.createElement('td');
+  tdActions.className = 'col-actions';
 
   if (row.existingMinutes && row.issueKey) {
     const wipe = document.createElement('button');
@@ -1801,6 +1807,13 @@ window.addEventListener('focus', () => {
 setIcon(el.prevDay, 'chevronLeft');
 setIcon(el.nextDay, 'chevronRight');
 setIcon(el.openOptions, 'settings');
+
+// Popup e pannello laterale sono la stessa pagina: il manifest apre il
+// pannello con `?panel=1`, e da lì il foglio di stile sa che la finestra ha
+// una larghezza sua invece di doversela dare da solo.
+if (new URLSearchParams(location.search).get('panel')) {
+  document.documentElement.dataset.mode = 'panel';
+}
 
 // Il markup statico prima di tutto: l'analisi parte subito dopo e i suoi
 // messaggi sono già tradotti da `t`.

@@ -39,7 +39,8 @@ const HANDLERS = {
   testJira,
   siteStatus,
   detectSite,
-  rememberMeetingIssue
+  rememberMeetingIssue,
+  refreshUiMode
 };
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -68,8 +69,39 @@ function scheduleBadge() {
   refreshBadge();
 }
 
-chrome.runtime.onInstalled.addListener(scheduleBadge);
-chrome.runtime.onStartup.addListener(scheduleBadge);
+/**
+ * Decide cosa apre il click sull'icona: il pannello laterale o il popup.
+ *
+ * Il manifest non dichiara `default_popup` perche' quello vincerebbe sempre
+ * sul pannello; il popup si riattiva da qui, a runtime, quando lo si sceglie
+ * nelle opzioni.
+ */
+async function applyUiMode(config) {
+  const pannello = config?.ui?.sidePanel !== false;
+  // `chrome.sidePanel` esiste da Chrome 114: dove non c'e', resta il popup —
+  // che e' anche il motivo per cui il popup non e' stato buttato via.
+  const disponibile = Boolean(chrome.sidePanel?.setPanelBehavior);
+  const attivo = pannello && disponibile;
+
+  if (disponibile) {
+    await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: attivo }).catch(() => {});
+  }
+  await chrome.action.setPopup({ popup: attivo ? '' : 'src/popup.html' });
+  return { sidePanel: attivo, available: disponibile };
+}
+
+/** Rilegge la scelta dalle opzioni e la applica subito. */
+async function refreshUiMode() {
+  return applyUiMode(await loadConfig());
+}
+
+async function startup() {
+  scheduleBadge();
+  await refreshUiMode();
+}
+
+chrome.runtime.onInstalled.addListener(startup);
+chrome.runtime.onStartup.addListener(startup);
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === BADGE_ALARM) refreshBadge();
 });

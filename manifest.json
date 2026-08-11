@@ -10,7 +10,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "permissions": ["storage", "scripting", "alarms"],
+  "permissions": ["storage", "scripting", "alarms", "sidePanel"],
   "host_permissions": [
     "https://*.atlassian.net/*"
   ],
@@ -18,8 +18,10 @@
     "service_worker": "src/background.js",
     "type": "module"
   },
+  "side_panel": {
+    "default_path": "src/popup.html?panel=1"
+  },
   "action": {
-    "default_popup": "src/popup.html",
     "default_title": "Clockwork Autofill",
     "default_icon": {
       "16": "icons/icon16.png",

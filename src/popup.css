@@ -79,6 +79,9 @@
    il pannello delle ore sotto il registro e il pulsante "Annulla". */
 [hidden] { display: none !important; }
 
+/* Due contesti, stessa pagina. Il popup non ha una finestra sua: la larghezza
+   gliela deve dare il contenuto, da qui. Il pannello laterale invece la sua
+   ce l'ha — la decide chi trascina il bordo — e riempie l'altezza. */
 body {
   width: 800px;
   margin: 0;
@@ -88,6 +91,11 @@ body {
   display: flex;
   flex-direction: column;
   max-height: 580px;
+}
+html[data-mode="panel"], html[data-mode="panel"] body {
+  width: auto;
+  height: 100%;
+  max-height: none;
 }
 
 .bar {
@@ -574,6 +582,22 @@ tr.disabled .remove.wipe { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .ticket.appena-spostato { animation: none; background: var(--cat-indeterminate-bg); }
+}
+
+/* Stretto — il pannello laterale, che l'utente allarga quanto vuole.
+   Le due soglie sono scelte in modo che l'orario non sparisca mai del tutto:
+   finché c'è l'anteprima gli orari si leggono lì e la colonna può cedere il
+   posto; quando anche l'anteprima non ci sta più, la colonna torna. */
+@media (max-width: 720px) {
+  .col-time { display: none; }
+  .col-issue { width: 118px; }
+}
+@media (max-width: 560px) {
+  .timeline { display: none; }
+  .col-time { display: table-cell; width: 88px; }
+  .col-what { display: none; }
+  main { padding: 0 8px; }
+  .bar { padding: 8px; gap: 6px; flex-wrap: wrap; }
 }
 
 #messages { padding: 0 12px; }

@@ -1073,5 +1073,11 @@
   },
   "ticketsUnassigned": {
     "message": "Non assegnato"
+  },
+  "checkSidePanel": {
+    "message": "Apri nel pannello laterale invece che come popup"
+  },
+  "hintSidePanel": {
+    "message": "Il pannello resta aperto accanto a Jira mentre lavori; il popup si chiude appena clicchi altrove. Serve Chrome 114 o più recente."
   }
 }

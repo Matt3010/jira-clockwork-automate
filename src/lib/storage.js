@@ -15,6 +15,13 @@ export const DEFAULT_CONFIG = {
     // trovare commit su ticket che oggi non hai aperto in Jira.
     devCandidates: 25
   },
+  ui: {
+    // Il pannello laterale resta aperto mentre lavori su Jira, il popup si
+    // chiude al primo click fuori: per un'estensione che si usa *mentre* si
+    // guarda Jira il pannello e' l'impostazione giusta. Chi preferisce il
+    // popup lo rimette da qui.
+    sidePanel: true
+  },
   // Nomi ed email con cui firmi i commit, se diversi dal tuo nome Jira.
   // Servono a riconoscere i tuoi commit fra quelli dei colleghi.
   identity: { extraAuthors: [] },

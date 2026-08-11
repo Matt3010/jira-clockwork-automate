@@ -222,6 +222,7 @@ function fill() {
   $('work-rounding').value = config.work.roundingMinutes;
   $('work-start').value = config.work.startTime;
   $('show-badge').checked = config.work.showBadge;
+  $('side-panel').checked = config.ui.sidePanel;
 
   $('meetings').replaceChildren(...(config.meetings || []).map(renderMeeting));
   $('breaks').replaceChildren(...(config.work.breaks || []).map(renderBreak));
@@ -263,6 +264,7 @@ async function save() {
       showBadge: $('show-badge').checked,
       breaks
     },
+    ui: { sidePanel: $('side-panel').checked },
     meetings
   };
 
@@ -272,6 +274,8 @@ async function save() {
   config = await saveConfig(patch);
   // Il badge dipende da monte ore e interruttore: si rifà appena cambiano.
   send('refreshBadge').catch(() => {});
+  // Pannello o popup: va applicato subito, non al prossimo avvio di Chrome.
+  send('refreshUiMode').catch(() => {});
   setResult($('save-result'), t('msgSaved'), 'ok');
   setTimeout(() => setResult($('save-result'), '', ''), 2500);
 }

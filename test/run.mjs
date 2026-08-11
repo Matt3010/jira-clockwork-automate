@@ -34,6 +34,7 @@ const SUITES = [
   'transport.test.mjs',
   'devpanel.test.mjs',
   'opzioni.test.mjs',
+  'pannello.test.mjs',
   'traduzioni.test.mjs',
   'coerenza.test.mjs'
 ];

@@ -136,6 +136,11 @@ function cancelloManifest(manifest, file) {
   raccogli(manifest.action?.default_icon);
   if (manifest.action?.default_popup) attesi.add(manifest.action.default_popup);
   if (manifest.options_page) attesi.add(manifest.options_page);
+  // Il pannello laterale porta la sua pagina con un parametro appeso
+  // (`?panel=1`): a esistere dev'essere il file, non la stringa intera.
+  if (manifest.side_panel?.default_path) {
+    attesi.add(manifest.side_panel.default_path.split('?')[0]);
+  }
   if (manifest.background?.service_worker) attesi.add(manifest.background.service_worker);
 
   for (const percorso of [...attesi].sort()) {
