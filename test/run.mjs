@@ -24,6 +24,7 @@ const SUITES = [
   'aggiornamento-leggero.test.mjs',
   'copia-badge.test.mjs',
   'conferma-invio.test.mjs',
+  'stato-occupato.test.mjs',
   'transport.test.mjs',
   'devpanel.test.mjs',
   'opzioni.test.mjs',

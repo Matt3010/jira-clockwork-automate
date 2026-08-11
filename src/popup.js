@@ -44,6 +44,7 @@ const state = {
   endOfDay: null,
   overflowMinutes: 0,
   duplicateRows: [],
+  busy: false,
   loggedEntries: [],
   // Righe con l'elenco dei worklog già su Jira aperto.
   expanded: new Set(),
@@ -161,7 +162,35 @@ function sendableRows() {
   return state.rows.filter((row) => row.enabled && row.issueKey && row.minutes);
 }
 
+/**
+ * Un solo interruttore per "sto analizzando": finché il piano non è arrivato,
+ * i comandi che agiscono su di esso non devono essere premibili, e il totale
+ * non deve mostrare numeri riferiti a un piano che non esiste più.
+ */
+function setBusy(on) {
+  state.busy = on;
+  el.analyze.disabled = on;
+  el.addRow.disabled = on;
+  el.copyDo.disabled = on;
+  el.copyDate.disabled = on;
+  el.toggleAll.disabled = on || state.rows.length === 0;
+  updateTotal();
+}
+
 function updateTotal() {
+  // Durante l'analisi non si sa ancora niente: si dice quello, invece di
+  // lasciare in vista i conti di prima.
+  if (state.busy) {
+    disarmSubmit();
+    state.overflowMinutes = 0;
+    state.duplicateRows = [];
+    el.total.classList.remove('over');
+    el.total.replaceChildren(document.createTextNode(t('emptyAnalysing')));
+    el.submit.disabled = true;
+    setButton(el.submit, 'send', t('btnSend'));
+    return;
+  }
+
   const inviabili = sendableRows();
   const total = inviabili.reduce((sum, row) => sum + row.minutes, 0);
   const sendable = inviabili.length;
@@ -758,7 +787,7 @@ function render() {
   const accese = state.rows.filter((row) => row.enabled).length;
   el.toggleAll.checked = accese > 0 && accese === state.rows.length;
   el.toggleAll.indeterminate = accese > 0 && accese < state.rows.length;
-  el.toggleAll.disabled = state.rows.length === 0;
+  el.toggleAll.disabled = state.busy || state.rows.length === 0;
 
   const hasRows = state.rows.length > 0;
   el.table.hidden = !hasRows;
@@ -952,7 +981,6 @@ async function analyze({ preserveMessages = false } = {}) {
   const forDate = state.isoDate;
 
   if (!preserveMessages) clearMessages();
-  el.analyze.disabled = true;
   setButton(el.analyze, 'refresh', t('btnAnalysing'));
 
   // Si riparte dallo stato di apertura: tabella e anteprima spariscono finché
@@ -960,6 +988,7 @@ async function analyze({ preserveMessages = false } = {}) {
   emptyMessage = t('emptyAnalysing');
   state.rows = [];
   state.expanded.clear();
+  setBusy(true);
   render();
 
   try {
@@ -1015,9 +1044,11 @@ async function analyze({ preserveMessages = false } = {}) {
     emptyMessage = t('emptyNoPlan');
     render();
   } finally {
+    // Solo se non è già partita un'altra analisi: sarebbe lei a dover decidere
+    // quando i comandi tornano premibili.
     if (token === analyzeToken) {
       state.analyzedAt = Date.now();
-      el.analyze.disabled = false;
+      setBusy(false);
       setButton(el.analyze, 'refresh', t('btnRefresh'));
     }
   }
@@ -1157,7 +1188,7 @@ async function copyFromDay() {
   } catch (error) {
     reportAuthError(error, () => {});
   } finally {
-    el.copyDo.disabled = false;
+    el.copyDo.disabled = state.busy;
   }
 }
 
