@@ -822,6 +822,12 @@ function renderTimeline() {
   for (let m = da; m <= a; m += passo) {
     const tick = document.createElement('span');
     tick.className = 'tick';
+    // Un'etichetta è centrata sul suo istante, quindi agli estremi metà di
+    // essa cadrebbe fuori dall'asse — ed è la metà che si legge per prima:
+    // "09:00" diventava "9:00". Le due di bordo si appoggiano al bordo.
+    const quota = ((m - da) / span) * 100;
+    if (quota <= 1.5) tick.classList.add('bordo-inizio');
+    else if (quota >= 98.5) tick.classList.add('bordo-fine');
     tick.style.setProperty('--inizio', pct(m));
     tick.textContent = minutesToTime(m);
     ruler.appendChild(tick);

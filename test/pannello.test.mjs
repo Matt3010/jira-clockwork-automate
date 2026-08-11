@@ -102,6 +102,14 @@ assert.match(leggi('src/background.js'), /chrome\.sidePanel\?\.\w+|chrome\.sideP
 
   // Il JS dice dove comincia un blocco e quanto dura; su quale lato diventino
   // top/height o left/width lo decide il CSS.
+  // Un'etichetta centrata sul suo istante, agli estremi, cade per metà fuori
+  // dall'asse — e la metà che sparisce è quella che si legge per prima.
+  assert.match(popup, /bordo-inizio/, 'la prima etichetta del righello deve appoggiarsi al bordo');
+  assert.match(popup, /bordo-fine/, 'e così l ultima');
+  assert.match(css, /\.tick\.bordo-inizio \{ transform: none/,
+    'senza la regola, la classe nel JS non fa niente');
+  assert.match(css, /\.tick\.bordo-fine \{ transform: translateX\(-100%\)/);
+
   assert.match(popup, /setProperty\('--inizio'/, 'la posizione del blocco passa per una variabile');
   assert.match(popup, /setProperty\('--durata'/, 'e anche la durata');
   assert.doesNotMatch(popup, /nodo\.style\.(top|height|left|width) =/,

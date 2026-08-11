@@ -627,6 +627,10 @@ tr.disabled .remove.wipe { opacity: 1; }
     left: var(--inizio);
     transform: translateX(-50%);
   }
+  /* Le due agli estremi si appoggiano al bordo invece di centrarsi: centrata
+     sull'istante, metà etichetta cadrebbe fuori dall'asse. */
+  .timeline .tick.bordo-inizio { transform: none; }
+  .timeline .tick.bordo-fine { transform: translateX(-100%); }
   .timeline .track { height: 26px; flex: none; }
   .timeline .block {
     top: 0;
