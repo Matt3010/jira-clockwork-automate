@@ -56,11 +56,47 @@ assert.match(leggi('src/background.js'), /chrome\.sidePanel\?\.\w+|chrome\.sideP
     'il popup invece la larghezza se la deve ancora dichiarare: non ha una finestra sua');
 }
 
+// --- una forma sola per il piano, a qualsiasi larghezza -------------------
+// Le righe si leggono come blocchetti sempre, non solo stretto. Due forme
+// significavano due layout da tenere in piedi, e la seconda si otteneva
+// smontando la prima — con la tabella rimessa a `display: block` e le
+// intestazioni nascoste.
+{
+  const css = leggi('src/popup.css');
+  const html = leggi('src/popup.html');
+
+  assert.doesNotMatch(html, /<thead/,
+    'le intestazioni di colonna non hanno più colonne da intestare');
+  // La spunta generale stava lì dentro, ma è un comando e non un titolo: deve
+  // essere sopravvissuta alla rimozione.
+  assert.match(html, /id="toggle-all"/, 'la spunta «tutte» è sparita insieme all intestazione');
+
+  const regolaRiga = css.match(/\ntr \{[^}]*\}/)?.[0] || '';
+  assert.match(regolaRiga, /display: grid/, 'la riga del piano è una griglia');
+  assert.match(regolaRiga, /grid-template-areas:/, 'con le posizioni dichiarate per nome');
+  // Senza colonne il confine fra una riga e l'altra non lo dà più
+  // l'incolonnamento: serve un contorno, o cinque righe di seguito si
+  // leggono come un unico flusso.
+  assert.match(regolaRiga, /border:/, 'la riga non ha un contorno che la chiuda');
+  assert.match(regolaRiga, /background:/, 'né un fondo che la stacchi dalla pagina');
+  assert.match(css, /\ntbody \{[^}]*gap:/, 'e i blocchetti devono essere staccati fra loro');
+
+  // Ogni cella deve avere un posto, o finisce dove capita.
+  for (const colonna of ['check', 'issue', 'what', 'hours', 'time', 'actions']) {
+    assert.match(css, new RegExp(`\\.col-${colonna} \\{ grid-area: ${colonna}`),
+      `la cella ${colonna} non ha un posto nella disposizione`);
+  }
+
+  // La riga dei worklog non ha colonne — ha due celle vuote di allineamento e
+  // una che prende tutto il resto. Dentro la griglia finirebbero sparse.
+  assert.match(css, /tr\.worklogs \{[^}]*display: block/s,
+    'la riga dei worklog deve restare fuori dalla griglia delle colonne');
+}
+
 // --- stretto non vuol dire che qualcosa sparisce -------------------------
-// La regola: si riorganizza, non si nasconde. Quello che in largo sta su una
-// riga, stretto sta su tre; l'anteprima non si toglie di mezzo, si corica.
-// Nascondere è la scorciatoia che si prende senza accorgersene, e chi guarda
-// non sa nemmeno che c'era qualcosa.
+// Resta una sola cosa che cambia con la larghezza: l'anteprima, che si
+// corica. E si corica, non si nasconde — nascondere è la scorciatoia che si
+// prende senza accorgersene, e chi guarda non sa nemmeno che c'era qualcosa.
 {
   const css = leggi('src/popup.css');
   const soglie = [...css.matchAll(/@media \(max-width: (\d+)px\) \{(.*?)\n\}/gs)];
@@ -72,30 +108,11 @@ assert.match(leggi('src/background.js'), /chrome\.sidePanel\?\.\w+|chrome\.sideP
     assert.doesNotMatch(stretto, new RegExp(`\\${pezzo}[^{]*\\{[^}]*display: none`),
       `stretto, ${pezzo} viene nascosto invece di essere ricollocato`);
   }
-  // L'unica cosa che si può togliere sono le intestazioni: descrivono colonne
-  // che in quella forma non esistono più, e ogni cella si spiega da sé.
-  assert.match(stretto, /thead \{ display: none/, 'le intestazioni di colonna non hanno più colonne da intestare');
-
-  // Ogni cella deve avere un posto nella nuova disposizione, o finisce dove
-  // capita: la griglia le colloca per nome.
-  assert.match(stretto, /grid-template-areas:/, 'la riga stretta non ha una disposizione dichiarata');
-  for (const colonna of ['check', 'issue', 'what', 'hours', 'time', 'actions']) {
-    assert.match(stretto, new RegExp(`\\.col-${colonna} \\{ grid-area: ${colonna}`),
-      `la cella ${colonna} non ha un posto nella disposizione stretta`);
+  // Il piano non deve più comparire qui dentro: la sua forma è una sola.
+  for (const pezzo of ['table', 'tbody', 'thead', 'td']) {
+    assert.doesNotMatch(stretto, new RegExp(`\\n {2}${pezzo}[ ,{]`),
+      `la soglia rimette mano al piano: dovrebbe avere una forma sola (${pezzo})`);
   }
-
-  // Senza colonne, il confine fra una riga e l'altra non lo dà più
-  // l'incolonnamento: serve un contorno, o cinque righe di seguito si
-  // leggono come un unico flusso.
-  const regolaRiga = stretto.match(/\n {2}tr \{[^}]*\}/)?.[0] || '';
-  assert.match(regolaRiga, /border:/, 'la riga stretta non ha un contorno che la chiuda');
-  assert.match(regolaRiga, /background:/, 'né un fondo che la stacchi dalla pagina');
-  assert.match(stretto, /tbody \{[^}]*gap:/, 'e i blocchetti devono essere staccati fra loro');
-
-  // La riga dei worklog non ha colonne — ha due celle vuote di allineamento e
-  // una che prende tutto il resto. Dentro la griglia finirebbero sparse.
-  assert.match(stretto, /tr\.worklogs \{[^}]*display: block/,
-    'la riga dei worklog deve restare fuori dalla griglia delle colonne');
 }
 
 // --- l'anteprima si corica, e il JS lo scopre dal foglio di stile ---------
@@ -129,14 +146,12 @@ assert.match(leggi('src/background.js'), /chrome\.sidePanel\?\.\w+|chrome\.sideP
     'scrivendo direttamente il lato, il JS decide l orientamento al posto del CSS');
 }
 
-// --- le celle sanno a quale colonna appartengono -------------------------
-// Le regole qui sopra parlano di classi: senza, nasconderebbero l intestazione
-// e lascerebbero le celle al loro posto, sfasando tutta la tabella.
+// --- le celle sanno dove vanno -------------------------------------------
+// La griglia colloca per nome: una cella senza etichetta viene posizionata
+// dove capita, e la riga si sfascia in silenzio.
 {
   const popup = leggi('src/popup.js');
-  const html = leggi('src/popup.html');
   for (const colonna of ['col-check', 'col-issue', 'col-what', 'col-hours', 'col-time', 'col-actions']) {
-    assert.match(html, new RegExp(`class="${colonna}"`), `manca l intestazione ${colonna}`);
     assert.match(popup, new RegExp(`className = '${colonna}'`), `le celle ${colonna} non sono etichettate`);
   }
 }

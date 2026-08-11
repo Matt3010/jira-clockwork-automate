@@ -62,20 +62,17 @@
 
     <div class="grid-area">
     <div id="legend" class="legend" hidden></div>
+    <!-- Le righe si leggono come blocchetti, non come colonne incolonnate:
+         un'intestazione di colonna non avrebbe niente da intestare. Resta la
+         spunta generale, che è un comando e non un titolo. -->
+    <div id="list-head" class="list-head" hidden>
+      <label class="pick-all">
+        <input type="checkbox" id="toggle-all" data-i18n-title="titleToggleAll"
+               title="Select or deselect everything" />
+        <span data-i18n="labelSelectAll">Select all</span>
+      </label>
+    </div>
     <table id="plan" hidden>
-      <thead>
-        <tr>
-          <th class="col-check">
-            <input type="checkbox" id="toggle-all" data-i18n-title="titleToggleAll"
-                   title="Select or deselect everything" />
-          </th>
-          <th class="col-issue" data-i18n="thIssue">Issue</th>
-          <th class="col-what" data-i18n="thWhat">What</th>
-          <th class="col-hours" data-i18n="thHours">Hours</th>
-          <th class="col-time" data-i18n="thTime">Time</th>
-          <th class="col-actions"></th>
-        </tr>
-      </thead>
       <tbody id="rows"></tbody>
     </table>
     <p id="empty" class="empty" data-i18n="emptyAnalysing">Analysing the day…</p>

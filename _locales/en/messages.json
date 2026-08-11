@@ -208,18 +208,6 @@
   "btnAnalysing": {
     "message": "Analysing…"
   },
-  "thIssue": {
-    "message": "Issue"
-  },
-  "thWhat": {
-    "message": "What"
-  },
-  "thHours": {
-    "message": "Hours"
-  },
-  "thTime": {
-    "message": "Time"
-  },
   "btnAddRow": {
     "message": "Add a row"
   },
@@ -1079,5 +1067,11 @@
   },
   "hintSidePanel": {
     "message": "The side panel stays open next to Jira while you work; the popup closes as soon as you click elsewhere. Needs Chrome 114 or newer."
+  },
+  "labelSelectAll": {
+    "message": "Select all"
+  },
+  "labelHours": {
+    "message": "Hours"
   }
 }

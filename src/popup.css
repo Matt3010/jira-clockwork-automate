@@ -323,25 +323,52 @@ body.busy #analyze .icon { animation: girando 1s linear infinite; }
   border: 1px solid var(--border);
 }
 
-table { width: 100%; border-collapse: collapse; }
-th {
-  text-align: left;
+/* Le righe del piano si leggono come blocchetti, a qualsiasi larghezza: sopra
+   quello che si tocca (spunta, ticket, ore, azioni), sotto quello che si
+   legge (titolo, note, orario). Una forma sola invece di due — le colonne
+   incolonnate reggevano solo in largo, e per il pannello andavano smontate. */
+table { width: 100%; display: block; }
+tbody { display: flex; flex-direction: column; gap: 8px; }
+
+.list-head {
+  display: flex;
+  align-items: center;
+  padding: 8px 2px 6px;
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: .04em;
   color: var(--muted);
-  font-weight: 600;
-  padding: 10px 6px 6px;
-  position: sticky;
-  top: 0;
-  background: var(--bg);
 }
-td { padding: 6px; border-top: 1px solid var(--border); vertical-align: top; }
+.pick-all { display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
 
-.col-check { width: 26px; }
-.col-issue { width: 150px; }
-.col-hours { width: 78px; }
-.col-time  { width: 96px; }
+tr {
+  display: grid;
+  /* Il campo del ticket non ha bisogno di più spazio di quanto ne occupi una
+     chiave: il resto va al titolo, che sta sotto ed è lungo. */
+  grid-template-columns: auto minmax(0, 1fr) 76px auto;
+  grid-template-areas:
+    "check issue hours actions"
+    "what  what  what  what"
+    "time  time  time  time";
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+td { padding: 0; border: none; }
+
+.col-check { grid-area: check; }
+.col-issue { grid-area: issue; }
+.col-what { grid-area: what; }
+.col-hours { grid-area: hours; }
+.col-time { grid-area: time; }
+.col-actions { grid-area: actions; display: flex; gap: 2px; }
+.col-time { color: var(--muted); font-size: 12px; }
+/* Dentro il blocchetto i campi devono staccarsi dal fondo, che non è più
+   quello della pagina. */
+.col-issue input, .col-hours input, .comment { background: var(--bg); }
 
 tr.disabled td { opacity: .45; }
 
@@ -349,13 +376,13 @@ tr.disabled td { opacity: .45; }
 .icon { display: inline-block; vertical-align: -.15em; flex: none; }
 .summary .icon { margin-right: 5px; color: var(--muted); }
 
-/* Stacco fra il blocco riunioni e il blocco attività. */
-tr.section-start > td {
-  border-top: 2px solid var(--border);
-  padding-top: 14px;
-}
+/* Stacco fra il blocco riunioni e il blocco attività: fra blocchetti già
+   staccati una linea non si vedrebbe, quindi è spazio. */
+tr.section-start { margin-top: 8px; }
 
-.issue-input { width: 100%; }
+/* Un campo che non deve crescere oltre quello che ci scrivi dentro: una
+   chiave di issue è corta, e in largo l'input arrivava a mezza finestra. */
+.issue-input { width: 100%; max-width: 260px; }
 .summary { font-weight: 500; }
 .detail { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .comment { width: 100%; margin-top: 4px; font-size: 12px; }
@@ -393,6 +420,18 @@ tr.section-start > td {
 .remove.wipe.open { color: var(--err); background: var(--surface); }
 
 /* Elenco dei worklog già su Jira, aperto sotto la riga. */
+/* L'elenco dei worklog già registrati appartiene alla riga sopra: si appoggia
+   al suo blocchetto invece di essere un blocchetto suo. Resta fuori dalla
+   griglia, perché le sue celle non sono colonne — sono due vuote di
+   allineamento più una che prende tutto il resto. */
+tr.worklogs {
+  display: block;
+  margin-top: -8px;
+  border-top: none;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+tr.worklogs td:empty { display: none; }
 tr.worklogs td { border-top: none; padding-top: 0; }
 .worklogs-title { color: var(--muted); font-size: 11px; margin-bottom: 5px; }
 .worklog-item {
@@ -641,63 +680,6 @@ tr.disabled .remove.wipe { opacity: 1; }
     right: auto;
   }
 
-  /* Ogni riga diventa un blocchetto chiuso. In colonne il confine fra una
-     riga e l'altra lo dava l'incolonnamento; senza colonne serve un
-     contorno, o cinque righe di seguito si leggono come un unico flusso e
-     non si capisce più dove finisce una e comincia l'altra. */
-  table, tr, td { display: block; }
-  tbody { display: flex; flex-direction: column; gap: 8px; }
-  /* Le intestazioni descrivono colonne che qui non ci sono più; ogni cella
-     resta comprensibile da sé, e gli input hanno il loro `title`. */
-  thead { display: none; }
-  tr {
-    display: grid;
-    /* Il campo del ticket non ha bisogno di più spazio di quanto ne occupi
-       una chiave: il resto va al titolo, che è lungo. */
-    grid-template-columns: auto minmax(0, 1fr) 72px auto;
-    grid-template-areas:
-      "check issue hours actions"
-      "what  what  what  what"
-      "time  time  time  time";
-    align-items: center;
-    gap: 6px;
-    padding: 8px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-  }
-  td { padding: 0; border: none; }
-  .col-check { grid-area: check; }
-  .col-issue { grid-area: issue; }
-  .col-what { grid-area: what; }
-  .col-hours { grid-area: hours; }
-  .col-time { grid-area: time; }
-  .col-actions { grid-area: actions; }
-  /* Larghezze pensate per le colonne: qui le decide la griglia. */
-  .col-issue, .col-hours, .col-time, .col-check, .col-actions { width: auto; }
-  /* Dentro il blocchetto i campi devono staccarsi dal fondo, che non è più
-     quello della pagina. */
-  .col-issue input, .col-hours input, .comment { background: var(--bg); }
-  .col-time { color: var(--muted); font-size: 12px; }
-  .col-actions { display: flex; gap: 2px; }
-
-  /* Lo stacco fra riunioni e attività era una linea più spessa sopra la
-     prima riga: fra blocchetti staccati non si vedrebbe. */
-  tr.section-start { margin-top: 6px; }
-  tr.section-start > td { border-top: none; padding-top: 0; }
-
-  /* L'elenco dei worklog già registrati appartiene alla riga sopra: si
-     appoggia al suo blocchetto invece di essere un blocchetto suo. Fuori
-     dalla griglia, perché le sue celle non sono colonne — sono due vuote di
-     allineamento più una che prende tutto il resto. */
-  tr.worklogs {
-    display: block;
-    margin-top: -8px;
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-    border-top: none;
-  }
-  tr.worklogs td:empty { display: none; }
 }
 
 #messages { padding: 0 12px; }

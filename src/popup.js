@@ -23,6 +23,7 @@ const el = {
   timeline: document.getElementById('timeline'),
   legend: document.getElementById('legend'),
   toggleAll: document.getElementById('toggle-all'),
+  listHead: document.getElementById('list-head'),
   rowTools: document.getElementById('row-tools'),
   addRow: document.getElementById('add-row'),
   copyDate: document.getElementById('copy-date'),
@@ -534,7 +535,7 @@ function renderRow(row) {
   hours.value = row.minutes ? +(row.minutes / 60).toFixed(2) : 0;
   // Stretto l'intestazione non c'è: un campo numerico da solo non dice di
   // cosa sia il numero.
-  hours.title = t('thHours');
+  hours.title = t('labelHours');
   hours.classList.toggle('locked', Boolean(row.locked));
   hours.addEventListener('change', () => {
     row.minutes = Math.max(0, Math.round(Number(hours.value || 0) * 60));
@@ -921,6 +922,7 @@ function render() {
 
   const hasRows = state.rows.length > 0;
   el.table.hidden = !hasRows;
+  el.listHead.hidden = !hasRows;
   el.empty.hidden = hasRows;
   // Aggiungere o copiare ha senso solo dopo un'analisi riuscita: prima non si
   // sa nemmeno su che sito si sta lavorando.
