@@ -16,7 +16,7 @@ import {
   collectOpenIssues,
   loggedMinutesForDay
 } from './lib/jira.js';
-import { groupOpenIssues, usefulTransitions } from './lib/ticket.js';
+import { groupOpenIssues, planStep, statesForType, usefulTransitions } from './lib/ticket.js';
 import { Channel, TransportError, detectAtlassianHosts, hostOf, tabsOnHost } from './lib/transport.js';
 import { buildPlan } from './lib/planner.js';
 import { formatMinutes, jiraStarted, shortMinutes, todayIso } from './lib/dates.js';
@@ -31,8 +31,8 @@ const HANDLERS = {
   copyFrom,
   activity,
   openIssues,
-  issueTransitions,
-  moveIssue,
+  issueStates,
+  moveIssueTo,
   refreshBadge,
   testJira,
   siteStatus,
@@ -383,43 +383,115 @@ async function openIssues() {
   return { groups: groupOpenIssues(issues), total: issues.length };
 }
 
+/** La chiave del progetto sta davanti al trattino: EGLVPN-2075 → EGLVPN. */
+const projectOf = (issueKey) => String(issueKey || '').split('-')[0];
+
+// Gli stati di un progetto non cambiano mentre guardi il popup, e chiederli a
+// ogni passo di un salto lungo sarebbe una richiesta di troppo per volta.
+const statiPerProgetto = new Map();
+
+async function projectStatuses(jira, projectKey) {
+  if (!statiPerProgetto.has(projectKey)) {
+    statiPerProgetto.set(projectKey, await jira.getProjectStatuses(projectKey).catch(() => []));
+  }
+  return statiPerProgetto.get(projectKey);
+}
+
 /**
- * Gli stati verso cui una issue puo' andare da dove si trova ora.
+ * Gli stati in cui la issue puo' finire — non solo quelli a un passo.
  *
- * Si chiedono solo quando servono davvero — al click su una riga. Chiederle
- * per tutte all'apertura sarebbe una richiesta per ticket, per un elenco che
- * nella maggior parte dei casi guardi e basta.
+ * Le transizioni di Jira dicono dove puoi andare adesso, e su un workflow
+ * lungo significa passare per DEV PR, DEV TEST, STAGE PR uno alla volta anche
+ * quando quello che vuoi e' l'ultimo. Qui si offre tutto il workflow, e
+ * `direct` distingue quello che costa un passo da quello che ne costa
+ * diversi: e' comunque un'informazione che vuoi avere prima di cliccare.
+ *
+ * Si chiedono solo al click su una riga: per tutto l'elenco sarebbero due
+ * richieste per ticket all'apertura, per una vista che il piu' delle volte
+ * guardi e basta.
  */
-async function issueTransitions({ issueKey, status }) {
+async function issueStates({ issueKey, issueType, status }) {
   if (!issueKey) throw new Error(t('errMissingIssue'));
   const config = await loadConfig();
   const channel = await jiraChannel(config);
   const jira = new JiraClient(channel);
-  const transitions = await jira.getTransitions(issueKey)
-    .catch((error) => withSiteContext(error, channel.host));
 
-  return { issueKey, transitions: usefulTransitions(transitions, status) };
+  const [transitions, perType] = await Promise.all([
+    jira.getTransitions(issueKey).catch((error) => withSiteContext(error, channel.host)),
+    projectStatuses(jira, projectOf(issueKey))
+  ]);
+
+  const utili = usefulTransitions(transitions, status);
+  const dirette = new Set(utili.map((tr) => tr.to.toLowerCase()));
+  const ordine = statesForType(perType, issueType);
+  const attuale = String(status || '').toLowerCase();
+
+  // Se il progetto non ha voluto dirci i suoi stati restano le transizioni
+  // dirette: meno scelta, ma non un menu vuoto.
+  const stati = ordine.length
+    ? ordine.filter((stato) => stato.name.toLowerCase() !== attuale)
+    : utili.map((tr) => ({ name: tr.to, category: tr.category }));
+
+  return {
+    issueKey,
+    states: stati.map((stato) => ({
+      name: stato.name,
+      category: stato.category,
+      direct: dirette.has(stato.name.toLowerCase())
+    }))
+  };
 }
 
+/** Oltre questo un "salto" non e' piu' un salto: e' un workflow percorso a caso. */
+const MAX_PASSI = 8;
+
 /**
- * Sposta la issue di stato e restituisce l'elenco aggiornato.
+ * Porta la issue fino allo stato chiesto, attraversando gli stati intermedi.
  *
- * Rileggere subito evita il caso in cui la riga resta a schermo con lo stato
- * vecchio: dopo una transizione Jira puo' anche averne cambiati altri (regole
- * di automazione), e mostrare quello che credevamo di aver scritto sarebbe una
- * bugia comoda.
+ * Jira non espone il grafo del workflow, solo le transizioni disponibili da
+ * dove sei. Quindi si cammina: un passo, si rilegge, si sceglie il prossimo.
+ * Sui workflow lineari — la norma — arriva; dove si biforca puo' fermarsi, e
+ * in quel caso si dice fin dove si e' arrivati, perche' il ticket *e'* stato
+ * mosso e far finta di niente sarebbe la bugia peggiore.
  */
-async function moveIssue({ issueKey, transitionId }) {
-  if (!issueKey || !transitionId) throw new Error(t('errMissingIssue'));
+async function moveIssueTo({ issueKey, issueType, status, target }) {
+  if (!issueKey || !target) throw new Error(t('errMissingIssue'));
   const config = await loadConfig();
   const channel = await jiraChannel(config);
   const jira = new JiraClient(channel);
 
-  await jira.transitionIssue(issueKey, transitionId)
-    .catch((error) => withSiteContext(error, channel.host));
+  const order = statesForType(await projectStatuses(jira, projectOf(issueKey)), issueType);
+  const path = [];
+  let corrente = status || '';
+
+  for (let passo = 0; passo < MAX_PASSI; passo += 1) {
+    const transitions = await jira.getTransitions(issueKey)
+      .catch((error) => withSiteContext(error, channel.host));
+    const step = planStep({ from: corrente, to: target, transitions, order });
+    if (!step) break;
+
+    await jira.transitionIssue(issueKey, step.id)
+      .catch((error) => withSiteContext(error, channel.host));
+    corrente = step.to;
+    path.push(step.to);
+    if (corrente.toLowerCase() === String(target).toLowerCase()) break;
+  }
+
+  // Lo stato vero lo dice Jira, non la nostra ultima mossa: fra un passo e
+  // l'altro un'automazione puo' aver spostato ancora.
+  const finale = await jira.getIssue(issueKey, ['status'])
+    .then((issue) => issue?.fields?.status?.name || corrente)
+    .catch(() => corrente);
 
   const issues = await collectOpenIssues(jira, { projects: config.jira.projects || [] });
-  return { groups: groupOpenIssues(issues), total: issues.length, moved: issueKey };
+  return {
+    groups: groupOpenIssues(issues),
+    total: issues.length,
+    moved: issueKey,
+    reached: finale,
+    target,
+    steps: path.length
+  };
 }
 
 /**

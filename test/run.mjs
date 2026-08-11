@@ -30,6 +30,7 @@ const SUITES = [
   'copia-badge.test.mjs',
   'conferma-invio.test.mjs',
   'stato-occupato.test.mjs',
+  'avvisi.test.mjs',
   'transport.test.mjs',
   'devpanel.test.mjs',
   'opzioni.test.mjs',

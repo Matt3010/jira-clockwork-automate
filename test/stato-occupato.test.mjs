@@ -37,12 +37,12 @@ assert.match(css, /prefers-reduced-motion/,
 // --- ogni comando che tocca il piano dev essere spento durante l analisi ---
 // Gestiti a parte, e per motivi diversi: cambiare giorno o vista mentre il
 // piano carica è legittimo — le viste sono indipendenti — l invio lo governa
-// `updateTotal`, e i comandi delle altre due viste (copia registro, ricarica
-// ticket) appartengono a schede che non stanno caricando.
+// `updateTotal`, e la copia del registro appartiene a una scheda che non sta
+// caricando.
 const A_PARTE = [
   'date', 'prevDay', 'nextDay', 'openOptions',
   'submit', 'cancelSend',
-  'tabHours', 'tabLog', 'tabTickets', 'logCopy', 'ticketsRefresh'
+  'tabHours', 'tabLog', 'tabTickets', 'logCopy'
 ];
 
 const conAscoltatore = [...new Set(

@@ -991,9 +991,6 @@
   "tabTickets": {
     "message": "Ticket"
   },
-  "btnRefreshTickets": {
-    "message": "Ricarica"
-  },
   "btnMove": {
     "message": "Sposta"
   },
@@ -1029,7 +1026,12 @@
     "message": "Leggo gli stati disponibili…"
   },
   "ticketsMoving": {
-    "message": "Sposto…"
+    "message": "Sposto in $STATUS$…",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
   },
   "titleOpenInJira": {
     "message": "Apri $KEY$ su Jira",
@@ -1040,12 +1042,45 @@
     }
   },
   "msgTicketMoved": {
-    "message": "$KEY$ spostato in $STATUS$.",
+    "message": "$KEY$ ora è in $STATUS$.",
     "placeholders": {
       "key": {
         "content": "$1"
       },
       "status": {
+        "content": "$2"
+      }
+    }
+  },
+  "ticketsFarState": {
+    "message": "$STATUS$ — ci si arriva passando per gli stati in mezzo",
+    "placeholders": {
+      "status": {
+        "content": "$1"
+      }
+    }
+  },
+  "msgTicketPartly": {
+    "message": "$KEY$ è arrivato fino a $REACHED$: da lì Jira non offre nessun passo verso $TARGET$.",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      },
+      "reached": {
+        "content": "$2"
+      },
+      "target": {
+        "content": "$3"
+      }
+    }
+  },
+  "msgTicketStuck": {
+    "message": "$KEY$ non si è mosso: da qui Jira non offre nessuna strada verso $TARGET$.",
+    "placeholders": {
+      "key": {
+        "content": "$1"
+      },
+      "target": {
         "content": "$2"
       }
     }

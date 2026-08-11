@@ -23,12 +23,18 @@
   --series-2: #1baf7a;
   --series-3: #e34948;
   --series-other: #7a8699;
-  /* Categorie di stato: sono stati, non serie di dati, quindi hanno colori
-     riservati e mai il colore da solo — accanto al pallino c'è sempre il nome
-     dello stato scritto. */
-  --cat-new: #8590a2;
-  --cat-indeterminate: #0b66e4;
-  --cat-unknown: #b38600;
+  /* Categorie di stato, con gli stessi colori che hanno su Jira: chi arriva
+     qui li ha già in testa da lì. Sono stati, non serie di dati — colori
+     riservati, e mai il colore da solo: il nome dello stato è sempre scritto
+     dentro il cartellino. */
+  --cat-new-bg: #dddee1;
+  --cat-new-text: #42526e;
+  --cat-indeterminate-bg: #e9f2fe;
+  --cat-indeterminate-text: #0055cc;
+  --cat-done-bg: #e3fcef;
+  --cat-done-text: #216e4e;
+  --cat-unknown-bg: #fff7d6;
+  --cat-unknown-text: #974f0c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -54,9 +60,14 @@
     --warn-bg: #3b2f1b;
     --err-bg: #42232a;
     --ok-bg: #1f3529;
-    --cat-new: #9aa5b1;
-    --cat-indeterminate: #579dff;
-    --cat-unknown: #e2b203;
+    --cat-new-bg: #2c333a;
+    --cat-new-text: #b6c2cf;
+    --cat-indeterminate-bg: #092957;
+    --cat-indeterminate-text: #85b8ff;
+    --cat-done-bg: #164b35;
+    --cat-done-text: #7ee2b8;
+    --cat-unknown-bg: #4a3a15;
+    --cat-unknown-text: #f5cd47;
   }
 }
 
@@ -442,15 +453,28 @@ tr.disabled .remove.wipe { opacity: 1; }
   padding: 4px 0 2px;
   font-size: 12px;
 }
-.group-head .dot {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--cat-unknown);
+/* Cartellino di stato, come su Jira. Il colore viene dalla categoria, il nome
+   è sempre scritto dentro: il colore da solo non deve mai essere l'unica
+   informazione. */
+.stato {
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.group-head .dot.cat-new { background: var(--cat-new); }
-.group-head .dot.cat-indeterminate { background: var(--cat-indeterminate); }
+/* Valgono sia per il cartellino sia per i pulsanti del menu: lì il colore
+   anticipa dove stai per mandare il ticket. */
+.cat-new { background: var(--cat-new-bg); color: var(--cat-new-text); }
+.cat-indeterminate { background: var(--cat-indeterminate-bg); color: var(--cat-indeterminate-text); }
+.cat-done { background: var(--cat-done-bg); color: var(--cat-done-text); }
+.cat-unknown { background: var(--cat-unknown-bg); color: var(--cat-unknown-text); }
 .group-count {
   margin-left: auto;
   color: var(--muted);
@@ -496,8 +520,36 @@ tr.disabled .remove.wipe { opacity: 1; }
   align-items: center;
   padding: 2px 0 8px;
 }
-.moves .move-to { padding: 3px 8px; font-size: 11px; }
+.moves .move-to {
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .02em;
+}
+/* Il bordo tratteggiato dice "ci si arriva, ma passando per gli stati in
+   mezzo": è il costo del salto, non un divieto. */
+.moves .move-to.lontano {
+  border-style: dashed;
+  border-color: currentColor;
+  background: none;
+}
+.moves .move-to:hover:not(:disabled) { filter: brightness(1.08); border-color: currentColor; }
+.moves .move-to:disabled { opacity: .5; }
 .moves-hint { color: var(--muted); font-size: 11px; }
+
+/* Cambiare stato vuol dire cambiare gruppo: la riga si sposta, e senza un
+   segno la si perde di vista proprio mentre ci si sta lavorando. */
+.ticket.appena-spostato { animation: spostato 1.6s ease-out; }
+@keyframes spostato {
+  from { background: var(--cat-indeterminate-bg); }
+  to { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ticket.appena-spostato { animation: none; background: var(--cat-indeterminate-bg); }
+}
 
 #messages { padding: 0 12px; }
 /* Tre pesi visivi: quello che richiede un tuo intervento deve saltare all'occhio,

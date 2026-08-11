@@ -129,6 +129,28 @@ export class JiraClient {
     }));
   }
 
+  /**
+   * Tutti gli stati del progetto, divisi per tipo di issue.
+   *
+   * Le transizioni dicono solo dove puoi andare *adesso*; questo dice quali
+   * stati esistono, che e' quello che serve per offrire anche i salti piu'
+   * lunghi. L'ordine e' quello in cui Jira li restituisce, cioe' quello del
+   * workflow: e' l'unico indizio che abbiamo sulla direzione.
+   */
+  async getProjectStatuses(projectKey) {
+    const data = await this.request(
+      `/rest/api/3/project/${encodeURIComponent(projectKey)}/statuses`
+    );
+    return (Array.isArray(data) ? data : []).map((tipo) => ({
+      type: tipo.name || '',
+      statuses: (tipo.statuses || []).map((stato) => ({
+        id: stato.id,
+        name: stato.name || '',
+        category: stato.statusCategory?.key || ''
+      }))
+    }));
+  }
+
   async transitionIssue(key, transitionId) {
     return this.request(`/rest/api/3/issue/${encodeURIComponent(key)}/transitions`, {
       method: 'POST',

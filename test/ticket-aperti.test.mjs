@@ -7,7 +7,9 @@
 
 import assert from 'node:assert/strict';
 import { JiraClient, collectOpenIssues } from '../src/lib/jira.js';
-import { groupOpenIssues, openedOn, usefulTransitions } from '../src/lib/ticket.js';
+import {
+  groupOpenIssues, openedOn, planStep, statesForType, usefulTransitions
+} from '../src/lib/ticket.js';
 
 function fakeClient(issues) {
   const chiamate = [];
@@ -202,6 +204,153 @@ assert.equal(openedOn(null), '');
   assert.deepEqual(usefulTransitions(undefined, 'Da fare'), []);
   assert.deepEqual(usefulTransitions(elenco, '').map((t) => t.id), ['11', '21'],
     'senza stato di partenza non si scarta nulla');
+}
+
+// ======================================================== gli stati del progetto
+{
+  const ch = canale(() => json([
+    { name: 'Bug', statuses: [{ id: '1', name: 'Aperto', statusCategory: { key: 'new' } }] },
+    { name: 'Task', statuses: [{ id: '2', name: 'Da fare', statusCategory: { key: 'new' } }] }
+  ]));
+  const jira = new JiraClient(ch);
+  const perTipo = await jira.getProjectStatuses('ABC');
+  assert.equal(ch.chiamate[0].path, '/rest/api/3/project/ABC/statuses');
+  assert.deepEqual(perTipo[0], {
+    type: 'Bug', statuses: [{ id: '1', name: 'Aperto', category: 'new' }]
+  });
+
+  // Il workflow dipende dal tipo: offrire a un bug gli stati di una storia
+  // porta a un salto che si ferma al primo passo.
+  assert.deepEqual(statesForType(perTipo, 'Task').map((s) => s.name), ['Da fare']);
+  assert.deepEqual(statesForType(perTipo, 'task').map((s) => s.name), ['Da fare'],
+    'il tipo si confronta senza badare alle maiuscole');
+  assert.deepEqual(statesForType(perTipo, 'Epic').map((s) => s.name), ['Aperto'],
+    'un tipo sconosciuto ripiega sul primo elenco: un ordine approssimato è meglio di nessuno');
+  assert.deepEqual(statesForType([], 'Task'), []);
+  assert.deepEqual(statesForType(undefined, 'Task'), []);
+}
+
+// ======================================================== salti di più stati
+// Il workflow di esempio, lineare come quasi tutti:
+const ORDINE = ['To Do', 'IN PROGRESS', 'DEV PR', 'DEV TEST', 'STAGE PR', 'Stage test', 'Done']
+  .map((name) => ({ name, category: name === 'Done' ? 'done' : 'indeterminate' }));
+
+const tr = (id, to) => ({ id, name: to, to, category: 'indeterminate' });
+
+// --- se ci si arriva in un colpo, si va e basta ---------------------------
+{
+  const passo = planStep({
+    from: 'To Do', to: 'IN PROGRESS', order: ORDINE,
+    transitions: [tr('11', 'IN PROGRESS'), tr('21', 'DEV PR')]
+  });
+  assert.equal(passo.to, 'IN PROGRESS');
+}
+
+// --- altrimenti si avanza il più possibile senza superare il bersaglio ----
+{
+  // Da "To Do" verso "Stage test": Jira offre solo i primi due passi.
+  const passo = planStep({
+    from: 'To Do', to: 'Stage test', order: ORDINE,
+    transitions: [tr('11', 'IN PROGRESS'), tr('21', 'DEV PR')]
+  });
+  assert.equal(passo.to, 'DEV PR', 'fra i passi possibili si prende quello che avvicina di più');
+}
+{
+  // Superare il bersaglio significherebbe dover tornare indietro, e ogni
+  // passaggio lascia una riga nel changelog del ticket.
+  const passo = planStep({
+    from: 'To Do', to: 'DEV PR', order: ORDINE,
+    transitions: [tr('11', 'IN PROGRESS'), tr('31', 'Done')]
+  });
+  assert.equal(passo.to, 'IN PROGRESS', 'meglio un passo corto che oltrepassare');
+}
+
+// --- si torna anche indietro ----------------------------------------------
+{
+  const passo = planStep({
+    from: 'Stage test', to: 'IN PROGRESS', order: ORDINE,
+    transitions: [tr('11', 'DEV TEST'), tr('21', 'Done')]
+  });
+  assert.equal(passo.to, 'DEV TEST', 'verso il bersaglio, non nella direzione opposta');
+}
+
+// --- quando non c'è strada ci si ferma ------------------------------------
+{
+  assert.equal(
+    planStep({
+      from: 'To Do', to: 'Stage test', order: ORDINE, transitions: [tr('11', 'Done')]
+    }),
+    null,
+    'l unica transizione supera il bersaglio: fermarsi è meglio che finire altrove'
+  );
+
+  assert.equal(planStep({ from: 'To Do', to: 'To Do', order: ORDINE, transitions: [tr('11', 'Done')] }),
+    null, 'sei già dove volevi andare');
+
+  assert.equal(
+    planStep({
+      from: 'Uno stato fuori elenco', to: 'Stage test', order: ORDINE, transitions: [tr('11', 'DEV PR')]
+    }),
+    null,
+    'senza sapere da dove si parte non c è direzione: tirare a indovinare sposterebbe a caso'
+  );
+
+  assert.equal(
+    planStep({
+      from: 'To Do', to: 'Stato che non esiste', order: ORDINE, transitions: [tr('11', 'DEV PR')]
+    }),
+    null,
+    'e nemmeno senza sapere dove si vuole arrivare'
+  );
+
+  assert.equal(planStep({ from: 'To Do', to: 'DEV PR', order: ORDINE, transitions: [] }), null);
+  assert.equal(planStep({ from: 'To Do', to: 'DEV PR', order: ORDINE, transitions: undefined }), null);
+  assert.equal(
+    planStep({ from: 'To Do', to: 'DEV PR', order: ORDINE, transitions: [{ to: 'DEV PR' }] }),
+    null,
+    'una transizione senza id non è applicabile'
+  );
+}
+
+// --- il percorso completo, un passo alla volta ----------------------------
+// È il caso dello screenshot: sei spostamenti a mano per attraversare il
+// workflow. Qui si verifica che la catena arrivi davvero in fondo.
+{
+  const disponibili = {
+    'To Do': ['IN PROGRESS'],
+    'IN PROGRESS': ['DEV PR', 'To Do'],
+    'DEV PR': ['DEV TEST'],
+    'DEV TEST': ['STAGE PR'],
+    'STAGE PR': ['Stage test']
+  };
+
+  let corrente = 'To Do';
+  const percorso = [];
+  for (let i = 0; i < 8; i += 1) {
+    const passo = planStep({
+      from: corrente,
+      to: 'Stage test',
+      order: ORDINE,
+      transitions: (disponibili[corrente] || []).map((to, n) => tr(`${n}`, to))
+    });
+    if (!passo) break;
+    corrente = passo.to;
+    percorso.push(passo.to);
+    if (corrente === 'Stage test') break;
+  }
+
+  assert.deepEqual(percorso, ['IN PROGRESS', 'DEV PR', 'DEV TEST', 'STAGE PR', 'Stage test']);
+  assert.ok(!percorso.includes('To Do'), 'non deve tornare indietro strada facendo');
+}
+
+// --- e uno che si ferma a metà --------------------------------------------
+{
+  // Da "DEV PR" in avanti il workflow si biforca e Jira non offre niente che
+  // avvicini: il ticket resta lì, e chi ha cliccato deve saperlo.
+  const passo = planStep({
+    from: 'DEV PR', to: 'Stage test', order: ORDINE, transitions: [tr('11', 'To Do')]
+  });
+  assert.equal(passo, null);
 }
 
 console.log('ticket aperti: tutti i controlli passati.');

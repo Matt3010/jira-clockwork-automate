@@ -47,7 +47,6 @@ const el = {
   tickets: document.getElementById('tickets'),
   ticketsEmpty: document.getElementById('tickets-empty'),
   ticketsCount: document.getElementById('tickets-count'),
-  ticketsRefresh: document.getElementById('tickets-refresh'),
   main: document.querySelector('main'),
   footer: document.querySelector('footer')
 };
@@ -138,12 +137,28 @@ function setButton(button, name, text) {
   button.title = text;
 }
 
-function message(text, kind = 'info', action = null) {
+/** Quanto resta a schermo una conferma prima di togliersi di mezzo. */
+const DURATA_OK = 5000;
+
+/**
+ * Un avviso nel popup.
+ *
+ * `channel` raggruppa gli avvisi che si riferiscono alla stessa cosa: il
+ * nuovo prende il posto del vecchio invece di accodarsi. Serve dove l'azione
+ * si ripete — spostare cinque ticket di fila lasciava cinque conferme
+ * impilate, che insieme dicono meno dell'ultima da sola.
+ */
+function message(text, kind = 'info', action = null, { channel = '' } = {}) {
   if (typeof text !== 'string' || !text) return;
   // Lo stesso avviso tre volte non informa tre volte di più: succede quando un
   // errore si ripete a ogni tentativo, e riempie il popup di rumore.
   for (const esistente of el.messages.children) {
     if (esistente.dataset.text === text) return;
+  }
+  if (channel) {
+    for (const esistente of [...el.messages.children]) {
+      if (esistente.dataset.channel === channel) esistente.remove();
+    }
   }
   const level = LEVELS[kind] ? kind : 'info';
   const { rank, glyph } = LEVELS[level];
@@ -152,6 +167,7 @@ function message(text, kind = 'info', action = null) {
   node.className = `msg ${level}`;
   node.dataset.rank = String(rank);
   node.dataset.text = text;
+  if (channel) node.dataset.channel = channel;
 
   const mark = document.createElement('span');
   mark.className = 'glyph';
@@ -172,6 +188,11 @@ function message(text, kind = 'info', action = null) {
 
   const after = [...el.messages.children].find((child) => Number(child.dataset.rank) > rank);
   el.messages.insertBefore(node, after || null);
+
+  // Una conferma ha finito il suo lavoro appena l'hai letta, e in un popup
+  // alto quattro righe lo spazio che occupa è quello del contenuto. Errori e
+  // avvisi restano: quelli vanno letti con calma, e a volte agiti.
+  if (level === 'ok' && !action) setTimeout(() => node.remove(), DURATA_OK);
 }
 
 function clearMessages() {
@@ -1301,9 +1322,19 @@ function ticketDay(day) {
     .toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
+/** Il cartellino di uno stato, coi colori per categoria che ha Jira. */
+function statusBadge(name, category) {
+  const badge = document.createElement('span');
+  badge.className = `stato cat-${category || 'unknown'}`;
+  badge.textContent = name;
+  return badge;
+}
+
 function ticketRow(issue) {
   const li = document.createElement('li');
   li.className = 'ticket';
+  // Serve a ritrovare la riga dopo che lo spostamento l'ha cambiata di gruppo.
+  li.dataset.key = issue.key;
 
   const riga = document.createElement('div');
   riga.className = 'ticket-line';
@@ -1346,16 +1377,14 @@ function ticketGroup(gruppo) {
 
   const testa = document.createElement('div');
   testa.className = 'group-head';
-  const pallino = document.createElement('span');
-  // La categoria decide il colore: gli stati hanno nomi diversi ovunque, le
-  // categorie no, quindi il colore resta coerente fra progetti.
-  pallino.className = `dot cat-${gruppo.category || 'unknown'}`;
-  const nome = document.createElement('strong');
-  nome.textContent = gruppo.status || t('ticketsNoStatus');
+  // Stesso cartellino che si vede su Jira: la categoria decide il colore, e la
+  // categoria è il dato canonico — gli stati hanno nomi diversi in ogni
+  // progetto, quindi cercare il colore per nome darebbe risultati diversi da
+  // un progetto all'altro.
   const quanti = document.createElement('span');
   quanti.className = 'group-count';
   quanti.textContent = String(gruppo.count);
-  testa.append(pallino, nome, quanti);
+  testa.append(statusBadge(gruppo.status || t('ticketsNoStatus'), gruppo.category), quanti);
   sezione.append(testa);
 
   for (const giorno of gruppo.days) {
@@ -1383,7 +1412,6 @@ async function loadTickets() {
   el.ticketsCount.textContent = t('emptyAnalysing');
   el.tickets.replaceChildren();
   el.ticketsEmpty.hidden = true;
-  el.ticketsRefresh.disabled = true;
   try {
     const { groups, total } = await send('openIssues');
     applyTickets(groups, total);
@@ -1392,26 +1420,40 @@ async function loadTickets() {
     state.ticketsTotal = 0;
     renderTickets();
     reportAuthError(error, loadTickets);
-  } finally {
-    el.ticketsRefresh.disabled = false;
   }
 }
 
 /** Un elenco appena letto sostituisce il precedente, menu e cache compresi. */
-function applyTickets(groups, total) {
+function applyTickets(groups, total, moved = '') {
   state.ticketGroups = groups || [];
   state.ticketsTotal = total || 0;
   state.ticketsLoaded = true;
   state.openMoveKey = null;
-  // Dopo uno spostamento le transizioni disponibili sono altre: la cache di
-  // prima descriveva uno stato che non c'è più.
+  // Dopo uno spostamento gli stati raggiungibili sono altri: la cache di prima
+  // descriveva un punto del workflow in cui non siamo più.
   state.transitionsByKey.clear();
   renderTickets();
+  if (moved) followMoved(moved);
 }
 
 /**
- * Apre (o chiude) l'elenco degli stati raggiungibili da una issue.
- * Le transizioni si chiedono qui, al primo click, non per tutto l'elenco.
+ * Riporta lo sguardo sul ticket appena spostato.
+ *
+ * Cambiare stato vuol dire cambiare gruppo, e il gruppo nuovo può stare fuori
+ * schermo: senza questo, ogni spostamento fa perdere di vista il ticket su cui
+ * si sta lavorando — e se ne devi fare quattro di fila lo insegui ogni volta.
+ */
+function followMoved(key) {
+  const riga = el.tickets.querySelector(`.ticket[data-key="${CSS.escape(key)}"]`);
+  if (!riga) return;
+  const fermo = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  riga.scrollIntoView({ block: 'center', behavior: fermo ? 'auto' : 'smooth' });
+  riga.classList.add('appena-spostato');
+}
+
+/**
+ * Apre (o chiude) l'elenco degli stati in cui la issue può finire.
+ * Si chiedono qui, al primo click, non per tutto l'elenco.
  */
 async function toggleMoves(issue, menu, bottone) {
   if (!menu.hidden) {
@@ -1430,11 +1472,11 @@ async function toggleMoves(issue, menu, bottone) {
   menu.replaceChildren(hint(t('ticketsLoadingMoves')));
   bottone.disabled = true;
   try {
-    const { transitions } = await send('issueTransitions', {
-      issueKey: issue.key, status: issue.status
+    const { states } = await send('issueStates', {
+      issueKey: issue.key, issueType: issue.type, status: issue.status
     });
-    state.transitionsByKey.set(issue.key, transitions);
-    renderMoves(issue, menu, transitions);
+    state.transitionsByKey.set(issue.key, states);
+    renderMoves(issue, menu, states);
   } catch (error) {
     menu.replaceChildren(hint(error.message));
     reportAuthError(error, () => {});
@@ -1450,35 +1492,52 @@ function hint(testo) {
   return span;
 }
 
-function renderMoves(issue, menu, transitions) {
-  if (!transitions.length) return menu.replaceChildren(hint(t('ticketsNoMoves')));
+function renderMoves(issue, menu, states) {
+  if (!states.length) return menu.replaceChildren(hint(t('ticketsNoMoves')));
 
-  menu.replaceChildren(...transitions.map((tr) => {
+  menu.replaceChildren(...states.map((stato) => {
     const bottone = document.createElement('button');
-    bottone.className = 'ghost move-to';
+    // `lontano` non è un divieto: è il costo. Ci si arriva lo stesso, ma
+    // passando per gli stati in mezzo, e vale la pena saperlo prima.
+    bottone.className = `move-to cat-${stato.category || 'unknown'}${stato.direct ? '' : ' lontano'}`;
     bottone.type = 'button';
-    // Il nome della transizione e quello dello stato d'arrivo spesso
-    // coincidono: ripeterli due volte sarebbe rumore.
-    bottone.textContent = tr.to && tr.to !== tr.name ? `${tr.name} → ${tr.to}` : tr.name;
-    bottone.addEventListener('click', () => moveTicket(issue, tr, menu));
+    bottone.textContent = stato.name;
+    bottone.title = stato.direct ? stato.name : t('ticketsFarState', stato.name);
+    bottone.addEventListener('click', () => moveTicket(issue, stato, menu));
     return bottone;
   }));
 }
 
-async function moveTicket(issue, transizione, menu) {
+async function moveTicket(issue, stato, menu) {
   for (const b of menu.querySelectorAll('button')) b.disabled = true;
-  menu.append(hint(t('ticketsMoving')));
+  menu.replaceChildren(hint(t('ticketsMoving', stato.name)));
   try {
-    const { groups, total } = await send('moveIssue', {
-      issueKey: issue.key, transitionId: transizione.id
+    const esito = await send('moveIssueTo', {
+      issueKey: issue.key, issueType: issue.type, status: issue.status, target: stato.name
     });
-    applyTickets(groups, total);
-    message(t('msgTicketMoved', issue.key, transizione.to || transizione.name), 'ok');
+    applyTickets(esito.groups, esito.total, esito.moved);
+
+    // Il canale è la riga: spostare quattro ticket di fila lasciava quattro
+    // conferme impilate, e insieme dicevano meno dell'ultima da sola.
+    const canale = `ticket:${issue.key}`;
+    if (arrivato(esito)) {
+      message(t('msgTicketMoved', issue.key, esito.reached), 'ok', null, { channel: canale });
+    } else if (esito.steps) {
+      // Mosso, ma non fin dove volevi: il workflow si è biforcato e da lì in
+      // avanti la strada la sa solo Jira.
+      message(t('msgTicketPartly', issue.key, esito.reached, stato.name), 'warn', null,
+        { channel: canale });
+    } else {
+      message(t('msgTicketStuck', issue.key, stato.name), 'warn', null, { channel: canale });
+    }
   } catch (error) {
     menu.hidden = true;
     reportAuthError(error, () => {});
   }
 }
+
+const arrivato = (esito) =>
+  String(esito.reached || '').toLowerCase() === String(esito.target || '').toLowerCase();
 
 /** Passa fra le viste. Il footer appartiene alle ore, non alle altre schede. */
 function showTab(nome) {
@@ -1568,7 +1627,6 @@ el.copyDo.addEventListener('click', copyFromDay);
 el.tabHours.addEventListener('click', () => showTab('hours'));
 el.tabLog.addEventListener('click', () => showTab('log'));
 el.tabTickets.addEventListener('click', () => showTab('tickets'));
-el.ticketsRefresh.addEventListener('click', loadTickets);
 
 el.logCopy.addEventListener('click', async () => {
   try {
