@@ -813,5 +813,55 @@
         "content": "$2"
       }
     }
+  },
+  "checkShowBadge": {
+    "message": "Mostra le ore mancanti sull'icona dell'estensione"
+  },
+  "hintShowBadge": {
+    "message": "Un numero sull'icona quando la giornata non è ancora coperta, aggiornato ogni 15 minuti. Per leggerlo serve una scheda Jira aperta: senza, il badge viene cancellato invece di restare fermo su un numero vecchio."
+  },
+  "badgeMissing": {
+    "message": "Mancano ancora $AMOUNT$ oggi",
+    "placeholders": {
+      "amount": {
+        "content": "$1"
+      }
+    }
+  },
+  "badgeComplete": {
+    "message": "La giornata è coperta"
+  },
+  "labelCopyFrom": {
+    "message": "Copia da"
+  },
+  "btnCopy": {
+    "message": "Copia"
+  },
+  "detailCopied": {
+    "message": "Copiata dal $DATE$",
+    "placeholders": {
+      "date": {
+        "content": "$1"
+      }
+    }
+  },
+  "msgCopied": {
+    "message": "$COUNT$ righe copiate dal $DATE$. Le ore sono arrivate così com'erano: correggile se la giornata è stata diversa.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      },
+      "date": {
+        "content": "$2"
+      }
+    }
+  },
+  "msgCopiedNone": {
+    "message": "Il $DATE$ non risulta registrato niente.",
+    "placeholders": {
+      "date": {
+        "content": "$1"
+      }
+    }
   }
 }

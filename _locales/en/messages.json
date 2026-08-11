@@ -813,5 +813,55 @@
         "content": "$2"
       }
     }
+  },
+  "checkShowBadge": {
+    "message": "Show the missing hours on the extension icon"
+  },
+  "hintShowBadge": {
+    "message": "A number on the icon when today is not covered yet, refreshed every 15 minutes. It needs a Jira tab open to read from: without one the badge is cleared rather than left showing a stale figure."
+  },
+  "badgeMissing": {
+    "message": "$AMOUNT$ still missing today",
+    "placeholders": {
+      "amount": {
+        "content": "$1"
+      }
+    }
+  },
+  "badgeComplete": {
+    "message": "Today is covered"
+  },
+  "labelCopyFrom": {
+    "message": "Copy from"
+  },
+  "btnCopy": {
+    "message": "Copy"
+  },
+  "detailCopied": {
+    "message": "Copied from $DATE$",
+    "placeholders": {
+      "date": {
+        "content": "$1"
+      }
+    }
+  },
+  "msgCopied": {
+    "message": "$COUNT$ rows copied from $DATE$. The hours came across as they were: correct them if the day was different.",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      },
+      "date": {
+        "content": "$2"
+      }
+    }
+  },
+  "msgCopiedNone": {
+    "message": "Nothing was logged on $DATE$.",
+    "placeholders": {
+      "date": {
+        "content": "$1"
+      }
+    }
   }
 }

@@ -138,6 +138,14 @@ export class JiraClient {
   }
 }
 
+/** Il testo dentro un documento ADF, per rileggere la nota di un worklog. */
+export function textFromAdf(doc) {
+  if (!doc) return '';
+  if (typeof doc === 'string') return doc;
+  if (doc.type === 'text') return doc.text || '';
+  return (doc.content || []).map(textFromAdf).join(doc.type === 'paragraph' ? '' : ' ').trim();
+}
+
 /** Commento in Atlassian Document Format, richiesto dall'API v3. */
 function toAdf(text) {
   return {
@@ -378,7 +386,9 @@ export async function loggedMinutesForDay(client, { isoDate, accountId }) {
           key: issue.key,
           summary: issue.fields?.summary || '',
           startMinutes: startedAt.getHours() * 60 + startedAt.getMinutes(),
-          minutes: Math.round((worklog.timeSpentSeconds || 0) / 60)
+          minutes: Math.round((worklog.timeSpentSeconds || 0) / 60),
+          // Serve a copiare una giornata portandosi dietro anche le note.
+          comment: textFromAdf(worklog.comment)
         });
       }
     } catch {

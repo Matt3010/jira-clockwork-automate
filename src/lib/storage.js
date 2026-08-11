@@ -22,6 +22,8 @@ export const DEFAULT_CONFIG = {
     dailyHours: 8,
     roundingMinutes: 15,
     startTime: '09:00',
+    // Ore mancanti sull'icona dell'estensione: si vedono senza aprire niente.
+    showBadge: true,
     // Le pause non consumano monte ore: sono buchi nella linea del tempo. Un
     // blocco di lavoro che ci finisce sopra viene spezzato in piu' worklog.
     breaks: [

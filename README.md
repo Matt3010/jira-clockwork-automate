@@ -135,6 +135,26 @@ time, saving is blocked and says so.
    times line back up with the server. Only the table refreshes, the Jira page
    underneath isn't touched
 
+### Missing hours on the icon
+
+A red number on the extension icon when today isn't covered yet — refreshed every
+15 minutes and after every write. The way hours get lost isn't getting them wrong,
+it's forgetting: a number you see without opening anything is the cheapest fix.
+
+It needs a Jira tab open to read from. Without one the badge is **cleared** rather
+than left showing a stale figure: a wrong number is worse than none. Switch it off
+in the options if you'd rather not have it.
+
+### Copying a day
+
+`Copy from [date] [Copy]` under the table pulls in what you logged on another day —
+one row per issue, hours and notes included. It defaults to the previous **working**
+day, so on a Monday it offers Friday.
+
+The copied hours arrive **locked**: they're your choice, not an estimate, and don't
+get redistributed. Issues that already have hours today stay switched off — copying
+doesn't bypass the duplicate protection.
+
 ### Preview of the day
 
 Above the table there's a strip with the time axis: it shows where the blocks will

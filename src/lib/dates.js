@@ -80,6 +80,14 @@ export function minutesToTime(minutes) {
   return `${pad(Math.floor(clamped / 60))}:${pad(clamped % 60)}`;
 }
 
+/** 90 -> '1h30'. Compatto per il badge dell'icona, che tiene 4 caratteri. */
+export function shortMinutes(minutes) {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (!h) return `${m}m`;
+  return m ? `${h}h${pad(m)}` : `${h}h`;
+}
+
 /** 90 -> '1h 30m' */
 export function formatMinutes(minutes) {
   const h = Math.floor(minutes / 60);

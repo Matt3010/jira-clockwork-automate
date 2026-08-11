@@ -48,7 +48,14 @@
       <tbody id="rows"></tbody>
     </table>
     <p id="empty" class="empty" data-i18n="emptyAnalysing">Analysing the day…</p>
-    <button id="add-row" class="ghost add-row" hidden data-i18n="btnAddRow">Add a row</button>
+    <div id="row-tools" class="row-tools" hidden>
+      <button id="add-row" class="ghost" data-i18n="btnAddRow">Add a row</button>
+      <span class="copy-from">
+        <label for="copy-date" data-i18n="labelCopyFrom">Copy from</label>
+        <input type="date" id="copy-date" />
+        <button id="copy-do" class="ghost" data-i18n="btnCopy">Copy</button>
+      </span>
+    </div>
     </div>
   </main>
 

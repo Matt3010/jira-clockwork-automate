@@ -16,7 +16,7 @@ import {
 } from './lib/jira.js';
 import { Channel, TransportError, detectAtlassianHosts, hostOf, tabsOnHost } from './lib/transport.js';
 import { buildPlan } from './lib/planner.js';
-import { jiraStarted } from './lib/dates.js';
+import { formatMinutes, jiraStarted, shortMinutes, todayIso } from './lib/dates.js';
 import { t } from './lib/i18n.js';
 
 const HANDLERS = {
@@ -25,6 +25,8 @@ const HANDLERS = {
   deleteLogged,
   refreshLogged,
   reloadSite,
+  copyFrom,
+  refreshBadge,
   testJira,
   siteStatus,
   detectSite,
@@ -46,6 +48,21 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       detail: error?.detail || null
     }));
   return true; // risposta asincrona
+});
+
+// Il badge si aggiorna da solo: all'avvio, e poi a intervalli. Senza sveglia
+// resterebbe fermo al momento in cui hai aperto il popup l'ultima volta.
+const BADGE_ALARM = 'badge';
+
+function scheduleBadge() {
+  chrome.alarms.create(BADGE_ALARM, { periodInMinutes: 15 });
+  refreshBadge();
+}
+
+chrome.runtime.onInstalled.addListener(scheduleBadge);
+chrome.runtime.onStartup.addListener(scheduleBadge);
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === BADGE_ALARM) refreshBadge();
 });
 
 // ---------------------------------------------------------------- canale
@@ -211,6 +228,78 @@ async function refreshLogged({ isoDate }) {
     loggedEntries: logged.entries,
     reliable: logged.reliable
   };
+}
+
+/**
+ * Le ore mancanti di oggi sull'icona dell'estensione.
+ *
+ * Il modo in cui si perdono le ore non e' sbagliarle: e' dimenticarsene. Un
+ * numero sull'icona lo si vede senza aprire niente.
+ *
+ * Se non si riesce a leggere (nessuna scheda Jira aperta) il badge viene
+ * cancellato invece di restare fermo: un numero vecchio e' peggio di nessuno.
+ */
+async function refreshBadge() {
+  const config = await loadConfig();
+  const spegni = async () => {
+    await chrome.action.setBadgeText({ text: '' });
+    await chrome.action.setTitle({ title: t('popupTitle') });
+  };
+
+  if (!config.work.showBadge) {
+    await spegni();
+    return { missing: null, shown: false };
+  }
+
+  try {
+    const channel = await jiraChannel(config);
+    const jira = new JiraClient(channel);
+    const me = await resolveMe(jira, config);
+    const isoDate = todayIso();
+    const logged = await loggedMinutesForDay(jira, { isoDate, accountId: me.accountId });
+
+    const budget = Math.round((config.work.dailyHours || 8) * 60);
+    const missing = Math.max(0, budget - logged.total);
+
+    await chrome.action.setBadgeBackgroundColor({ color: '#c9372c' });
+    await chrome.action.setBadgeText({ text: missing ? shortMinutes(missing) : '' });
+    await chrome.action.setTitle({
+      title: missing ? t('badgeMissing', formatMinutes(missing)) : t('badgeComplete')
+    });
+    return { missing, shown: true };
+  } catch {
+    await spegni();
+    return { missing: null, shown: false };
+  }
+}
+
+/**
+ * Le ore registrate in un altro giorno, raccolte per issue.
+ *
+ * Una settimana di lavoro si somiglia molto: ripartire da un giorno gia' fatto
+ * costa un click invece di ricomporre tutto a mano.
+ */
+async function copyFrom({ fromDate }) {
+  if (!fromDate) throw new Error(t('errMissingIssue'));
+  const config = await loadConfig();
+  const channel = await jiraChannel(config);
+  const jira = new JiraClient(channel);
+  const me = await resolveMe(jira, config).catch((error) => withSiteContext(error, channel.host));
+
+  const logged = await loggedMinutesForDay(jira, { isoDate: fromDate, accountId: me.accountId });
+
+  // Piu' worklog sulla stessa issue diventano una riga sola: nel piano di oggi
+  // la spezzatura la rifa' il planner, in base alle pause di oggi.
+  const byKey = new Map();
+  for (const entry of logged.entries) {
+    const riga = byKey.get(entry.key) || {
+      key: entry.key, summary: entry.summary, minutes: 0, comment: ''
+    };
+    riga.minutes += entry.minutes;
+    if (!riga.comment && entry.comment) riga.comment = entry.comment;
+    byKey.set(entry.key, riga);
+  }
+  return { entries: [...byKey.values()], total: logged.total };
 }
 
 /**

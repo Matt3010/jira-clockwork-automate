@@ -221,6 +221,7 @@ function fill() {
   $('work-hours').value = config.work.dailyHours;
   $('work-rounding').value = config.work.roundingMinutes;
   $('work-start').value = config.work.startTime;
+  $('show-badge').checked = config.work.showBadge;
 
   $('meetings').replaceChildren(...(config.meetings || []).map(renderMeeting));
   $('breaks').replaceChildren(...(config.work.breaks || []).map(renderBreak));
@@ -259,6 +260,7 @@ async function save() {
       dailyHours: Math.max(0.5, Number($('work-hours').value) || 8),
       roundingMinutes: Math.max(1, Number($('work-rounding').value) || 15),
       startTime: $('work-start').value || '09:00',
+      showBadge: $('show-badge').checked,
       breaks
     },
     meetings
@@ -268,6 +270,8 @@ async function save() {
   if (urlChanged) patch.cache = { accountId: null };
 
   config = await saveConfig(patch);
+  // Il badge dipende da monte ore e interruttore: si rifà appena cambiano.
+  send('refreshBadge').catch(() => {});
   setResult($('save-result'), t('msgSaved'), 'ok');
   setTimeout(() => setResult($('save-result'), '', ''), 2500);
 }

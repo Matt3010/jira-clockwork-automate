@@ -358,7 +358,17 @@ tr.disabled .remove.wipe { opacity: 1; }
 .msg.ok .glyph { color: var(--ok); }
 
 .empty { color: var(--muted); text-align: center; padding: 36px 12px; }
-.add-row { margin: 10px 0 14px; font-size: 12px; }
+.row-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 10px 0 14px;
+  font-size: 12px;
+}
+.copy-from { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.copy-from input { font-size: 12px; padding: 3px 5px; }
 .total { color: var(--muted); }
 .total strong { color: var(--text); }
 .total.over strong { color: var(--err); }

@@ -22,7 +22,10 @@ const el = {
   timeline: document.getElementById('timeline'),
   legend: document.getElementById('legend'),
   toggleAll: document.getElementById('toggle-all'),
+  rowTools: document.getElementById('row-tools'),
   addRow: document.getElementById('add-row'),
+  copyDate: document.getElementById('copy-date'),
+  copyDo: document.getElementById('copy-do'),
   rows: document.getElementById('rows'),
   empty: document.getElementById('empty'),
   total: document.getElementById('total'),
@@ -132,6 +135,7 @@ function shiftDay(days) {
   date.setDate(date.getDate() + days);
   state.isoDate = toIsoDate(date);
   el.date.value = state.isoDate;
+  el.copyDate.value = previousWorkday(state.isoDate);
 }
 
 /**
@@ -737,9 +741,9 @@ function render() {
   const hasRows = state.rows.length > 0;
   el.table.hidden = !hasRows;
   el.empty.hidden = hasRows;
-  // Aggiungere a mano ha senso solo dopo un'analisi riuscita: prima non si sa
-  // nemmeno su che sito si sta lavorando.
-  el.addRow.hidden = !state.config;
+  // Aggiungere o copiare ha senso solo dopo un'analisi riuscita: prima non si
+  // sa nemmeno su che sito si sta lavorando.
+  el.rowTools.hidden = !state.config;
   el.empty.textContent = emptyMessage;
   updateTotal();
 }
@@ -1040,9 +1044,11 @@ async function submit() {
 }
 
 el.date.value = state.isoDate;
+el.copyDate.value = previousWorkday(state.isoDate);
 el.date.addEventListener('change', () => {
   if (!el.date.value) return;
   state.isoDate = el.date.value;
+  el.copyDate.value = previousWorkday(state.isoDate);
   scheduleAnalyze(0);
 });
 el.prevDay.addEventListener('click', () => { shiftDay(-1); scheduleAnalyze(); });
@@ -1073,6 +1079,67 @@ el.addRow.addEventListener('click', () => {
   // Il campo della riga nuova prende il fuoco: si è appena chiesto di scriverci.
   el.rows.querySelector('tr:last-child .issue-input')?.focus();
 });
+
+/** Il giorno lavorativo precedente: sabato e domenica non si copiano. */
+function previousWorkday(isoDate) {
+  const date = localDateTime(isoDate);
+  do {
+    date.setDate(date.getDate() - 1);
+  } while (date.getDay() === 0 || date.getDay() === 6);
+  return toIsoDate(date);
+}
+
+/**
+ * Riparte da una giornata già fatta. Le ore copiate arrivano "bloccate": sono
+ * una tua scelta, non una stima, e non devono essere ridistribuite.
+ * Le issue che oggi hanno già ore restano spente: la protezione dai duplicati
+ * vale anche qui.
+ */
+async function copyFromDay() {
+  const fromDate = el.copyDate.value;
+  if (!fromDate || !state.config) return;
+
+  el.copyDo.disabled = true;
+  try {
+    const { entries } = await send('copyFrom', { fromDate });
+    if (!entries.length) {
+      message(t('msgCopiedNone', fromDate), 'info');
+      return;
+    }
+
+    for (const entry of entries) {
+      const esistente = state.rows.find((row) => row.issueKey === entry.key);
+      const riga = esistente || {
+        id: `copia:${entry.key}`,
+        kind: 'task',
+        issueKey: entry.key,
+        summary: entry.summary,
+        label: '',
+        sources: [],
+        detail: t('detailCopied', fromDate),
+        segments: [],
+        existingMinutes: 0,
+        enabled: true
+      };
+      riga.minutes = entry.minutes;
+      riga.lockedMinutes = entry.minutes;
+      riga.locked = true;
+      if (entry.comment) riga.comment = entry.comment;
+      if (!riga.existingMinutes) riga.enabled = true;
+      if (!esistente) state.rows.push(riga);
+    }
+
+    redistribute();
+    render();
+    message(t('msgCopied', entries.length, fromDate), 'ok');
+  } catch (error) {
+    reportAuthError(error, () => {});
+  } finally {
+    el.copyDo.disabled = false;
+  }
+}
+
+el.copyDo.addEventListener('click', copyFromDay);
 
 el.toggleAll.addEventListener('change', () => {
   for (const row of state.rows) {

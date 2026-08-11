@@ -95,6 +95,17 @@
         <input type="time" id="work-start" />
       </div>
     </div>
+    <div class="field check">
+      <input type="checkbox" id="show-badge" />
+      <label for="show-badge" data-i18n="checkShowBadge">
+        Show the missing hours on the extension icon
+      </label>
+    </div>
+    <p class="hint" data-i18n="hintShowBadge">
+      A number on the icon when today is not covered yet, refreshed every 15 minutes.
+      It needs a Jira tab open to read from: without one the badge is cleared rather
+      than left showing a stale figure.
+    </p>
   </section>
 
   <section>

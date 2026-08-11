@@ -21,6 +21,7 @@ const SUITES = [
   'modifica-manuale.test.mjs',
   'righe-senza-ticket.test.mjs',
   'aggiornamento-leggero.test.mjs',
+  'copia-badge.test.mjs',
   'transport.test.mjs',
   'devpanel.test.mjs',
   'opzioni.test.mjs',
