@@ -19,6 +19,7 @@ const SUITES = [
   'riunioni-lunghe.test.mjs',
   'flusso.test.mjs',
   'anteprima.test.mjs',
+  'colori-attivita.test.mjs',
   'modifica-manuale.test.mjs',
   'righe-senza-ticket.test.mjs',
   'aggiornamento-leggero.test.mjs',

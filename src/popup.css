@@ -15,6 +15,14 @@
   --warn-bg: #fff7d6;
   --err-bg: #ffecea;
   --ok-bg: #e6f5ec;
+  /* Colori delle attività nell'anteprima. Terna validata su TUTTE le coppie in
+     entrambi i temi (blu · acqua · rosso): due blocchi qualsiasi possono finire
+     adiacenti, quindi non basta distinguerli a due a due nell'ordine. Oltre la
+     terza attività si ripiega su un neutro invece di inventare tinte nuove. */
+  --series-1: #2a78d6;
+  --series-2: #1baf7a;
+  --series-3: #e34948;
+  --series-other: #7a8699;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -32,6 +40,11 @@
     --danger: #ff9c8f;
     --danger-text: #2a1215;
     --track-line: #ffffff;
+    /* Stessi tre colori, ripresi per il fondo scuro: non un ribaltamento. */
+    --series-1: #3987e5;
+    --series-2: #199e70;
+    --series-3: #e66767;
+    --series-other: #8b97a8;
     --warn-bg: #3b2f1b;
     --err-bg: #42232a;
     --ok-bg: #1f3529;
@@ -193,7 +206,27 @@ body.busy #analyze .icon { animation: girando 1s linear infinite; }
 }
 /* Non vincolate a `.timeline`: gli stessi colori servono ai campioni della
    legenda, che vive fuori dalla colonna. */
-.block.task { background: var(--accent); }
+/* Il colore segue il ticket, non la sua posizione: accendere o spegnere una
+   riga non deve ricolorare le altre. */
+.block.task { background: var(--series-other); }
+.block.task.s1 { background: var(--series-1); }
+.block.task.s2 { background: var(--series-2); }
+.block.task.s3 { background: var(--series-3); }
+
+/* La pastiglia accanto alla riga è la mappa colore→ticket, ed è la codifica
+   secondaria che il controllo daltonismo richiede su questa terna. */
+.chip {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: baseline;
+  background: var(--series-other);
+}
+.chip.s1 { background: var(--series-1); }
+.chip.s2 { background: var(--series-2); }
+.chip.s3 { background: var(--series-3); }
 .block.meeting { background: var(--warn); }
 .block.logged {
   background:

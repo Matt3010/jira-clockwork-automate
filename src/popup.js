@@ -333,6 +333,24 @@ function describeRow(row) {
   return parti.join(' · ');
 }
 
+/**
+ * A quale colore appartiene un ticket.
+ *
+ * L'assegnazione parte dalle chiavi in ordine alfabetico, non dall'ordine in
+ * tabella né da quali righe sono accese: spegnere una riga o riordinare il
+ * piano non deve ricolorare le altre. Oltre la terza attività si ripiega su un
+ * neutro — tre è il numero che regge il controllo su tutte le coppie, e
+ * inventare una quarta tinta la renderebbe indistinguibile da una delle altre.
+ */
+function seriesClass(issueKey) {
+  if (!issueKey) return '';
+  const chiavi = [...new Set(
+    state.rows.filter((row) => row.kind === 'task' && row.issueKey).map((row) => row.issueKey)
+  )].sort();
+  const posizione = chiavi.indexOf(issueKey);
+  return posizione >= 0 && posizione < 3 ? `s${posizione + 1}` : '';
+}
+
 function badge(text, kind) {
   const span = document.createElement('span');
   span.className = `badge ${kind}`;
@@ -402,7 +420,13 @@ function renderRow(row) {
   const tdWhat = document.createElement('td');
   const summary = document.createElement('div');
   summary.className = 'summary';
-  if (row.kind === 'meeting') summary.appendChild(icon('calendar', { size: 14 }));
+  if (row.kind === 'meeting') {
+    summary.appendChild(icon('calendar', { size: 14 }));
+  } else {
+    const chip = document.createElement('span');
+    chip.className = `chip ${seriesClass(row.issueKey)}`.trim();
+    summary.appendChild(chip);
+  }
   summary.append(row.kind === 'meeting' ? row.label : (row.summary || t('rowNoTitle')));
 
   const badges = document.createElement('span');
@@ -637,6 +661,7 @@ function timelineBlocks() {
       const from = timeToMinutes(segment.time);
       blocchi.push({
         tipo: row.kind === 'meeting' ? 'meeting' : 'task',
+        serie: row.kind === 'meeting' ? '' : seriesClass(row.issueKey),
         rowId: row.id,
         from,
         to: from + segment.minutes,
@@ -726,7 +751,7 @@ function renderTimeline() {
   const ordine = { pause: 0, logged: 1, meeting: 2, task: 3 };
   for (const blocco of [...blocchi].sort((x, y) => ordine[x.tipo] - ordine[y.tipo])) {
     const nodo = document.createElement('div');
-    nodo.className = `block ${blocco.tipo}`;
+    nodo.className = `block ${blocco.tipo} ${blocco.serie || ''}`.trim();
     nodo.style.top = pct(blocco.from);
     nodo.style.height = `${((blocco.to - blocco.from) / span) * 100}%`;
     nodo.title = blocco.label;
@@ -739,8 +764,11 @@ function renderTimeline() {
   const legend = el.legend;
   legend.replaceChildren();
   legend.hidden = false;
+  // Le attività non hanno una voce di legenda: hanno un colore ciascuna, e la
+  // corrispondenza sta nella pastiglia accanto alla riga — che è una legenda
+  // migliore, perché dice anche di quale ticket si tratta. Qui restano le
+  // categorie fisse, che un colore solo ce l'hanno davvero.
   const voci = [
-    ['task', t('legendTask')],
     ['meeting', t('legendMeeting')],
     ['logged', t('legendLogged')],
     ['pause', t('legendPause')]
