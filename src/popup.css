@@ -116,6 +116,15 @@ footer.bar {
 .bar-left, .bar-right { display: flex; align-items: center; gap: 6px; }
 .bar label { color: var(--muted); }
 
+/* Quanto è vecchio quello che stai guardando. Jira non ha un canale a cui
+   restare in ascolto, quindi si rilegge a intervalli: chi guarda deve poter
+   sapere se il dato è di adesso o di qualche minuto fa. */
+.sync {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 button {
   font: inherit;
   padding: 5px 12px;

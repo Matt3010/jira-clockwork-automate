@@ -27,6 +27,7 @@ const SUITES = [
   'righe-senza-ticket.test.mjs',
   'aggiornamento-leggero.test.mjs',
   'cambio-giorno.test.mjs',
+  'freschezza.test.mjs',
   'copia-badge.test.mjs',
   'conferma-invio.test.mjs',
   'stato-occupato.test.mjs',

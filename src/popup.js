@@ -24,6 +24,7 @@ const el = {
   legend: document.getElementById('legend'),
   toggleAll: document.getElementById('toggle-all'),
   listHead: document.getElementById('list-head'),
+  sync: document.getElementById('sync'),
   rowTools: document.getElementById('row-tools'),
   addRow: document.getElementById('add-row'),
   copyDate: document.getElementById('copy-date'),
@@ -72,6 +73,7 @@ const state = {
   tab: 'hours',
   logEvents: [],
   logDate: null,
+  logAt: 0,
   config: null,
   recentIssues: [],
   // I ticket aperti non dipendono dal giorno: si leggono una volta e restano.
@@ -931,6 +933,7 @@ function render() {
   el.rowTools.hidden = !state.config;
   el.empty.textContent = emptyMessage;
   updateTotal();
+  syncLabel();
 }
 
 function splitKey(key) {
@@ -1309,6 +1312,7 @@ function renderLog() {
   el.logEmpty.hidden = eventi.length > 0;
   el.logCopy.hidden = eventi.length === 0;
   el.logCount.textContent = eventi.length ? t('logCount', eventi.length) : '';
+  syncLabel();
 }
 
 // Stessa protezione del piano, e per lo stesso motivo: tenendo premuto ‹ o ›
@@ -1340,6 +1344,7 @@ async function loadLog() {
     if (token !== logToken) return;
     state.logEvents = events;
     state.logDate = forDate;
+    state.logAt = Date.now();
     renderLog();
   } catch (error) {
     if (token !== logToken) return;
@@ -1472,6 +1477,7 @@ function renderTickets() {
   el.ticketsEmpty.hidden = state.ticketGroups.length > 0;
   el.ticketsEmpty.textContent = t('ticketsEmpty');
   el.ticketsCount.textContent = state.ticketsTotal ? t('ticketsCount', state.ticketsTotal) : '';
+  syncLabel();
 }
 
 /**
@@ -1694,7 +1700,72 @@ function showTab(nome) {
   // Il registro si legge quando lo apri, e si rilegge se hai cambiato giorno.
   if (registro && state.logDate !== state.isoDate) loadLog();
   if (ticket && !state.ticketsLoaded) loadTickets();
+  // Ogni vista ha la sua freschezza: cambiando scheda cambia il riferimento.
+  syncLabel();
 }
+
+// ------------------------------------------------------- quanto è fresco
+
+/*
+ * Jira non ha un canale a cui restare in ascolto: niente WebSocket pubbliche,
+ * e i webhook vogliono un server che li riceva — cioè credenziali depositate
+ * da qualche parte, che è proprio quello che questa estensione evita. Resta
+ * il rileggere ogni tanto.
+ *
+ * Il che rende necessaria l'etichetta: se il dato può avere fino a un minuto,
+ * chi guarda deve poterlo sapere senza indovinarlo.
+ */
+const POLL_MS = 60000;
+const TICK_MS = 15000;
+
+/** Quando è stato letto quello che si sta guardando adesso. */
+function freshnessAt() {
+  if (state.tab === 'tickets') return state.ticketsAt;
+  if (state.tab === 'log') return state.logAt;
+  return state.analyzedAt;
+}
+
+function syncLabel() {
+  const quando = freshnessAt();
+  if (!quando) {
+    el.sync.textContent = '';
+    el.sync.title = '';
+    return;
+  }
+  const minuti = Math.floor((Date.now() - quando) / 60000);
+  el.sync.textContent = minuti < 1 ? t('syncNow') : t('syncAgo', String(minuti));
+  el.sync.title = t('syncAt', eventTime(quando));
+}
+
+/**
+ * Rilegge da sola la vista che stai guardando, ma solo quando non dà fastidio.
+ *
+ * Le guardie non sono prudenza generica: ognuna copre un modo concreto di
+ * rovinare il lavoro a chi sta usando il popup in quel momento.
+ */
+function pollIfIdle() {
+  syncLabel();
+
+  // A pannello chiuso o finestra nascosta non c'è niente da tenere fresco.
+  if (document.visibilityState !== 'visible') return;
+  // Un'analisi in corso decide lei quando i dati cambiano.
+  if (state.busy) return;
+  // Stai scrivendo: ricaricare ti toglierebbe il campo da sotto le dita.
+  const attivo = document.activeElement?.tagName;
+  if (attivo === 'INPUT' || attivo === 'TEXTAREA') return;
+  // Un menu di spostamento aperto è un'azione a metà.
+  if (el.tickets.querySelector('.moves:not([hidden])')) return;
+  if (Date.now() - freshnessAt() < POLL_MS) return;
+
+  if (state.tab === 'tickets') loadTickets();
+  else if (state.tab === 'log') loadLog();
+  // Il piano si rilegge nella versione leggera: una richiesta invece delle
+  // decine di un'analisi completa, che rifarebbe attività e commit — roba che
+  // non cambia da sola.
+  else if (state.rows.length) refreshLogged();
+}
+
+setInterval(pollIfIdle, TICK_MS);
 
 /** Il giorno lavorativo precedente: sabato e domenica non si copiano. */
 function previousWorkday(isoDate) {

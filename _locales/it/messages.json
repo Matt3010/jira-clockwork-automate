@@ -1073,5 +1073,24 @@
   },
   "labelHours": {
     "message": "Ore"
+  },
+  "syncNow": {
+    "message": "ora"
+  },
+  "syncAgo": {
+    "message": "$MIN$ min fa",
+    "placeholders": {
+      "min": {
+        "content": "$1"
+      }
+    }
+  },
+  "syncAt": {
+    "message": "Ultima lettura alle $TIME$",
+    "placeholders": {
+      "time": {
+        "content": "$1"
+      }
+    }
   }
 }
