@@ -24,6 +24,15 @@ const blocco = (nome) => {
 const setBusy = blocco('setBusy');
 assert.match(setBusy, /state\.busy = on/, 'setBusy tiene il flag');
 assert.match(setBusy, /updateTotal\(\)/, 'e rimette in riga totale e pulsante di invio');
+assert.match(setBusy, /classList\.toggle\('busy', on\)/,
+  'e lo dice anche visivamente: pulsanti spenti non bastano a far capire che carica');
+
+// --- lo stato visivo deve avere uno stile, o la classe non serve a niente --
+const css = readFileSync(join(root, 'src/popup.css'), 'utf8');
+assert.match(css, /body\.busy/, 'la classe busy ha delle regole');
+assert.match(css, /pointer-events: none/, 'e il contenuto sotto non si può toccare');
+assert.match(css, /prefers-reduced-motion/,
+  'l animazione rispetta chi ha chiesto meno movimento');
 
 // --- ogni comando che tocca il piano dev essere spento durante l analisi ---
 // Navigazione, opzioni e i due pulsanti dell invio sono gestiti a parte:

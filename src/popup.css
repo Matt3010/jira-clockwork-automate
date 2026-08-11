@@ -128,6 +128,20 @@ main {
   display: flex;
   gap: 12px;
   align-items: flex-start;
+  transition: opacity .12s ease;
+}
+
+/* Durante l'analisi il contenuto sotto non è più valido: si smorza e non si
+   può toccare. La navigazione fra i giorni resta viva, sta fuori da `main`. */
+body.busy main,
+body.busy .foot-info {
+  opacity: .45;
+  pointer-events: none;
+}
+body.busy #analyze .icon { animation: girando 1s linear infinite; }
+@keyframes girando { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  body.busy #analyze .icon { animation: none; }
 }
 .grid-area { flex: 1; min-width: 0; }
 

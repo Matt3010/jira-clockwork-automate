@@ -169,6 +169,9 @@ function sendableRows() {
  */
 function setBusy(on) {
   state.busy = on;
+  // Anche visivamente: i pulsanti spenti non bastano a far capire che il
+  // contenuto sotto non è più valido.
+  document.body.classList.toggle('busy', on);
   el.analyze.disabled = on;
   el.addRow.disabled = on;
   el.copyDo.disabled = on;
