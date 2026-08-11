@@ -155,7 +155,9 @@ button.icon-only {
   line-height: 0;
 }
 
-input[type="date"], input[type="text"], input[type="number"] {
+/* Per esclusione, non per elenco: elencando i tipi uno a uno, il primo campo
+   di un tipo nuovo nasce con lo stile del browser — bianco su tema scuro. */
+input:not([type="checkbox"]) {
   font: inherit;
   color: var(--text);
   background: var(--bg);
@@ -163,6 +165,18 @@ input[type="date"], input[type="text"], input[type="number"] {
   border-radius: 4px;
   padding: 4px 6px;
 }
+/* La crocetta che il browser aggiunge dentro i campi `search` è nera fissa,
+   quindi sul tema scuro sparisce: meglio la nostra, che segue il testo. */
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  cursor: pointer;
+  background: currentColor;
+  opacity: .45;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M18 6 6 18M6 6l12 12' stroke='black' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat;
+}
+input[type="search"]::-webkit-search-cancel-button:hover { opacity: 1; }
 input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 main {
@@ -486,7 +500,7 @@ tr.disabled .remove.wipe { opacity: 1; }
   font-size: 11px;
 }
 .search-row { padding: 10px 0 0; }
-.search { width: 100%; }
+.search { width: 100%; padding: 6px 8px; }
 .ticket-list { list-style: none; margin: 0; padding: 0 0 0 15px; }
 /* I risultati di ricerca non stanno dentro un gruppo: niente rientro. */
 .ticket-list.piatta { padding-left: 0; }

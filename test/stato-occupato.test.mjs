@@ -101,6 +101,26 @@ for (const foglio of ['src/popup.css', 'src/options.css']) {
     `${foglio} usa display espliciti: serve la stessa guardia`);
 }
 
+// --- i campi si vestono per esclusione, non per elenco --------------------
+// Elencando i tipi (`input[type="text"], input[type="date"]…`) il primo campo
+// di un tipo nuovo nasce con lo stile del browser: su tema scuro, bianco. È
+// già successo con il campo di ricerca.
+for (const foglio of ['src/popup.css', 'src/options.css']) {
+  const testo = readFileSync(join(root, foglio), 'utf8');
+  assert.match(testo, /input:not\(\[type="checkbox"\]\)/,
+    `${foglio} deve vestire i campi per esclusione`);
+  // Il selettore per tipo resta legittimo per ritocchi mirati, ma non per
+  // dichiarare i colori: quello è il caso che lascia i campi nuovi scoperti.
+  // Gli pseudo-elementi restano fuori: `::-webkit-search-cancel-button` è un
+  // pezzo interno di quel tipo di campo, non il campo.
+  const perTipo = (testo.match(/input\[type="[a-z]+"\][^{]*\{[^}]*\}/g) || [])
+    .filter((regola) => !regola.slice(0, regola.indexOf('{')).includes('::'));
+  for (const regola of perTipo) {
+    assert.doesNotMatch(regola, /(^|[^-])background:|(^|[;\s])color:/,
+      `una regola per tipo dichiara i colori dei campi, e i tipi non elencati restano fuori: ${regola.slice(0, 60)}…`);
+  }
+}
+
 // e gli elementi che si nascondono devono esistere davvero
 for (const id of ['log-view', 'timeline', 'legend', 'plan', 'row-tools', 'cancel-send']) {
   assert.ok(new RegExp(`id="${id}"[^>]*hidden`).test(html), `#${id} non nasce nascosto`);
