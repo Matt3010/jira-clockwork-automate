@@ -83,8 +83,11 @@ again.
 **Breaks** (as many as you need, not just lunch) don't consume the daily budget:
 they're holes in the timeline. A block of work landing on one gets split and several
 worklogs reach Jira — `09:00–13:00 + 14:00–18:00` — the way the day actually looks
-on the calendar. Meetings stay at the time you configured: they're appointments, not
-blocks to be slotted in.
+on the calendar. Meetings stay at the time you configured — they're appointments,
+not blocks to be slotted in — but the breaks apply to them too: a meeting that
+straddles one gets split like anything else. Splitting doesn't remove minutes, it
+only moves the timestamps; not splitting would write a worklog claiming you were in
+a meeting during a break you declared.
 
 The remainder of the split goes to the rows with the most activity. Nothing is
 written without confirmation: the popup shows the plan, you correct it and hit

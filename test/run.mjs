@@ -16,6 +16,7 @@ const SUITES = [
   'riunioni-nome-data.test.mjs',
   'riunioni-orario.test.mjs',
   'pause.test.mjs',
+  'riunioni-lunghe.test.mjs',
   'flusso.test.mjs',
   'anteprima.test.mjs',
   'modifica-manuale.test.mjs',

@@ -446,8 +446,16 @@ export function busyIntervals(rows, config, loggedEntries = []) {
 
   for (const row of rows) {
     if (row.kind !== 'meeting' || !row.enabled || !row.issueKey || !row.minutes) continue;
-    const from = timeToMinutes(row.time);
-    busy.push({ from, to: from + row.minutes });
+    // Se la riunione e' gia' stata spezzata dalle pause valgono i suoi segmenti:
+    // sommare durata e orario di inizio occuperebbe anche la pausa in mezzo, e
+    // libererebbe la coda in cui la riunione invece prosegue.
+    const blocchi = row.segments?.length
+      ? row.segments
+      : [{ time: row.time, minutes: row.minutes }];
+    for (const blocco of blocchi) {
+      const from = timeToMinutes(blocco.time);
+      busy.push({ from, to: from + blocco.minutes });
+    }
   }
 
   const rifatte = redoneKeys(rows);
@@ -495,13 +503,52 @@ export function reflow(rows, config, contesto, warnings = []) {
  * Assegna gli orari: riunioni all'ora loro, task a seguire, mai prima della
  * fine di quello che era gia' registrato e mai dentro la pausa.
  */
+/**
+ * Sistema `minutes` nelle finestre libere a partire da dove eravamo rimasti.
+ * Ritorna anche il punto raggiunto, perche' le task si mettono in fila una
+ * dopo l'altra e devono riprendere da li'.
+ */
+function fillSlots(slots, minutes, { index = 0, cursor = slots[0]?.from ?? 0 } = {}) {
+  const segments = [];
+  let left = minutes;
+  let i = index;
+  let at = cursor;
+
+  while (left > 0 && i < slots.length) {
+    const slot = slots[i];
+    if (at < slot.from) at = slot.from;
+    const space = slot.to - at;
+    if (space <= 0) {
+      i += 1;
+      if (i < slots.length) at = slots[i].from;
+      continue;
+    }
+    const chunk = Math.min(left, space);
+    segments.push({ time: minutesToTime(at), minutes: chunk });
+    at += chunk;
+    left -= chunk;
+    if (at >= slot.to) {
+      i += 1;
+      if (i < slots.length) at = slots[i].from;
+    }
+  }
+  return { segments, index: i, cursor: at };
+}
+
 export function layoutTimes(rows, config, { loggedEntries = [] } = {}) {
-  // Le riunioni stanno all'orario che hai configurato: sono appuntamenti, non
-  // blocchi da incastrare. Vanno definite prima, perche' occupano spazio.
+  const pause = breakRanges(config);
+
+  // Le riunioni restano all'orario che hai configurato — sono appuntamenti, non
+  // blocchi da incastrare — ma vengono spezzate dalle pause come tutto il resto.
+  // Spezzare non toglie minuti, sposta solo i timestamp: non farlo produrrebbe
+  // un worklog che dice che eri in riunione durante una pausa che hai dichiarato.
   for (const meeting of rows.filter((row) => row.kind === 'meeting')) {
-    meeting.segments = meeting.enabled && meeting.issueKey && meeting.minutes
-      ? [{ time: meeting.time, minutes: meeting.minutes }]
-      : [];
+    if (!meeting.enabled || !meeting.issueKey || !meeting.minutes) {
+      meeting.segments = [];
+      continue;
+    }
+    const inizio = timeToMinutes(meeting.time);
+    meeting.segments = fillSlots(freeSlots(pause, inizio), meeting.minutes).segments;
   }
 
   // Il lavoro riempie gli spazi liberi nell'ordine in cui si presentano —
@@ -512,9 +559,7 @@ export function layoutTimes(rows, config, { loggedEntries = [] } = {}) {
     timeToMinutes(config.work.startTime || '09:00')
   );
 
-  let index = 0;
-  let cursor = slots[0].from;
-
+  let posizione = { index: 0, cursor: slots[0].from };
   for (const row of rows) {
     if (row.kind !== 'task') continue;
     if (!row.enabled || !row.minutes) {
@@ -522,30 +567,10 @@ export function layoutTimes(rows, config, { loggedEntries = [] } = {}) {
       row.segments = [];
       continue;
     }
-
-    const segments = [];
-    let left = row.minutes;
-    while (left > 0 && index < slots.length) {
-      const slot = slots[index];
-      if (cursor < slot.from) cursor = slot.from;
-      const space = slot.to - cursor;
-      if (space <= 0) {
-        index += 1;
-        if (index < slots.length) cursor = slots[index].from;
-        continue;
-      }
-      const chunk = Math.min(left, space);
-      segments.push({ time: minutesToTime(cursor), minutes: chunk });
-      cursor += chunk;
-      left -= chunk;
-      if (cursor >= slot.to) {
-        index += 1;
-        if (index < slots.length) cursor = slots[index].from;
-      }
-    }
-
-    row.segments = segments;
-    row.time = segments[0]?.time || '';
+    const esito = fillSlots(slots, row.minutes, posizione);
+    posizione = { index: esito.index, cursor: esito.cursor };
+    row.segments = esito.segments;
+    row.time = esito.segments[0]?.time || '';
   }
   return rows;
 }
