@@ -1,10 +1,19 @@
-// Build del pacchetto distribuibile.
+// Build dei pacchetti distribuibili.
 //
 //   npm run build
 //
-// Produce `dist/clockwork-autofill-<versione>.zip`, pronto da caricare sul
-// Chrome Web Store o da dare a mano, piu' `dist/unpacked/` per il "carica
-// estensione non pacchettizzata".
+// Un comando solo, e rifa' sempre tutti e due i pacchetti: rifarne uno e
+// lasciare indietro l'altro e' il modo in cui si sfasano, con quello vecchio
+// li' accanto pronto da caricare per sbaglio.
+// La versione la scrivi tu in manifest.json, quando pubblichi.
+//
+// Produce `dist/<browser>/clockwork-autofill-<versione>-<browser>.zip`, pronto
+// da caricare sullo store o da dare a mano, piu' `dist/<browser>/unpacked/` per
+// il "carica estensione non pacchettizzata".
+//
+// I due pacchetti escono dagli stessi sorgenti: cambia il manifest, che per
+// Firefox si calcola da quello di Chrome (vedi manifest-firefox.mjs), e cambia
+// il bersaglio di esbuild. Il codice e' lo stesso file per entrambi.
 //
 // Prima di impacchettare passa da due cancelli, e se uno non passa non scrive
 // niente: uno zip con i test rossi e' peggio che nessuno zip, perche' il
@@ -13,13 +22,16 @@
 //   1. la suite di test, tutta — traduzioni comprese, ci pensa
 //      test/traduzioni.test.mjs: chiavi allineate fra le lingue, segnaposto
 //      dichiarati, niente chiavi orfane, niente prosa rimasta nel codice
-//   2. i file citati dal manifest esistono davvero nel pacchetto costruito
+//   2. i file citati dal manifest esistono davvero nel pacchetto costruito —
+//      e il manifest controllato e' quello del pacchetto, non l'originale:
+//      su Firefox i nomi delle chiavi sono altri
 //
 // Il codice viene minificato — non offuscato. Il Chrome Web Store vieta
 // esplicitamente l'offuscamento ("Developers must not obfuscate code or conceal
 // functionality of their extension") mentre permette la minificazione, inclusi
 // l'accorciamento dei nomi e l'unione dei file: e' esattamente quello che fa
-// esbuild qui. Un pacchetto offuscato verrebbe rifiutato in revisione.
+// esbuild qui. AMO dice la stessa cosa e in piu' vuole poter rifare la build.
+// Un pacchetto offuscato verrebbe rifiutato in revisione da entrambi.
 //
 // esbuild e' una devDependency: serve a costruire, non finisce nel pacchetto.
 // Lo zip invece resta scritto a mano con `node:zlib`.
@@ -32,18 +44,27 @@ import {
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build as esbuild } from 'esbuild';
+import { manifestFirefox } from './manifest-firefox.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = join(ROOT, 'dist');
-const STAGE = join(DIST, 'unpacked');
 
-// I tre moduli che Chrome carica: ognuno diventa un file solo, con dentro le
-// sue dipendenze da `src/lib`. Il resto della cartella non serve piu'.
+// I tre moduli che il browser carica: ognuno diventa un file solo, con dentro
+// le sue dipendenze da `src/lib`. Il resto della cartella non serve piu'.
 const ENTRY_JS = ['src/background.js', 'src/popup.js', 'src/options.js'];
 const ENTRY_CSS = ['src/popup.css', 'src/options.css'];
 // Copiati cosi' come sono. L'HTML non si tocca: i nodi di testo sono contenuto
 // tradotto, e collassare gli spazi qui cambierebbe quello che si legge a video.
-const COPIA = ['manifest.json', 'src/popup.html', 'src/options.html', 'icons', '_locales'];
+// Il manifest non e' in elenco: viene scritto, non copiato, perche' per Firefox
+// e' un altro.
+const COPIA = ['src/popup.html', 'src/options.html', 'icons', '_locales'];
+
+// I due bersagli. `esbuild` e' la versione minima su cui il codice deve girare:
+// per Firefox e' la stessa che dichiara `strict_min_version`.
+const BERSAGLI = {
+  chromium: { esbuild: 'chrome120', manifest: (m) => m },
+  firefox: { esbuild: 'firefox128', manifest: manifestFirefox }
+};
 
 const problemi = [];
 const fail = (messaggio) => problemi.push(messaggio);
@@ -84,22 +105,21 @@ function cancelloTest() {
 
 // ------------------------------------------------------------ la costruzione
 
-async function costruisci() {
-  console.log('· minificazione');
-  rmSync(DIST, { recursive: true, force: true });
-  mkdirSync(STAGE, { recursive: true });
+async function costruisci(nome, bersaglio, manifest, stage) {
+  console.log(`· ${nome}: minificazione`);
+  mkdirSync(stage, { recursive: true });
 
   const primaJs = peso(ROOT, [...ENTRY_JS, ...elenca(join(ROOT, 'src/lib')).map((f) => `src/lib/${f}`)]);
   const primaCss = peso(ROOT, ENTRY_CSS);
 
   // `bundle` tira dentro src/lib e lascia tre file soli; `format: esm` perche'
-  // il service worker e' dichiarato "type": "module" nel manifest.
+  // il fondo e' dichiarato "type": "module" in tutti e due i manifest.
   await esbuild({
     entryPoints: ENTRY_JS.map((f) => join(ROOT, f)),
-    outdir: join(STAGE, 'src'),
+    outdir: join(stage, 'src'),
     bundle: true,
     format: 'esm',
-    target: 'chrome120',
+    target: bersaglio.esbuild,
     minify: true,
     legalComments: 'none',
     logLevel: 'warning'
@@ -107,17 +127,18 @@ async function costruisci() {
 
   await esbuild({
     entryPoints: ENTRY_CSS.map((f) => join(ROOT, f)),
-    outdir: join(STAGE, 'src'),
+    outdir: join(stage, 'src'),
     minify: true,
     logLevel: 'warning'
   });
 
   for (const voce of COPIA) {
-    cpSync(join(ROOT, voce), join(STAGE, voce), { recursive: true });
+    cpSync(join(ROOT, voce), join(stage, voce), { recursive: true });
   }
+  writeFileSync(join(stage, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 
-  const dopoJs = peso(STAGE, ENTRY_JS);
-  const dopoCss = peso(STAGE, ENTRY_CSS);
+  const dopoJs = peso(stage, ENTRY_JS);
+  const dopoCss = peso(stage, ENTRY_CSS);
   const taglio = (a, b) => `${kb(a)} → ${kb(b)} (−${Math.round((1 - b / a) * 100)}%)`;
   console.log(`  js  ${taglio(primaJs, dopoJs)}`);
   console.log(`  css ${taglio(primaCss, dopoCss)}`);
@@ -125,8 +146,8 @@ async function costruisci() {
 
 // ------------------------------------------------------------ 2. il manifest
 
-function cancelloManifest(manifest, file) {
-  console.log('· manifest');
+function cancelloManifest(nome, manifest, file) {
+  console.log(`· ${nome}: manifest`);
   const attesi = new Set();
   const raccogli = (valore) => {
     if (typeof valore === 'string') attesi.add(valore);
@@ -134,22 +155,27 @@ function cancelloManifest(manifest, file) {
   };
   raccogli(manifest.icons);
   raccogli(manifest.action?.default_icon);
+  raccogli(manifest.sidebar_action?.default_icon);
   if (manifest.action?.default_popup) attesi.add(manifest.action.default_popup);
   if (manifest.options_page) attesi.add(manifest.options_page);
+  if (manifest.options_ui?.page) attesi.add(manifest.options_ui.page);
   // Il pannello laterale porta la sua pagina con un parametro appeso
-  // (`?panel=1`): a esistere dev'essere il file, non la stringa intera.
-  if (manifest.side_panel?.default_path) {
-    attesi.add(manifest.side_panel.default_path.split('?')[0]);
+  // (`?panel=1`): a esistere dev'essere il file, non la stringa intera. Su
+  // Chrome la chiave e' `side_panel`, su Firefox `sidebar_action`.
+  for (const pagina of [manifest.side_panel?.default_path, manifest.sidebar_action?.default_panel]) {
+    if (pagina) attesi.add(pagina.split('?')[0]);
   }
   if (manifest.background?.service_worker) attesi.add(manifest.background.service_worker);
+  for (const script of manifest.background?.scripts || []) attesi.add(script);
 
   for (const percorso of [...attesi].sort()) {
-    if (!file.includes(percorso)) fail(`manifest.json cita ${percorso}, che non finisce nel pacchetto`);
+    if (!file.includes(percorso)) fail(`${nome}: manifest.json cita ${percorso}, che non finisce nel pacchetto`);
   }
 
-  // Il default_locale deve avere la sua cartella, o Chrome rifiuta di caricare.
+  // Il default_locale deve avere la sua cartella, o il browser rifiuta di
+  // caricare.
   if (manifest.default_locale && !file.includes(`_locales/${manifest.default_locale}/messages.json`)) {
-    fail(`default_locale "${manifest.default_locale}" senza _locales/${manifest.default_locale}/messages.json`);
+    fail(`${nome}: default_locale "${manifest.default_locale}" senza _locales/${manifest.default_locale}/messages.json`);
   }
 
   console.log(`  ${attesi.size} riferimenti verificati`);
@@ -235,13 +261,34 @@ function zip(base, file) {
 
 // ------------------------------------------------------------------- il giro
 
-const manifest = JSON.parse(readFileSync(join(ROOT, 'manifest.json'), 'utf8'));
+const sorgente = JSON.parse(readFileSync(join(ROOT, 'manifest.json'), 'utf8'));
 
 cancelloTest();
-if (!problemi.length) await costruisci();
 
-const file = problemi.length ? [] : elenca(STAGE);
-if (!problemi.length) cancelloManifest(manifest, file);
+// Si riparte da zero: cosi' `dist/` non si porta dietro i pacchetti di una
+// versione precedente, che finirebbero caricati per buoni.
+rmSync(DIST, { recursive: true, force: true });
+
+const fatti = [];
+for (const nome of Object.keys(BERSAGLI)) {
+  if (problemi.length) break;
+
+  const bersaglio = BERSAGLI[nome];
+  const manifest = bersaglio.manifest(sorgente);
+  const cartella = join(DIST, nome);
+  const stage = join(cartella, 'unpacked');
+
+  await costruisci(nome, bersaglio, manifest, stage);
+
+  const file = elenca(stage);
+  cancelloManifest(nome, manifest, file);
+  if (problemi.length) break;
+
+  const nomeZip = `clockwork-autofill-${manifest.version}-${nome}.zip`;
+  const pacchetto = zip(stage, file);
+  writeFileSync(join(cartella, nomeZip), pacchetto);
+  fatti.push({ nome, zip: `${nome}/${nomeZip}`, file: file.length, peso: pacchetto.length });
+}
 
 if (problemi.length) {
   // Niente mezze build in giro: se qualcosa non torna, `dist/` sparisce.
@@ -252,9 +299,8 @@ if (problemi.length) {
   process.exit(1);
 }
 
-const nomeZip = `clockwork-autofill-${manifest.version}.zip`;
-const pacchetto = zip(STAGE, file);
-writeFileSync(join(DIST, nomeZip), pacchetto);
-
-console.log(`\n✓ dist/${nomeZip} — ${file.length} file, ${kb(pacchetto.length)}`);
-console.log('  dist/unpacked/ — per «carica estensione non pacchettizzata»');
+console.log('');
+for (const f of fatti) {
+  console.log(`✓ dist/${f.zip} — ${f.file} file, ${kb(f.peso)}`);
+  console.log(`  dist/${f.nome}/unpacked/ — per «carica estensione non pacchettizzata»`);
+}

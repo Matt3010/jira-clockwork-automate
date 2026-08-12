@@ -89,6 +89,36 @@
   "btnAddMeeting": {
     "message": "Add meeting"
   },
+  "secBackup": {
+    "message": "Configuration file"
+  },
+  "hintBackup": {
+    "message": "Uninstalling clears the settings. Export writes them to a file, Import puts them back — on another browser too. With the browser's sync on they also follow your account, but no browser promises to keep them across an uninstall: the file is the copy that always survives."
+  },
+  "btnExport": {
+    "message": "Export"
+  },
+  "btnImport": {
+    "message": "Import"
+  },
+  "msgExported": {
+    "message": "Written to file."
+  },
+  "msgImported": {
+    "message": "Configuration imported."
+  },
+  "msgImportNotOurs": {
+    "message": "This file is not a Clockwork Autofill configuration."
+  },
+  "msgImportTooNew": {
+    "message": "This file comes from a newer version of the extension."
+  },
+  "msgImportBroken": {
+    "message": "There is no configuration inside this file."
+  },
+  "msgImportUnreadable": {
+    "message": "This file cannot be read as JSON."
+  },
   "fieldName": {
     "message": "Name"
   },
@@ -1066,7 +1096,7 @@
     "message": "Open in the side panel instead of a popup"
   },
   "hintSidePanel": {
-    "message": "The side panel stays open next to Jira while you work; the popup closes as soon as you click elsewhere. Needs Chrome 114 or newer."
+    "message": "The side panel stays open next to Jira while you work; the popup closes as soon as you click elsewhere. Needs Chrome 114 or newer, or Firefox — where it is the sidebar."
   },
   "labelSelectAll": {
     "message": "Select all"

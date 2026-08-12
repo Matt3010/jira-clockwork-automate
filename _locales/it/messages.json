@@ -89,6 +89,36 @@
   "btnAddMeeting": {
     "message": "Aggiungi riunione"
   },
+  "secBackup": {
+    "message": "File di configurazione"
+  },
+  "hintBackup": {
+    "message": "Disinstallare cancella le impostazioni. Esporta le scrive in un file, Importa le rimette — anche su un altro browser. Con la sincronizzazione del browser attiva seguono anche l'account, ma nessun browser promette di conservarle dopo una disinstallazione: il file è la copia che sopravvive sempre."
+  },
+  "btnExport": {
+    "message": "Esporta"
+  },
+  "btnImport": {
+    "message": "Importa"
+  },
+  "msgExported": {
+    "message": "Scritte su file."
+  },
+  "msgImported": {
+    "message": "Configurazione importata."
+  },
+  "msgImportNotOurs": {
+    "message": "Questo file non è una configurazione di Clockwork Autofill."
+  },
+  "msgImportTooNew": {
+    "message": "Il file viene da una versione più recente dell’estensione."
+  },
+  "msgImportBroken": {
+    "message": "Nel file non c’è nessuna configurazione."
+  },
+  "msgImportUnreadable": {
+    "message": "Il file non è leggibile come JSON."
+  },
   "fieldName": {
     "message": "Nome"
   },
@@ -1066,7 +1096,7 @@
     "message": "Apri nel pannello laterale invece che come popup"
   },
   "hintSidePanel": {
-    "message": "Il pannello resta aperto accanto a Jira mentre lavori; il popup si chiude appena clicchi altrove. Serve Chrome 114 o più recente."
+    "message": "Il pannello resta aperto accanto a Jira mentre lavori; il popup si chiude appena clicchi altrove. Serve Chrome 114 o più recente, oppure Firefox — dove è la barra laterale."
   },
   "labelSelectAll": {
     "message": "Seleziona tutto"

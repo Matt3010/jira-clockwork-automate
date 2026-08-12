@@ -1,5 +1,5 @@
-import { loadConfig, saveConfig } from './lib/storage.js';
-import { addMinutes, timeToMinutes } from './lib/dates.js';
+import { loadConfig, saveConfig, exportData, importData, replaceAll } from './lib/storage.js';
+import { addMinutes, timeToMinutes, todayIso } from './lib/dates.js';
 import { t, applyI18n } from './lib/i18n.js';
 
 // L'indice nell'elenco più uno dà il giorno ISO: 1 = lunedì.
@@ -228,6 +228,17 @@ function fill() {
   $('breaks').replaceChildren(...(config.work.breaks || []).map(renderBreak));
 }
 
+/**
+ * Quello che va rifatto appena la configurazione cambia — sia che la si salvi
+ * dal modulo, sia che arrivi da un file. Il badge dipende da monte ore e
+ * interruttore; pannello o popup va applicato adesso, non al prossimo avvio
+ * del browser.
+ */
+function applicaSubito() {
+  send('refreshBadge').catch(() => {});
+  send('refreshUiMode').catch(() => {});
+}
+
 async function save() {
   const site = normalizeSite($('jira-url').value);
   $('jira-url').value = site; // mostra subito quello che verrà salvato
@@ -272,10 +283,7 @@ async function save() {
   if (urlChanged) patch.cache = { accountId: null };
 
   config = await saveConfig(patch);
-  // Il badge dipende da monte ore e interruttore: si rifà appena cambiano.
-  send('refreshBadge').catch(() => {});
-  // Pannello o popup: va applicato subito, non al prossimo avvio di Chrome.
-  send('refreshUiMode').catch(() => {});
+  applicaSubito();
   setResult($('save-result'), t('msgSaved'), 'ok');
   setTimeout(() => setResult($('save-result'), '', ''), 2500);
 }
@@ -326,6 +334,53 @@ $('test-jira').addEventListener('click', async () => {
     setResult($('jira-result'), t('msgConnectedAs', me.displayName, me.host), 'ok');
   } catch (error) {
     setResult($('jira-result'), error.message, 'err');
+  }
+});
+
+// ------------------------------------------------------- il file di configurazione
+
+// I motivi per cui un file viene rifiutato. Sono codici, non frasi: la frase
+// la sceglie `t`, e cosi' resta una sola per lingua.
+const ERRORI_IMPORT = {
+  NOT_OURS: 'msgImportNotOurs',
+  TOO_NEW: 'msgImportTooNew',
+  BROKEN: 'msgImportBroken'
+};
+
+// Si salva prima di esportare: il file deve contenere quello che si vede a
+// schermo, non quello che era stato salvato l'ultima volta.
+$('export-config').addEventListener('click', async () => {
+  try {
+    await save();
+  } catch {
+    return; // orari non validi: l'errore e' gia' accanto al pulsante Salva
+  }
+  const testo = JSON.stringify(exportData(config), null, 2);
+  const url = URL.createObjectURL(new Blob([testo], { type: 'application/json' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `clockwork-autofill-${todayIso()}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  setResult($('backup-result'), t('msgExported'), 'ok');
+});
+
+$('import-config').addEventListener('click', () => $('import-file').click());
+
+$('import-file').addEventListener('change', async (event) => {
+  const file = event.target.files?.[0];
+  // Azzerato subito: senza, riscegliere lo stesso file non solleverebbe
+  // nessun evento e sembrerebbe che il pulsante non funzioni.
+  event.target.value = '';
+  if (!file) return;
+
+  try {
+    config = await replaceAll(importData(JSON.parse(await file.text())));
+    fill();
+    applicaSubito();
+    setResult($('backup-result'), t('msgImported'), 'ok');
+  } catch (error) {
+    setResult($('backup-result'), t(ERRORI_IMPORT[error.code] || 'msgImportUnreadable'), 'err');
   }
 });
 

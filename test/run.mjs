@@ -9,6 +9,7 @@
 const SUITES = [
   'base.test.mjs',
   'configurazione.test.mjs',
+  'esportazione.test.mjs',
   'jira-lettura.test.mjs',
   'jira-client.test.mjs',
   'dates-planner.test.mjs',
@@ -36,6 +37,7 @@ const SUITES = [
   'devpanel.test.mjs',
   'opzioni.test.mjs',
   'pannello.test.mjs',
+  'firefox.test.mjs',
   'traduzioni.test.mjs',
   'coerenza.test.mjs'
 ];

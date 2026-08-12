@@ -1,7 +1,7 @@
 # Clockwork Autofill
 
-Chrome extension that reconstructs your day (or a past day) and pre-fills the
-worklogs, so you don't have to enter them by hand in Clockwork.
+Chrome and Firefox extension that reconstructs your day (or a past day) and
+pre-fills the worklogs, so you don't have to enter them by hand in Clockwork.
 
 **How it ends up in Clockwork:** Clockwork worklogs are synced with Jira's native
 worklogs. The extension writes to `POST /rest/api/3/issue/{key}/worklog` and the
@@ -95,9 +95,24 @@ written without confirmation: the popup shows the plan, you correct it and hit
 
 ## Installation
 
+On Chrome (and Edge, Brave, Opera):
+
 1. `chrome://extensions` → turn on **Developer mode**
 2. **Load unpacked** → select this folder
 3. Open the **Options** and fill in:
+
+On Firefox the manifest is a different one, so the folder to load is the one the
+build produces:
+
+1. `npm run build`
+2. `about:debugging` → **This Firefox** → **Load Temporary Add-on…**
+3. pick `dist/firefox/unpacked/manifest.json`, then open the **Options**
+
+A temporary add-on is gone at the next restart — for something that stays, the
+zip in `dist/firefox/` has to be signed by AMO. The side panel is Firefox's
+sidebar: the toolbar icon opens it, and it's also under *View → Sidebar*.
+
+What goes in the Options is the same on both:
 
 **Jira** — the site URL, or **Detect from browser** if you already have a tab open,
 and under *Projects* the keys you work on. There is no site and no project hardcoded
@@ -208,9 +223,38 @@ the ones **you** switched on or off stay as you left them.
   tasks: the Jira activity on that ticket *is* the meeting. If you assign it to a
   meeting by hand, the corresponding task row is removed.
 
+## Keeping the settings
+
+Uninstalling wipes `storage.local` on both browsers, and on Firefox a *temporary
+add-on* loses everything at the next restart. So there are two copies, and they are
+not the same kind of promise.
+
+**The file.** *Options → Configuration file → Export* writes the settings to
+`clockwork-autofill-<date>.json`; *Import* puts them back — on another machine, or
+on the other browser, since the file has nothing browser-specific in it. Importing
+**replaces**, it doesn't merge: what the file doesn't mention goes back to the
+default, so you don't end up with last month's meetings sitting next to the new
+ones. A file that isn't ours is refused with a reason rather than swallowed. What
+stays out of the file: the cached Jira identity (accountId, name, email) — a config
+file gets passed to a colleague or committed to a repository, and that has no
+business travelling with it.
+
+**The account copy.** Settings are also mirrored into `storage.sync`, so they follow
+your profile across devices and come back on their own after a reinstall. Treat it
+as a convenience, not a guarantee: neither browser promises to keep synced data
+across an uninstall, and it needs a signed-in account. If it isn't there, the load
+falls back to the defaults without complaining — the file is the copy that always
+survives.
+
+That split is why the cached meeting tickets live in their own storage key rather
+than inside the config: `storage.sync` allows 8 kB per item, and one entry per
+recurring meeting per week reaches that within a year. The cache stays local and
+keeps the last eight weeks; it rebuilds itself as you use the extension. The
+identity cache is local too, for the same reason as above.
+
 ## Languages
 
-English and Italian. The language follows Chrome's UI language; English is the
+English and Italian. The language follows the browser's UI language; English is the
 fallback (`default_locale`), so a browser in German sees English.
 
 ```
@@ -246,9 +290,10 @@ src/
     jira.js           activity, commits from the Development panel, hours already logged
     planner.js        meetings, ticket proposal, hour distribution, times
     dates.js          local dates, ISO week, Jira's `started` format
-    storage.js        configuration and defaults
+    storage.js        configuration, defaults, sync copy, export/import file
 tools/
-  build.mjs           distributable package
+  build.mjs           distributable packages, one per browser
+  manifest-firefox.mjs  Firefox's manifest, computed from Chrome's
 ```
 
 The channel validates itself **once only** per analysis, with a probe request. After
@@ -265,13 +310,14 @@ first tweak.
 npm test
 ```
 
-Eighteen suites over `src/lib`, which are pure modules and run in node as they are;
-the parts that talk to Chrome are simulated. They cover: dates and ISO week, the
-hour split, message levels, the three strategies for matching the meeting ticket,
-the session channel (including refusing a tab on the wrong domain and the ban on
-retrying a write), commits from the Development panel, translations, and the full
-flow across four scenarios: empty day, day already logged by hand, half-filled day,
-manual corrections.
+Thirty-three suites over `src/lib`, which are pure modules and run in node as they
+are; the parts that talk to the browser are simulated. They cover: dates and ISO
+week, the hour split, message levels, the three strategies for matching the meeting
+ticket, the session channel (including refusing a tab on the wrong domain and the
+ban on retrying a write), commits from the Development panel, translations, the
+Firefox manifest computed from Chrome's, the configuration file and the sync copy
+(including the files that must be refused), and the full flow across four scenarios:
+empty day, day already logged by hand, half-filled day, manual corrections.
 
 Permissions: `storage`, `scripting` and `https://*.atlassian.net/*`. `tabs` isn't
 needed — host_permissions are enough to find the site's tabs and grant no visibility
@@ -284,9 +330,28 @@ npm install     # once: esbuild
 npm run build
 ```
 
-Produces `dist/clockwork-autofill-<version>.zip`, to upload to the Chrome Web Store
-or hand over directly, and `dist/unpacked/` for "Load unpacked". Tests and tooling
-stay out of the package.
+One command, and it always rebuilds everything: both packages come out of the same
+sources, and rebuilding one alone is how they drift apart — the other one left at an
+older version, ready to be uploaded by mistake.
+
+Produces `dist/<browser>/clockwork-autofill-<version>-<browser>.zip`, to upload to
+the Chrome Web Store or to AMO — or to hand over directly — and
+`dist/<browser>/unpacked/` for "Load unpacked". Tests and tooling stay out of the
+package.
+
+**One manifest, not two.** `manifest.json` is Chrome's; Firefox's is computed from
+it at every build by `tools/manifest-firefox.mjs`. Two hand-written manifests would
+be two files to keep in step, and the second would fall behind at the first change —
+a permission added on one side and not the other doesn't raise an error, it makes an
+extension that stops working on one browser. Four things differ, all of them names
+for the same thing: the background is `scripts` instead of `service_worker`, the
+side panel is `sidebar_action` instead of `side_panel` (and needs no permission, so
+`sidePanel` is dropped), the options page is `options_ui` — the only one
+`runtime.openOptionsPage()` opens on Firefox — and `browser_specific_settings.gecko`
+carries the add-on id, without which the configuration is lost at every reload.
+`strict_min_version` is 128: `world` in `scripting.executeScript` doesn't exist
+below that, and every request would fail. The JavaScript is the same file on both,
+with `chrome.sidePanel` and `sidebarAction` checked at runtime.
 
 **The build won't run if the suite isn't green** — translations included, which are
 exactly the ones that break silently. It also checks that every file the manifest

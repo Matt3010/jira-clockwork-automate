@@ -7,7 +7,7 @@
 // Unica destinazione: Jira. Anche i commit arrivano da li', dal pannello
 // "Sviluppo" delle issue.
 
-import { loadConfig, saveConfig } from './lib/storage.js';
+import { loadConfig, saveConfig, saveMeetingMemory } from './lib/storage.js';
 import {
   JiraClient,
   collectJiraActivity,
@@ -70,6 +70,20 @@ function scheduleBadge() {
   refreshBadge();
 }
 
+// Il pannello laterale ha due nomi e due modi di aprirsi. `chrome.sidePanel`
+// esiste da Chrome 114 e lo lega al click sull'icona da solo, con
+// `setPanelBehavior`; su Firefox e' `sidebarAction`, e il pannello si apre solo
+// dentro il gestore di un gesto dell'utente — cioe' da `action.onClicked`.
+// Dove non c'e' ne' l'uno ne' l'altro resta il popup, che e' il motivo per cui
+// il popup non e' stato buttato via.
+// Su Firefox le API stanno sotto `browser`, e `chrome` le rispecchia quasi
+// tutte — ma il pannello e' roba loro, e scommettere sullo specchio qui
+// costerebbe un pannello che non si apre mai.
+const sidebar = globalThis.browser?.sidebarAction || chrome.sidebarAction;
+const PANNELLO = chrome.sidePanel?.setPanelBehavior ? 'chrome'
+  : sidebar?.toggle ? 'firefox'
+    : null;
+
 /**
  * Decide cosa apre il click sull'icona: il pannello laterale o il popup.
  *
@@ -79,12 +93,10 @@ function scheduleBadge() {
  */
 async function applyUiMode(config) {
   const pannello = config?.ui?.sidePanel !== false;
-  // `chrome.sidePanel` esiste da Chrome 114: dove non c'e', resta il popup —
-  // che e' anche il motivo per cui il popup non e' stato buttato via.
-  const disponibile = Boolean(chrome.sidePanel?.setPanelBehavior);
+  const disponibile = Boolean(PANNELLO);
   const attivo = pannello && disponibile;
 
-  if (disponibile) {
+  if (PANNELLO === 'chrome') {
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: attivo }).catch(() => {});
   }
   await chrome.action.setPopup({ popup: attivo ? '' : 'src/popup.html' });
@@ -105,6 +117,13 @@ chrome.runtime.onInstalled.addListener(startup);
 chrome.runtime.onStartup.addListener(startup);
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === BADGE_ALARM) refreshBadge();
+});
+
+// Senza popup il click sull'icona arriva qui, e succede solo dove il pannello
+// e' la scelta attiva. Su Chrome non ci arriva mai: il pannello lo apre
+// `setPanelBehavior`, e il click non diventa un evento.
+chrome.action.onClicked.addListener(() => {
+  sidebar?.toggle();
 });
 
 // ---------------------------------------------------------------- canale
@@ -172,9 +191,7 @@ async function saveMeetingChoices(config, scelte) {
       changed = true;
     }
   }
-  if (changed) {
-    await chrome.storage.local.set({ config: { ...config, weeklyMeetingIssues: memory } });
-  }
+  if (changed) await saveMeetingMemory(memory);
   return changed;
 }
 

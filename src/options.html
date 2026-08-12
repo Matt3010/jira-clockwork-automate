@@ -139,6 +139,22 @@
     <button id="add-meeting" class="ghost" data-i18n="btnAddMeeting">Add meeting</button>
   </section>
 
+  <section>
+    <h2 data-i18n="secBackup">Configuration file</h2>
+    <p class="hint" data-i18n="hintBackup">
+      Uninstalling clears the settings. Export writes them to a file, Import puts them
+      back — on another browser too. With the browser's sync on they also follow your
+      account, but no browser promises to keep them across an uninstall: the file is the
+      copy that always survives.
+    </p>
+    <div class="with-button">
+      <button id="export-config" class="ghost" data-i18n="btnExport">Export</button>
+      <button id="import-config" class="ghost" data-i18n="btnImport">Import</button>
+      <span id="backup-result" class="result"></span>
+    </div>
+    <input type="file" id="import-file" accept="application/json,.json" hidden />
+  </section>
+
   <footer>
     <button id="save" class="primary" data-i18n="btnSave">Save</button>
     <span id="save-result" class="result"></span>
