@@ -3,8 +3,7 @@
 // Jira non ha un canale a cui restare in ascolto — niente WebSocket
 // pubbliche, e i webhook vogliono un server che li riceva, cioè credenziali
 // depositate da qualche parte. Resta il rileggere ogni tanto, e allora quello
-// che vedi può avere fino a un minuto: l'etichetta serve a non farlo
-// indovinare.
+// che vedi ha un'ora di lettura: l'etichetta la scrive, così non si indovina.
 //
 // È comportamento del DOM e qui non c'è un DOM: si verifica sul sorgente.
 
@@ -40,9 +39,18 @@ const blocco = (nome) => {
   }
 }
 
-// --- l'etichetta si aggiorna anche senza rileggere -------------------------
-// "1 minuto fa" diventa "2 minuti fa" da solo: altrimenti resta a mentire
-// finché non succede altro.
+// --- l'etichetta dice un'ora, non un'età ---------------------------------
+// L'età non diceva niente: la rilettura scatta al minuto e riazzera il conto,
+// quindi restava «ora» sempre — tranne quando la rilettura è bloccata, cioè
+// quando non stai guardando. Un orario vale qualunque sia il passo.
+{
+  const corpo = blocco('syncLabel');
+  assert.match(corpo, /eventTime\(quando\)/, 'l etichetta deve scrivere l ora della lettura');
+  assert.doesNotMatch(corpo, /Date\.now\(\) - /,
+    'un conto sull età torna a dire «ora» a ogni rilettura');
+}
+
+// --- l'etichetta si riscrive quando il momento di lettura cambia ----------
 {
   assert.match(popup, /setInterval\(pollIfIdle/, 'niente batte il tempo');
   assert.match(blocco('pollIfIdle'), /syncLabel\(\)/,
@@ -52,11 +60,17 @@ const blocco = (nome) => {
   for (const nome of ['render', 'renderLog', 'renderTickets', 'showTab']) {
     assert.match(blocco(nome), /syncLabel\(\)/, `${nome} non aggiorna l etichetta`);
   }
+
+  // L'analisi registra il momento di lettura *dopo* aver disegnato: se non
+  // riscrive l'etichetta li', all'apertura del popup resta vuota per un
+  // battito intero.
+  assert.match(popup, /state\.analyzedAt = Date\.now\(\);\n\s*(\/\/[^\n]*\n\s*)*syncLabel\(\)/,
+    'chi registra il momento di lettura deve riscrivere subito l etichetta');
 }
 
 // --- il battito è più fitto della rilettura -------------------------------
-// Il battito serve all'etichetta, la rilettura al dato: con lo stesso passo
-// l'etichetta scatterebbe di un minuto alla volta.
+// Il battito controlla se è ora di rileggere: con lo stesso passo della
+// rilettura, ogni giro arriverebbe sistematicamente in ritardo di un giro.
 {
   const passo = (nome) => Number(popup.match(new RegExp(`const ${nome} = (\\d+)`))?.[1]);
   const poll = passo('POLL_MS');

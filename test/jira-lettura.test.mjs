@@ -89,6 +89,118 @@ function fakeClient(risposte) {
   assert.equal(client.chiamate.comments.length, 0, 'con scanComments spento i commenti non si leggono');
 }
 
+// ======================================================== quello che fanno gli altri sulle tue
+// Farsi assegnare un ticket da un collega non lasciava traccia da nessuna
+// parte: la modifica porta il suo nome, non il tuo, e veniva scartata. Il
+// ticket non compariva né nel registro né fra le righe — e chi lo cercava
+// premeva Aggiorna a vuoto.
+{
+  const client = fakeClient({
+    issues: [
+      {
+        id: '1', key: 'ABC-1',
+        fields: { summary: 'Assegnata a me', assignee: { accountId: IO } },
+        changelog: {
+          total: 1,
+          histories: [{
+            author: { accountId: ALTRO, displayName: 'Dario Decarlo' },
+            created: quando(17),
+            items: [{ field: 'assignee', toString: 'Matteo Scanferla' }]
+          }]
+        }
+      },
+      {
+        id: '2', key: 'ABC-2',
+        fields: { summary: 'Aperta da me, in mano ad altri', reporter: { accountId: IO } },
+        changelog: {
+          total: 1,
+          histories: [{
+            author: { accountId: ALTRO, displayName: 'Dario Decarlo' },
+            created: quando(16),
+            items: [{ field: 'status', fromString: 'To Do', toString: 'In Progress' }]
+          }]
+        }
+      },
+      {
+        id: '3', key: 'ABC-3',
+        fields: { summary: 'Di un altro, mossa da un altro' },
+        changelog: {
+          total: 1,
+          histories: [{
+            author: { accountId: ALTRO, displayName: 'Dario Decarlo' },
+            created: quando(15), items: [{ field: 'status' }]
+          }]
+        }
+      },
+      {
+        id: '4', key: 'ABC-4',
+        fields: { summary: 'Mia, ma solo contabilità', assignee: { accountId: IO } },
+        changelog: {
+          total: 1,
+          histories: [{
+            author: { accountId: ALTRO, displayName: 'Dario Decarlo' },
+            created: quando(14), items: [{ field: 'timespent', toString: '3600' }]
+          }]
+        }
+      }
+    ]
+  });
+
+  const attivita = await collectJiraActivity(client, {
+    isoDate: '2026-08-10', projects: [], accountId: IO, scanComments: false
+  });
+
+  assert.deepEqual([...attivita.keys()].sort(), ['ABC-1', 'ABC-2'],
+    'le tue per assegnazione o per richiesta, non mezzo progetto');
+
+  // `foreign` le tiene distinte dalle tue: da qui in poi decidono se la riga
+  // parte accesa e se il registro ci mette sopra un nome.
+  const assegnata = attivita.get('ABC-1').events[0];
+  assert.equal(assegnata.kind, 'foreign', 'non è lavoro tuo e non deve sembrarlo');
+  assert.equal(assegnata.by, 'Dario Decarlo', 'con il nome di chi l ha fatto');
+  assert.deepEqual(assegnata.items, [{ field: 'assignee', from: '', to: 'Matteo Scanferla' }]);
+  assert.equal(attivita.get('ABC-2').events[0].kind, 'foreign');
+
+  // La contabilità resta esclusa anche quando la muove un altro: quelle righe
+  // le genera la registrazione delle ore, non una persona.
+  assert.ok(!attivita.has('ABC-4'), 'timespent mosso da altri non è una cosa che ti riguarda');
+
+  for (const campo of ['assignee', 'reporter']) {
+    assert.ok(client.chiamate.search[0].opzioni.fields.includes(campo),
+      `senza ${campo} non si può sapere se la issue è tua`);
+  }
+}
+
+// ======================================================== commenti altrui sulle tue
+{
+  const client = fakeClient({
+    issues: [
+      {
+        id: '1', key: 'ABC-1',
+        fields: { summary: 'Mia', assignee: { accountId: IO } },
+        changelog: { total: 0, histories: [] }
+      },
+      {
+        id: '2', key: 'ABC-2',
+        fields: { summary: 'Di un altro' },
+        changelog: { total: 0, histories: [] }
+      }
+    ],
+    comments: {
+      'ABC-1': [{ author: { accountId: ALTRO, displayName: 'Dario Decarlo' }, created: quando(15) }],
+      'ABC-2': [{ author: { accountId: ALTRO, displayName: 'Dario Decarlo' }, created: quando(15) }]
+    }
+  });
+
+  const attivita = await collectJiraActivity(client, {
+    isoDate: '2026-08-10', projects: [], accountId: IO, scanComments: true
+  });
+
+  assert.deepEqual([...attivita.keys()], ['ABC-1'], 'ti riguarda il commento sotto una issue tua');
+  assert.equal(attivita.get('ABC-1').events[0].kind, 'foreignComment');
+  assert.equal(attivita.get('ABC-1').events[0].by, 'Dario Decarlo');
+}
+
 // ======================================================== changelog troncato
 {
   const client = fakeClient({

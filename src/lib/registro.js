@@ -71,7 +71,11 @@ export function describeEvent(evento) {
 /** Una riga pronta da incollare nel daily. */
 export function logLine(evento) {
   const { verbo, dettaglio } = describeEvent(evento);
-  return `- ${eventTime(evento.at)} ${evento.key} — ${verbo}${dettaglio ? ` · ${dettaglio}` : ''}`;
+  // Il registro finisce incollato nel daily, dove chi legge da' per scontato
+  // che parli di te: una modifica di un collega senza il suo nome diventa
+  // lavoro tuo per distrazione.
+  const chi = evento.by ? ` (${t('logBy', evento.by)})` : '';
+  return `- ${eventTime(evento.at)} ${evento.key} — ${verbo}${chi}${dettaglio ? ` · ${dettaglio}` : ''}`;
 }
 
 /** Il registro intero come testo. */

@@ -445,6 +445,28 @@
       }
     }
   },
+  "activityAssigned": {
+    "message": "assegnata a te"
+  },
+  "activityAssignedBy": {
+    "message": "assegnata a te da $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
+  "activityUpdated": {
+    "message": "aggiornata da altri"
+  },
+  "activityUpdatedBy": {
+    "message": "aggiornata da $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
   "commentProgressAndComments": {
     "message": "Avanzamento e commenti"
   },
@@ -982,6 +1004,14 @@
   "logComment": {
     "message": "commentata"
   },
+  "logBy": {
+    "message": "da $NAME$",
+    "placeholders": {
+      "name": {
+        "content": "$1"
+      }
+    }
+  },
   "logCommit": {
     "message": "commit"
   },
@@ -1157,13 +1187,10 @@
   "labelHours": {
     "message": "Ore"
   },
-  "syncNow": {
-    "message": "ora"
-  },
-  "syncAgo": {
-    "message": "$MIN$ min fa",
+  "syncTime": {
+    "message": "letto alle $TIME$",
     "placeholders": {
-      "min": {
+      "time": {
         "content": "$1"
       }
     }

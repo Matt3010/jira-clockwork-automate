@@ -154,20 +154,37 @@ export class JiraClient {
   }
 }
 
-/** Il testo dentro un documento ADF, per rileggere la nota di un worklog. */
+/**
+ * Il testo dentro un documento ADF, per rileggere la nota di un worklog.
+ *
+ * I paragrafi tornano separati da un a capo, come sono stati scritti: la nota
+ * precompilata e' la lista dei commit, una riga per commit, e rileggendola
+ * unita da uno spazio diventerebbe di nuovo una frase sola — che e' esattamente
+ * quello che succedeva copiando una giornata.
+ */
 export function textFromAdf(doc) {
   if (!doc) return '';
   if (typeof doc === 'string') return doc;
   if (doc.type === 'text') return doc.text || '';
-  return (doc.content || []).map(textFromAdf).join(doc.type === 'paragraph' ? '' : ' ').trim();
+  const dentro = (doc.content || []).map(textFromAdf);
+  if (doc.type === 'paragraph') return dentro.join('').trim();
+  return dentro.join('\n').trim();
 }
 
-/** Commento in Atlassian Document Format, richiesto dall'API v3. */
+/**
+ * Commento in Atlassian Document Format, richiesto dall'API v3.
+ *
+ * Un a capo dentro un nodo di testo ADF non e' un a capo: Jira lo mostrerebbe
+ * come uno spazio, e la lista dei commit tornerebbe una riga sola. Ogni riga
+ * diventa quindi un paragrafo suo.
+ */
 function toAdf(text) {
+  const righe = String(text).split('\n').map((r) => r.trim()).filter(Boolean);
   return {
     type: 'doc',
     version: 1,
-    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }]
+    content: (righe.length ? righe : [String(text)])
+      .map((riga) => ({ type: 'paragraph', content: [{ type: 'text', text: riga }] }))
   };
 }
 
@@ -207,20 +224,42 @@ function projectClause(projects) {
 }
 
 /**
- * Le issue su cui l'utente ha fatto qualcosa nella giornata indicata.
+ * Sei tu la persona di cui parla questa issue: assegnatario o richiedente.
+ *
+ * Serve a distinguere le issue che ti riguardano da quelle che quel giorno si
+ * sono mosse per conto loro. Sulle tue vale la pena riportare anche le
+ * modifiche fatte da altri; sulle altre sarebbe rumore.
+ */
+function issueIsMine(issue, accountId) {
+  if (!accountId) return false;
+  const fields = issue.fields || {};
+  return fields.assignee?.accountId === accountId || fields.reporter?.accountId === accountId;
+}
+
+/**
+ * Le issue della giornata che ti riguardano.
  * Ritorna una mappa key -> { key, summary, events: [...] }.
+ *
+ * Due cose diverse finiscono qui dentro, e restano distinguibili dal `kind`
+ * dell'evento: quello che hai fatto tu (`changelog`, `comment`) e quello che
+ * hanno fatto altri su una issue tua (`foreign`). Senza la seconda, farsi
+ * assegnare un ticket da un collega era invisibile — la modifica portava il
+ * suo nome, non il tuo, e veniva scartata: il ticket non compariva da nessuna
+ * parte, nemmeno spento.
  */
 export async function collectJiraActivity(client, { isoDate, projects, accountId, scanComments }) {
   const { from, to } = jqlDayRange(isoDate);
   const jql = `${projectClause(projects)}updated >= "${from}" AND updated < "${to}" ORDER BY updated DESC`;
   const issues = await client.search(jql, {
-    fields: ['summary', 'status', 'issuetype'],
+    // `assignee` e `reporter` non si disegnano: dicono se la issue e' tua, e
+    // quindi se le modifiche altrui vanno riportate o buttate.
+    fields: ['summary', 'status', 'issuetype', 'assignee', 'reporter'],
     expand: 'changelog',
     maxResults: 100
   });
 
   const activity = new Map();
-  const record = (issue, kind, at, items = []) => {
+  const record = (issue, kind, at, items = [], by = '') => {
     const key = issue.key;
     if (!activity.has(key)) {
       activity.set(key, {
@@ -234,7 +273,9 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
     // `items` conserva il dettaglio del cambiamento — quale campo, da cosa a
     // cosa. Al piano serve solo contarli, ma al registro delle attivita' serve
     // poter dire "passata a In corso" invece di "una modifica".
-    activity.get(key).events.push({ kind, at, items });
+    // `by` e' vuoto quando la modifica e' tua: il nome serve solo a non far
+    // passare per tuo il lavoro di un altro.
+    activity.get(key).events.push({ kind, at, items, by });
   };
 
   for (const issue of issues) {
@@ -249,8 +290,13 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
       }
     }
 
+    const mia = issueIsMine(issue, accountId);
+
     for (const history of histories) {
-      if (history.author?.accountId !== accountId) continue;
+      const tua = history.author?.accountId === accountId;
+      // Le modifiche di altri contano solo sulle issue tue: altrove sarebbe
+      // mezzo progetto dentro la giornata di chi guarda.
+      if (!tua && !mia) continue;
       if (!isSameLocalDay(history.created, isoDate)) continue;
       // Attenzione a `toString`: Jira chiama cosi' il campo, ma e' anche un
       // metodo che ogni oggetto eredita. Quando Jira non lo manda, `||` non
@@ -266,7 +312,8 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
       // Se restava solo contabilita', non e' successo niente da registrare: la
       // issue non deve nemmeno entrare nell'elenco.
       if (!items.length) continue;
-      record(issue, 'changelog', history.created, items);
+      if (tua) record(issue, 'changelog', history.created, items);
+      else record(issue, 'foreign', history.created, items, history.author?.displayName || '');
     }
   }
 
@@ -278,10 +325,15 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
       } catch {
         continue;
       }
+      const mia = issueIsMine(issue, accountId);
       for (const comment of comments) {
-        if (comment.author?.accountId !== accountId) continue;
+        const tuo = comment.author?.accountId === accountId;
+        if (!tuo && !mia) continue;
         if (!isSameLocalDay(comment.created, isoDate)) continue;
-        record(issue, 'comment', comment.created, 'commento');
+        // Un commento di un collega sotto una issue tua e' una cosa che ti
+        // riguarda, ma non e' lavoro tuo: kind diverso, come per il changelog.
+        if (tuo) record(issue, 'comment', comment.created, 'commento');
+        else record(issue, 'foreignComment', comment.created, 'commento', comment.author?.displayName || '');
       }
     }
   }
@@ -349,9 +401,12 @@ export function mergeCreatedIssues(activity, created) {
  *
  * Non dipende dal giorno scelto: e' quello che hai in ballo adesso. Serve a
  * sapere su cosa stai lavorando, e da qui si possono anche spostare di stato.
+ *
+ * "Tuoi" comprende anche quelli che hai aperto tu e sono in mano a un altro:
+ * il richiedente aspetta una risposta, ed e' lavoro suo tenerli d'occhio.
  */
 export async function collectOpenIssues(client, { projects, limit = 60 }) {
-  const jql = `${projectClause(projects)}assignee = currentUser() ` +
+  const jql = `${projectClause(projects)}(assignee = currentUser() OR reporter = currentUser()) ` +
     'AND statusCategory != Done ORDER BY updated DESC';
   const issues = await client.search(jql, {
     fields: ['summary', 'status', 'created', 'updated', 'issuetype'],

@@ -99,4 +99,36 @@ assert.equal(vuoto.appType, null);
 assert.equal(vuoto.byIssue.size, 0);
 assert.equal(calls.length, 6, 'provati entrambi gli applicationType prima di arrendersi');
 
+// --- i commit diventano la nota del worklog, tutti, uno per riga ---------
+// È la traccia migliore di cosa hai fatto: tenerne tre su sette vorrebbe dire
+// scegliere al posto tuo quali pezzi della giornata valgono. E in riga unica,
+// separati da un punto, si leggevano come una frase sola.
+{
+  const { buildPlan } = await import('../src/lib/planner.js');
+  const { DEFAULT_CONFIG } = await import('../src/lib/storage.js');
+
+  const soggetti = [
+    'feat(requests): [ABC-1] remove unused request classes',
+    'fix(api): [ABC-1] timeout piu lungo sulle chiamate lente',
+    'chore: [ABC-1] aggiorna le dipendenze',
+    'test: [ABC-1] copre il caso senza sessione',
+    'feat(requests): [ABC-1] remove unused request classes' // rebase: stesso soggetto
+  ];
+  const piano = buildPlan({
+    isoDate: '2026-08-10',
+    config: { ...DEFAULT_CONFIG, jira: { ...DEFAULT_CONFIG.jira, projects: ['ABC'] }, meetings: [] },
+    jiraActivity: new Map(),
+    gitByIssue: new Map([['ABC-1', soggetti.map((subject, i) => ({ subject, at: oggi(9 + i) }))]]),
+    recentIssues: [],
+    loggedEntries: [],
+    alreadyLoggedMinutes: 0
+  });
+
+  const riga = piano.rows.find((r) => r.issueKey === 'ABC-1');
+  const righe = riga.comment.split('\n');
+  assert.equal(righe.length, 4, 'quattro soggetti diversi, quattro righe: il rifatto non si conta due volte');
+  assert.deepEqual(righe, [...new Set(soggetti)], 'nell ordine in cui sono stati fatti');
+  assert.doesNotMatch(riga.comment, / · /, 'e non incollati in una frase sola');
+}
+
 console.log('pannello Sviluppo: tutti i controlli passati.');

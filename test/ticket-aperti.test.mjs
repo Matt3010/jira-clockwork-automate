@@ -50,7 +50,13 @@ const issue = (key, status, category, created, extra = {}) => ({
   const aperti = await collectOpenIssues(client, { projects: ['ABC', 'XYZ'] });
 
   const { jql, opzioni } = client.chiamate[0];
-  assert.match(jql, /assignee = currentUser\(\)/, 'solo i tuoi');
+  // "Tuoi" per assegnazione o per richiesta: un ticket che hai aperto tu e sta
+  // in mano a un altro resta lavoro che ti riguarda, e prima spariva.
+  assert.match(jql, /assignee = currentUser\(\) OR reporter = currentUser\(\)/, 'tuoi o aperti da te');
+  // Le due condizioni fra parentesi, o l'OR si mangia il filtro sugli stati e
+  // tornerebbero anche i ticket chiusi di chi li ha aperti.
+  assert.match(jql, /\(assignee = currentUser\(\) OR reporter = currentUser\(\)\)/,
+    'l alternativa va isolata dal resto della query');
   assert.match(jql, /statusCategory != Done/, 'e solo quelli non chiusi');
   assert.match(jql, /project in \(ABC, XYZ\)/, 'ristretta ai progetti configurati');
   assert.match(jql, /ORDER BY updated DESC/);
@@ -75,7 +81,7 @@ const issue = (key, status, category, created, extra = {}) => ({
 {
   const client = fakeClient([]);
   await collectOpenIssues(client, { projects: [] });
-  assert.ok(client.chiamate[0].jql.startsWith('assignee ='), 'nessun filtro progetto appeso davanti');
+  assert.ok(client.chiamate[0].jql.startsWith('(assignee ='), 'nessun filtro progetto appeso davanti');
 }
 
 // --- campi mancanti non producono valori sporchi --------------------------

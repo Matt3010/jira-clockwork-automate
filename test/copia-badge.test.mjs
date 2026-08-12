@@ -35,8 +35,8 @@ assert.equal(
       { type: 'paragraph', content: [{ type: 'text', text: 'Seconda' }] }
     ]
   }),
-  'Prima Seconda',
-  'più paragrafi diventano una riga sola: la nota è un campo di testo'
+  'Prima\nSeconda',
+  'i paragrafi tornano come righe: la nota è la lista dei commit, uno per riga'
 );
 
 // ---------------------------------------------------------------- giorno da cui copiare

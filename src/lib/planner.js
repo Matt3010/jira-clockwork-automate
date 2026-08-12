@@ -121,6 +121,9 @@ export function guessMeetingIssue(label, recentIssues, { isoDate, taken = new Se
  * Da cosa nasce la riga, in numeri. La frase la compone chi disegna: il planner
  * non deve produrre prosa, o non si puo' tradurre.
  */
+/** Le modifiche fatte da altri su una issue tua: non sono lavoro tuo. */
+const ESTRANEO = new Set(['foreign', 'foreignComment']);
+
 function countActivity(jiraEvents, gitCommits) {
   const eventi = jiraEvents || [];
   const comments = eventi.filter((e) => e.kind === 'comment').length;
@@ -128,10 +131,14 @@ function countActivity(jiraEvents, gitCommits) {
   // aperto tu e' sbagliato, e nasconde il fatto che scriverlo e' stato
   // lavoro suo.
   const created = eventi.filter((e) => e.kind === 'created').length;
+  // Contarle fra le modifiche direbbe "2 modifiche Jira" di una giornata in
+  // cui non hai toccato niente, e peserebbe nella divisione delle ore.
+  const foreign = eventi.filter((e) => ESTRANEO.has(e.kind)).length;
   return {
-    changes: eventi.length - comments - created,
+    changes: eventi.length - comments - created - foreign,
     created,
     comments,
+    foreign,
     commits: (gitCommits || []).length
   };
 }
@@ -139,11 +146,17 @@ function countActivity(jiraEvents, gitCommits) {
 /**
  * Nota precompilata del worklog. I soggetti dei commit sono la traccia migliore
  * e vanno usati cosi' come sono; altrimenti si rimanda a una frase tradotta.
+ *
+ * Ci vanno tutti, uno per riga: sono la lista di quello che hai fatto, e
+ * tenerne tre su sette vorrebbe dire scegliere per conto tuo quali pezzi della
+ * giornata valgono. In riga unica separati da un punto si leggevano come una
+ * frase sola, e con piu' di due commit diventava illeggibile. I doppioni si
+ * tolgono: lo stesso soggetto su due commit e' un rebase, non due lavori.
  */
 function defaultComment(jira, commits) {
   if (commits?.length) {
-    const subjects = [...new Set(commits.map((c) => c.subject).filter(Boolean))].slice(0, 3);
-    if (subjects.length) return { text: subjects.join(' · ') };
+    const subjects = [...new Set(commits.map((c) => c.subject).filter(Boolean))];
+    if (subjects.length) return { text: subjects.join('\n') };
   }
   const kinds = new Set((jira?.events || []).map((e) => e.kind));
   if (kinds.has('comment') && kinds.has('changelog')) return { key: 'commentProgressAndComments' };
@@ -223,10 +236,25 @@ export function buildPlan({
   const taskRows = taskKeys.map((key) => {
     const jira = jiraActivity.get(key);
     const commits = gitByIssue.get(key) || [];
-    const sources = [];
-    if (jira) sources.push('jira');
-    if (commits.length) sources.push('git');
     const activity = countActivity(jira?.events, commits);
+    // Se sulla issue non c'e' niente di tuo, l'unica cosa successa e' che
+    // qualcuno l'ha mossa: la riga c'e' — l'hai chiesta tu, e' roba tua — ma
+    // non porta il marchio "jira", che sta per "ci hai lavorato".
+    // Il marchio "jira" vuol dire "ci hai lavorato dentro Jira": una issue che
+    // porta solo la mossa di un collega non lo merita, nemmeno quando hai
+    // commit che la riguardano.
+    const tuoSuJira = Boolean(activity.changes || activity.created || activity.comments);
+    const soloAltrui = Boolean(activity.foreign) && !tuoSuJira && !commits.length;
+    const estranei = (jira?.events || []).filter((e) => ESTRANEO.has(e.kind));
+    // Con chi e cosa: "assegnata a te da Dario" dice perche' la riga e' li',
+    // "1 modifica" no.
+    const assegnata = estranei.some((e) => (e.items || [])
+      .some((item) => String(item.field).toLowerCase() === 'assignee'));
+    const foreignBy = estranei.find((e) => e.by)?.by || '';
+    const sources = [];
+    if (tuoSuJira) sources.push('jira');
+    if (commits.length) sources.push('git');
+    if (soloAltrui) sources.push('foreign');
     const nota = defaultComment(jira, commits);
     return {
       id: `task:${key}`,
@@ -238,13 +266,24 @@ export function buildPlan({
       time: '',
       sources,
       activity,
+      assignedToYou: soloAltrui && assegnata,
+      foreignBy: soloAltrui ? foreignBy : '',
       // Peso per l'ordinamento: piu' fonti e piu' eventi vuol dire piu'
-      // probabilmente il lavoro principale della giornata.
-      weight: sources.length * 100 +
+      // probabilmente il lavoro principale della giornata. Una issue mossa
+      // solo da altri pesa zero: finisce in fondo e non prende mai il resto
+      // della divisione.
+      weight: soloAltrui ? 0 : sources.length * 100 +
         activity.changes + activity.created + activity.comments + activity.commits,
       comment: nota.text || '',
       commentKey: nota.key || null,
-      enabled: true,
+      // E parte spenta. Farsi assegnare un ticket alle 17:00 non e' averci
+      // lavorato: se ci hai lavorato lo accendi tu, ma le ore della giornata
+      // non devono finirci sopra da sole.
+      enabled: !soloAltrui,
+      // Il motivo per cui e' spenta, scritto: `autoDisabled` da solo non lo
+      // distingue da "spenta perche' le ore c'erano gia'", e quel motivo li'
+      // scade — questo no.
+      notYours: soloAltrui,
       existingMinutes: 0
     };
   });
@@ -262,7 +301,11 @@ export function buildPlan({
     // te": se le ore spariscono da Jira, la prima va riaccesa, la seconda no.
     if (row.existingMinutes) {
       row.enabled = false;
-      row.autoDisabled = true;
+      // Ma non su una riga che e' spenta perche' non ci hai lavorato tu:
+      // marcarla `autoDisabled` seppellirebbe quel motivo sotto questo, e alla
+      // sparizione del worklog la rilettura la riaccenderebbe — mettendola a
+      // prendersi le ore di una giornata in cui non l'hai toccata.
+      if (!row.notYours) row.autoDisabled = true;
     }
   }
 

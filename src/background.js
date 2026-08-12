@@ -384,15 +384,18 @@ async function activity({ isoDate }) {
   for (const voce of attivita.values()) {
     titoli.set(voce.key, voce.summary);
     for (const evento of voce.events) {
-      if (evento.kind === 'comment') {
-        aggiungi(evento.at, voce.key, 'comment');
+      // `by` viaggia con l'evento: nel registro della giornata una modifica di
+      // un collega deve portare il suo nome, o la incolli nel daily come tua.
+      const di = evento.by ? { by: evento.by } : {};
+      if (evento.kind === 'comment' || evento.kind === 'foreignComment') {
+        aggiungi(evento.at, voce.key, 'comment', di);
         continue;
       }
       // Ogni campo toccato e' un evento a se': "passata a In corso" e
       // "riassegnata" nello stesso istante restano due righe leggibili.
       for (const item of evento.items || []) {
         aggiungi(evento.at, voce.key, item.field === 'status' ? 'status' : 'field', {
-          field: item.field, from: item.from, to: item.to
+          field: item.field, from: item.from, to: item.to, ...di
         });
       }
     }

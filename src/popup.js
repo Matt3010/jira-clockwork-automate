@@ -122,6 +122,17 @@ function normalizeMessage(input, fallbackLevel) {
  * il testo si spezzava e il pulsante si deformava. Il testo intero resta nel
  * title, così non si perde niente.
  */
+// Quante righe mostrare della nota. Si contano quelle scritte, senza misurare
+// niente: misurare vorrebbe dire leggere il layout a ogni battuta, e la nota
+// cresce di una riga per commit, non a caso. Il tetto e' perche' venti commit
+// non devono spingere le ore fuori dallo schermo — oltre, si scorre dentro.
+const RIGHE_NOTA_MAX = 8;
+
+function adattaAltezza(area) {
+  const righe = area.value ? area.value.split('\n').length : 1;
+  area.rows = Math.min(Math.max(righe, 1), RIGHE_NOTA_MAX);
+}
+
 function setButton(button, name, text) {
   const label = document.createElement('span');
   label.className = 'label';
@@ -386,6 +397,15 @@ function describeRow(row) {
   if (changes) parti.push(t(changes === 1 ? 'activityChange' : 'activityChanges', changes));
   if (comments) parti.push(t(comments === 1 ? 'activityComment' : 'activityComments', comments));
   if (commits) parti.push(t(commits === 1 ? 'activityCommit' : 'activityCommits', commits));
+  // Una riga senza niente di tuo c'è perché la issue è tua e qualcuno l'ha
+  // mossa: senza dirlo sembrerebbe comparsa dal nulla, per giunta spenta.
+  if (!parti.length && row.activity?.foreign) {
+    if (row.assignedToYou) {
+      parti.push(row.foreignBy ? t('activityAssignedBy', row.foreignBy) : t('activityAssigned'));
+    } else {
+      parti.push(row.foreignBy ? t('activityUpdatedBy', row.foreignBy) : t('activityUpdated'));
+    }
+  }
   return parti.join(' · ');
 }
 
@@ -509,12 +529,18 @@ function renderRow(row) {
   detail.className = 'detail';
   detail.textContent = describeRow(row);
 
-  const comment = document.createElement('input');
-  comment.type = 'text';
+  // Una casella su piu' righe, non un campo di testo: la nota precompilata e'
+  // la lista dei commit, uno per riga, e in un `input` si vedrebbe solo il
+  // primo — con gli altri nascosti dentro un campo largo mezza finestra.
+  const comment = document.createElement('textarea');
   comment.className = 'comment';
   comment.placeholder = t('phComment');
   comment.value = row.comment || '';
-  comment.addEventListener('input', () => { row.comment = comment.value; });
+  adattaAltezza(comment);
+  comment.addEventListener('input', () => {
+    row.comment = comment.value;
+    adattaAltezza(comment);
+  });
 
   tdWhat.append(summary, detail, comment);
 
@@ -1180,6 +1206,10 @@ async function analyze({ preserveMessages = false } = {}) {
     // quando i comandi tornano premibili.
     if (token === analyzeToken) {
       state.analyzedAt = Date.now();
+      // Il momento di lettura si registra qui, dopo il disegno: senza
+      // riscrivere l'etichetta adesso resterebbe vuota fino al battito
+      // successivo — quindici secondi in cui non c'e' scritto niente.
+      syncLabel();
       setBusy(false);
       setButton(el.analyze, 'refresh', t('btnRefresh'));
     }
@@ -1297,6 +1327,14 @@ function renderLog() {
     const forte = document.createElement('strong');
     forte.textContent = verbo;
     cosa.append(forte);
+    // Stessa ragione della riga da incollare: senza il nome, la modifica di un
+    // collega si legge come tua.
+    if (evento.by) {
+      const chi = document.createElement('span');
+      chi.className = 'da-altri';
+      chi.textContent = ` ${t('logBy', evento.by)}`;
+      cosa.append(chi);
+    }
     if (dettaglio) cosa.append(` · ${dettaglio}`);
 
     li.append(quando, chiave, cosa);
@@ -1721,6 +1759,16 @@ function freshnessAt() {
   return state.analyzedAt;
 }
 
+/**
+ * L'ora in cui e' stato letto quello che stai guardando.
+ *
+ * Prima diceva l'eta' — «ora», «2 min fa» — e non serviva a niente: la
+ * rilettura scatta al minuto e riazzera il conto, quindi l'etichetta diceva
+ * «ora» sempre, tranne nei momenti in cui la rilettura e' bloccata, cioe'
+ * quando non stai guardando. Un orario invece si legge in un colpo e vale
+ * qualunque sia il passo della rilettura: se sono le 10:15 e c'e' scritto
+ * 09:41, sai da solo cosa stai guardando.
+ */
 function syncLabel() {
   const quando = freshnessAt();
   if (!quando) {
@@ -1728,8 +1776,7 @@ function syncLabel() {
     el.sync.title = '';
     return;
   }
-  const minuti = Math.floor((Date.now() - quando) / 60000);
-  el.sync.textContent = minuti < 1 ? t('syncNow') : t('syncAgo', String(minuti));
+  el.sync.textContent = t('syncTime', eventTime(quando));
   el.sync.title = t('syncAt', eventTime(quando));
 }
 

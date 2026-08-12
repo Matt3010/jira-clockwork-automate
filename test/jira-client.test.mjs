@@ -108,8 +108,25 @@ const json = (corpo, status = 200) => ({ status, text: JSON.stringify(corpo), co
   assert.equal(body.comment.type, 'doc', 'il commento va in Atlassian Document Format');
   assert.equal(body.comment.content[0].content[0].text, 'Avanzamento');
 
+
   await jira.addWorklog('ABC-1', { started: 'x', timeSpentSeconds: 60 });
   assert.equal(ch.chiamate[1].body.comment, undefined, 'senza nota non si manda un documento vuoto');
+
+  // La nota precompilata è la lista dei commit, uno per riga. Un a capo dentro
+  // un nodo di testo ADF non è un a capo: Jira lo mostra come uno spazio, e la
+  // lista tornerebbe una frase sola. Ogni riga deve diventare un paragrafo.
+  await jira.addWorklog('ABC-1', {
+    started: 'x',
+    timeSpentSeconds: 60,
+    comment: 'feat: prima cosa\nfix: seconda cosa\n\nchore: terza cosa'
+  });
+  const multi = ch.chiamate.at(-1).body.comment;
+  assert.equal(multi.content.length, 3, 'una riga, un paragrafo — e le righe vuote non ne fanno uno');
+  assert.deepEqual(
+    multi.content.map((p) => p.content[0].text),
+    ['feat: prima cosa', 'fix: seconda cosa', 'chore: terza cosa']
+  );
+  assert.ok(multi.content.every((p) => p.type === 'paragraph'));
 }
 
 // ---------------------------------------------------------------- pannello Sviluppo

@@ -173,8 +173,11 @@ button.icon-only {
 }
 
 /* Per esclusione, non per elenco: elencando i tipi uno a uno, il primo campo
-   di un tipo nuovo nasce con lo stile del browser — bianco su tema scuro. */
-input:not([type="checkbox"]) {
+   di un tipo nuovo nasce con lo stile del browser — bianco su tema scuro.
+   `textarea` e' l'eccezione che lo dimostra: non essendo un `input`, la nota
+   su piu' righe e' nata senza bordo ne' spaziatura, col testo appiccicato al
+   bordo. Sta qui dentro insieme agli altri. */
+input:not([type="checkbox"]), textarea {
   font: inherit;
   color: var(--text);
   background: var(--bg);
@@ -194,7 +197,7 @@ input[type="search"]::-webkit-search-cancel-button {
   mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M18 6 6 18M6 6l12 12' stroke='black' stroke-width='3' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") center/contain no-repeat;
 }
 input[type="search"]::-webkit-search-cancel-button:hover { opacity: 1; }
-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 main {
   overflow-y: auto;
@@ -394,7 +397,15 @@ tr.section-start { margin-top: 8px; }
 .issue-input { width: 100%; max-width: 260px; }
 .summary { font-weight: 500; }
 .detail { color: var(--muted); font-size: 12px; margin-top: 2px; }
-.comment { width: 100%; margin-top: 4px; font-size: 12px; }
+.comment {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  /* In verticale la decide il contenuto (`rows` cambia con le righe scritte);
+     in orizzontale no, o esce dal blocchetto. */
+  resize: vertical;
+}
 
 .badges { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
 .badge {
@@ -517,6 +528,10 @@ tr.disabled .remove.wipe { opacity: 1; }
 .log .chiave { flex: none; font-weight: 600; }
 .log .cosa { flex: 1; min-width: 0; color: var(--muted); }
 .log .cosa strong { color: var(--text); font-weight: 500; }
+/* Chi ha fatto la modifica, quando non sei tu. Piu' smorto del verbo: e' il
+   contorno, ma deve restare leggibile — serve proprio a non attribuirsi il
+   lavoro di un altro. */
+.log .cosa .da-altri { color: var(--muted); font-style: italic; }
 
 /* Ticket aperti. Due livelli: lo stato dice a che punto sei, la data dice da
    quanto quel ticket è lì. Il secondo livello è rientrato, così si vede a

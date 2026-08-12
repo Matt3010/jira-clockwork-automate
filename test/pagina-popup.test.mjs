@@ -78,6 +78,12 @@ const cambia = (nodo, valore) => {
   assert.match(testo(p.document.querySelector('#total')), /8h to distribute out of 8h/);
   assert.match(testo(p.document.querySelector('#total')), /day ends at 18:00/);
   assert.equal(testo(p.document.querySelector('#submit')), 'Send 2 worklogs');
+
+  // L'etichetta di freschezza dice l'ora della lettura, non quanto è vecchia:
+  // l'età tornava «ora» a ogni rilettura, e quindi non diceva niente.
+  const quando = testo(p.document.querySelector('#sync'));
+  assert.match(quando, /^read at \d{2}:\d{2}$/, `l etichetta dice l ora: «${quando}»`);
+  assert.match(p.document.querySelector('#sync').title, /^Last read at \d{2}:\d{2}$/);
   p.chiudi();
 }
 
@@ -99,6 +105,103 @@ const cambia = (nodo, valore) => {
   assert.equal(campo(dopo[3], '.hours').value, '8', 'e le sue vanno all altra, non nel nulla');
   assert.equal(testo(p.document.querySelector('#submit')), 'Send 1 worklog',
     'il pulsante conta le righe che partiranno davvero');
+  p.chiudi();
+}
+
+// --- la nota è una casella su più righe, e le mostra tutte ---------------
+// Con la lista dei commit dentro un campo a riga singola se ne vedrebbe uno
+// solo, e gli altri sarebbero lì senza che nessuno lo sappia.
+{
+  const conCommit = {
+    ...piano,
+    rows: piano.rows.map((r) => (r.issueKey === 'ABC-1'
+      ? { ...r, comment: 'feat: prima cosa\nfix: seconda cosa\nchore: terza cosa' }
+      : r))
+  };
+  const p = await apriPagina('popup', {
+    risposte: { ...RISPOSTE, analyze: { ...conCommit, config, site: { host: HOST } } }
+  });
+  await p.attendi();
+
+  const nota = campo(righe(p.document)[2], '.comment');
+  assert.equal(nota.tagName, 'TEXTAREA', 'la nota deve poter contenere più righe');
+  assert.equal(nota.value.split('\n').length, 3, 'e contenerle davvero');
+  assert.equal(Number(nota.rows), 3, 'con la casella alta quanto serve, senza scorrere per leggerla');
+
+  // Scrivendoci dentro l'altezza segue, e quello che si scrive arriva all invio.
+  nota.value = 'una riga sola';
+  nota.dispatchEvent(new p.dom.window.Event('input', { bubbles: true }));
+  assert.equal(Number(nota.rows), 1, 'e si riabbassa quando la nota si accorcia');
+
+  p.document.querySelector('#submit').click();
+  await p.attendi(2);
+  assert.equal(p.ultima('submit').rows.find((r) => r.issueKey === 'ABC-1').comment, 'una riga sola');
+  p.chiudi();
+}
+
+// --- una issue tua mossa da un altro: si vede, ed è spenta ---------------
+// Il caso vero: un collega ti assegna un ticket alle 17:00. Prima non compariva
+// da nessuna parte — la modifica portava il suo nome, non il tuo. Ora c'è, ma
+// spenta: farsela assegnare non è averci lavorato, e le ore della giornata non
+// devono finirci sopra da sole.
+{
+  const assegnata = new Map([
+    ...attivita,
+    ['ABC-9', {
+      key: 'ABC-9', id: '9', summary: 'Assegnata da un collega',
+      events: [{
+        kind: 'foreign', at: '2026-08-10T17:00:00.000Z', by: 'Dario Decarlo',
+        items: [{ field: 'assignee', from: '', to: 'Matteo Scanferla' }]
+      }]
+    }]
+  ]);
+  const conAssegnata = buildPlan({
+    isoDate: '2026-08-10',
+    config,
+    jiraActivity: assegnata,
+    gitByIssue: new Map(),
+    recentIssues: [],
+    loggedEntries: [],
+    alreadyLoggedMinutes: 0
+  });
+
+  const p = await apriPagina('popup', {
+    risposte: { ...RISPOSTE, analyze: { ...conAssegnata, config, site: { host: HOST } } }
+  });
+  await p.attendi();
+
+  const riga = righe(p.document).find((tr) => campo(tr, '.issue-input')?.value === 'ABC-9');
+  assert.ok(riga, 'la riga deve esserci: il ticket è tuo');
+  assert.equal(campo(riga, 'input[type="checkbox"]').checked, false, 'e deve partire spenta');
+  assert.equal(campo(riga, '.hours').value, '0', 'senza portarsi via minuti');
+  // Senza una frase, una riga spenta e senza attività sembra comparsa dal nulla.
+  assert.equal(testo(campo(riga, '.detail')), 'assigned to you by Dario Decarlo');
+
+  // Le ore restano tutte sulle righe su cui hai lavorato davvero.
+  const conTicket = righe(p.document)
+    .filter((tr) => campo(tr, '.issue-input').value && campo(tr, 'input[type="checkbox"]').checked)
+    .map((tr) => campo(tr, '.issue-input').value);
+  assert.deepEqual(conTicket, ['ABC-1', 'ABC-2'], 'le altre due restano accese');
+
+  p.document.querySelector('#submit').click();
+  await p.attendi(2);
+  const inviata = p.ultima('submit').rows.find((r) => r.issueKey === 'ABC-9');
+  assert.equal(inviata.minutes, 0, 'e non si registra niente su un ticket che ti hanno solo assegnato');
+
+  // Ma il caso normale è che la task te la faccia il PM e poi ci lavori: da
+  // spenta a registrabile deve essere un click, con le ore che si spostano da
+  // sole. Se costasse di più, tanto varrebbe non mostrarla.
+  const spunta = campo(riga, '.col-check input');
+  spunta.checked = true;
+  spunta.dispatchEvent(new p.dom.window.Event('change', { bubbles: true }));
+  await p.attendi(1);
+
+  const acceso = righe(p.document).find((tr) => campo(tr, '.issue-input').value === 'ABC-9');
+  assert.ok(Number(campo(acceso, '.hours').value) > 0, 'accesa, prende la sua parte di giornata');
+  assert.equal(
+    righe(p.document).reduce((somma, tr) => somma + Number(campo(tr, '.hours').value), 0), 8,
+    'e le otto ore restano otto: le sue arrivano dalle altre, non dal nulla'
+  );
   p.chiudi();
 }
 
