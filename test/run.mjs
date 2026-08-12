@@ -36,6 +36,8 @@ const SUITES = [
   'transport.test.mjs',
   'devpanel.test.mjs',
   'opzioni.test.mjs',
+  'pagina-popup.test.mjs',
+  'pagina-opzioni.test.mjs',
   'pannello.test.mjs',
   'icone.test.mjs',
   'firefox.test.mjs',

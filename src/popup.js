@@ -290,7 +290,10 @@ function updateTotal() {
   state.duplicateRows = inviabili.filter((row) => row.existingMinutes);
   disarmSubmit();
   el.submit.disabled = sendable === 0;
-  setButton(el.submit, 'send', sendable ? t('btnSendCount', sendable) : t('btnSend'));
+  // Una riga sola ha la sua frase: in inglese «Send 1 worklogs» si legge come
+  // un difetto, ed e' il pulsante che si guarda piu' spesso di tutti.
+  const etichetta = sendable === 1 ? t('btnSendCountOne') : t('btnSendCount', sendable);
+  setButton(el.submit, 'send', sendable ? etichetta : t('btnSend'));
 }
 
 // Invio in due passi quando la giornata sforerebbe il monte ore: il pulsante

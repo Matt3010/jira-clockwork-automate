@@ -255,6 +255,9 @@
       }
     }
   },
+  "btnSendCountOne": {
+    "message": "Invia 1 worklog"
+  },
   "btnSending": {
     "message": "Invio…"
   },

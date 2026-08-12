@@ -310,14 +310,24 @@ first tweak.
 npm test
 ```
 
-Thirty-three suites over `src/lib`, which are pure modules and run in node as they
-are; the parts that talk to the browser are simulated. They cover: dates and ISO
+Thirty-six suites. Most run over `src/lib`, which is pure modules that work in node
+as they are; the parts that talk to the browser are simulated. They cover: dates and ISO
 week, the hour split, message levels, the three strategies for matching the meeting
 ticket, the session channel (including refusing a tab on the wrong domain and the
 ban on retrying a write), commits from the Development panel, translations, the
 Firefox manifest computed from Chrome's, the configuration file and the sync copy
 (including the files that must be refused), and the full flow across four scenarios:
 empty day, day already logged by hand, half-filled day, manual corrections.
+
+Two of them run the **pages themselves**. `popup.html` and `options.html` are loaded
+into jsdom with a fake `chrome` that answers what the test tells it to, and then the
+test clicks: the plan is rendered, a row is switched off and the hours redistribute,
+a day that overruns asks for confirmation before sending, an error carries its
+remedy button, the options round-trip through the disk and through the config file.
+The plan they feed comes out of the real planner, so the shapes can't drift from what
+the background would send. It's the half the other suites can't see — they read the
+source, these execute it. jsdom is a devDependency: like esbuild, it builds and tests,
+it doesn't ship (the package only carries `src`, `icons` and `_locales`).
 
 Permissions: `storage`, `scripting` and `https://*.atlassian.net/*`. `tabs` isn't
 needed — host_permissions are enough to find the site's tabs and grant no visibility
