@@ -58,23 +58,21 @@ export class JiraClient {
   }
 
   /**
-   * Ricerca issue. Usa /search/jql (endpoint corrente su Jira Cloud) e ricade
-   * su /search se il sito non lo espone ancora.
+   * Ricerca issue, su `/search/jql`.
+   *
+   * Qui c'era un ripiego su `/rest/api/3/search`, per i siti che non
+   * esponessero ancora l'endpoint nuovo. Atlassian ha rimosso quello vecchio da
+   * Jira Cloud il 1° maggio 2025: non e' piu' una rete, e' un secondo tentativo
+   * che fallisce sempre. Peggio, si mangiava gli errori 400 — una chiave
+   * progetto sbagliata nelle opzioni risponde 400 «JQL non valido», e chi
+   * guardava si vedeva arrivare il 404 del tentativo dopo, su un endpoint che
+   * non esiste piu'. Adesso l'errore che si legge e' quello vero.
    */
   async search(jql, { fields = ['summary', 'status', 'issuetype'], expand, maxResults = 100 } = {}) {
-    try {
-      const payload = { jql, fields, maxResults };
-      if (expand) payload.expand = expand;
-      const data = await this.request('/rest/api/3/search/jql', { method: 'POST', body: payload });
-      return data.issues || [];
-    } catch (error) {
-      // 400 incluso: alcuni siti rifiutano `expand` sull'endpoint nuovo.
-      if (![400, 404, 410].includes(error.status)) throw error;
-      const payload = { jql, fields, maxResults };
-      if (expand) payload.expand = [expand];
-      const data = await this.request('/rest/api/3/search', { method: 'POST', body: payload });
-      return data.issues || [];
-    }
+    const payload = { jql, fields, maxResults };
+    if (expand) payload.expand = expand;
+    const data = await this.request('/rest/api/3/search/jql', { method: 'POST', body: payload });
+    return data.issues || [];
   }
 
   async getIssue(key, fields = ['summary', 'status', 'issuetype']) {

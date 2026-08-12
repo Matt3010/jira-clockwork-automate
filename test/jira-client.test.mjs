@@ -1,6 +1,9 @@
-// Il client Jira: come costruisce le richieste, come legge gli errori, e il
-// ripiego della ricerca sull'endpoint vecchio. Quest'ultimo è logica vera —
-// se salta, l'analisi non trova più nessuna issue.
+// Il client Jira: come costruisce le richieste e come legge gli errori.
+//
+// La ricerca passa da `/search/jql` e basta: il ripiego sull'endpoint vecchio
+// è stato tolto quando Atlassian l'ha rimosso da Jira Cloud (1° maggio 2025).
+// Quello che resta da verificare è che un errore arrivi fino a chi ha chiesto,
+// invece di diventare un secondo tentativo destinato a fallire.
 
 import assert from 'node:assert/strict';
 import { JiraClient, JiraError } from '../src/lib/jira.js';
@@ -59,36 +62,35 @@ const json = (corpo, status = 200) => ({ status, text: JSON.stringify(corpo), co
   assert.match(ch.chiamate[0].path, /\/worklog\/99\?notifyUsers=false/, 'cancellare non deve spammare notifiche');
 }
 
-// ---------------------------------------------------------------- ricerca e ripiego
+// ---------------------------------------------------------------- ricerca
 {
-  // endpoint nuovo disponibile
-  const nuovo = canale((path) => (path.startsWith('/rest/api/3/search/jql')
+  const ch = canale((path) => (path.startsWith('/rest/api/3/search/jql')
     ? json({ issues: [{ key: 'ABC-1' }] })
-    : json({ errorMessages: ['non dovrebbe arrivarci'] }, 500)));
-  const jira = new JiraClient(nuovo);
+    : json({ errorMessages: ['endpoint sbagliato'] }, 500)));
+  const jira = new JiraClient(ch);
+
   assert.deepEqual(await jira.search('project = ABC', { expand: 'changelog' }), [{ key: 'ABC-1' }]);
-  assert.equal(nuovo.chiamate.length, 1, 'nessun tentativo in più quando il primo funziona');
-  assert.equal(nuovo.chiamate[0].method, 'POST');
-  assert.equal(nuovo.chiamate[0].body.expand, 'changelog', 'sul nuovo endpoint expand è una stringa');
+  assert.equal(ch.chiamate.length, 1, 'una ricerca, una richiesta');
+  assert.equal(ch.chiamate[0].method, 'POST');
+  assert.equal(ch.chiamate[0].body.expand, 'changelog', 'su questo endpoint expand è una stringa');
+  // I campi vanno chiesti per nome: il nuovo endpoint non ne restituisce
+  // nessuno di sua iniziativa, e una ricerca senza `fields` torna monca.
+  assert.ok(ch.chiamate[0].body.fields.length, 'i campi vanno sempre dichiarati');
 
-  // endpoint nuovo assente: si ripiega
-  for (const status of [400, 404, 410]) {
-    const vecchio = canale((path) => (path.startsWith('/rest/api/3/search/jql')
-      ? json({ errorMessages: ['no'] }, status)
-      : json({ issues: [{ key: 'ABC-9' }] })));
-    const client = new JiraClient(vecchio);
-    assert.deepEqual(await client.search('project = ABC', { expand: 'changelog' }), [{ key: 'ABC-9' }],
-      `ripiego su ${status}`);
-    assert.equal(vecchio.chiamate.length, 2);
-    assert.equal(vecchio.chiamate[1].path, '/rest/api/3/search');
-    assert.deepEqual(vecchio.chiamate[1].body.expand, ['changelog'],
-      'sul vecchio endpoint expand è un elenco');
+  // Ogni errore deve arrivare intero a chi ha chiesto. Il 400 è quello che
+  // conta: è la risposta a una chiave progetto sbagliata nelle opzioni, e
+  // finché veniva scambiato per «endpoint assente» chi guardava leggeva il 404
+  // del tentativo successivo invece del motivo vero.
+  for (const status of [400, 404, 410, 401]) {
+    const rotto = canale(() => json({ errorMessages: ['JQL non valida'] }, status));
+    const client = new JiraClient(rotto);
+    await assert.rejects(client.search('project = SBAGLIATO'), (e) => {
+      assert.equal(e.status, status, `un ${status} deve restare un ${status}`);
+      assert.match(e.message, /JQL non valida/, 'col messaggio che Jira ha dato');
+      return true;
+    });
+    assert.equal(rotto.chiamate.length, 1, `su un ${status} non si riprova da nessun altra parte`);
   }
-
-  // un errore diverso non deve essere scambiato per "endpoint assente"
-  const rotto = canale(() => json({ errorMessages: ['JQL non valida'] }, 401));
-  await assert.rejects(new JiraClient(rotto).search('roba'), (e) => e.status === 401);
-  assert.equal(rotto.chiamate.length, 1, 'su un 401 non si riprova: le credenziali non cambiano');
 }
 
 // ---------------------------------------------------------------- scrittura worklog
