@@ -9,6 +9,7 @@ import {
   todayIso
 } from './lib/dates.js';
 import { icon, setIcon } from './lib/icons.js';
+import { send } from './lib/comandi.js';
 import { t, applyI18n } from './lib/i18n.js';
 import { describeEvent, eventTime, logAsText } from './lib/registro.js';
 
@@ -89,21 +90,6 @@ const state = {
   searchResults: [],
   host: ''
 };
-
-function send(type, payload) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ type, payload }, (response) => {
-      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-      if (!response?.ok) {
-        const error = new Error(response?.error || 'Unknown error');
-        error.code = response?.code || null;
-        error.detail = response?.detail || null;
-        return reject(error);
-      }
-      resolve(response.data);
-    });
-  });
-}
 
 // Peso dei messaggi: piu' basso = piu' in alto. Cosi' quello che richiede un
 // intervento non finisce sotto tre righe informative.

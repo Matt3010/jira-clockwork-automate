@@ -8,3 +8,5 @@
 /dataSources.local.xml
 # Editor-based HTTP Client requests
 /httpRequests/
+# Stato locale dei plugin dell'IDE: cambia da solo, non dice niente a nessuno
+/copilot.data.migration.agent.xml

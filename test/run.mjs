@@ -37,6 +37,7 @@ const SUITES = [
   'devpanel.test.mjs',
   'opzioni.test.mjs',
   'pannello.test.mjs',
+  'icone.test.mjs',
   'firefox.test.mjs',
   'traduzioni.test.mjs',
   'coerenza.test.mjs'

@@ -94,4 +94,39 @@ const orfane = chiaviEn.filter((chiave) => {
 });
 assert.deepEqual(orfane, [], `chiavi definite ma mai usate: ${orfane.join(', ')}`);
 
+// --- e `t` deve comportarsi come dicono i commenti ------------------------
+// Sono tre decisioni prese apposta, e nessuna delle tre si vedrebbe fallire:
+// un buco nell'interfaccia non solleva niente.
+{
+  const { t } = await import('../src/lib/i18n.js');
+  const prima = globalThis.chrome;
+
+  // Fuori dall'estensione — qui dentro — non c'è `chrome`: `t` rende la
+  // chiave, ed è quello che tiene eseguibili in node i moduli puri.
+  delete globalThis.chrome;
+  assert.equal(t('msgSaved'), 'msgSaved');
+
+  // Una chiave sbagliata fa rendere stringa vuota a `chrome.i18n`: meglio
+  // vedere la chiave a schermo che una riga sparita.
+  globalThis.chrome = { i18n: { getMessage: () => '' } };
+  assert.equal(t('chiaveInventata'), 'chiaveInventata');
+
+  // Le sostituzioni arrivano come stringhe: `getMessage` scarta i numeri, e
+  // «$MIN$ min fa» resterebbe con il segnaposto nudo.
+  let ricevute = null;
+  globalThis.chrome = {
+    i18n: {
+      getMessage: (chiave, subs) => {
+        ricevute = subs;
+        return `${chiave}:${subs.join(',')}`;
+      }
+    }
+  };
+  assert.equal(t('syncAgo', 5), 'syncAgo:5');
+  assert.deepEqual(ricevute, ['5'], 'i numeri vanno passati come stringhe');
+
+  if (prima === undefined) delete globalThis.chrome;
+  else globalThis.chrome = prima;
+}
+
 console.log(`traduzioni: ${chiaviEn.length} chiavi in 2 lingue, tutti i controlli passati.`);

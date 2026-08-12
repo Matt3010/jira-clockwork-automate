@@ -1,22 +1,13 @@
 import { loadConfig, saveConfig, exportData, importData, replaceAll } from './lib/storage.js';
 import { addMinutes, timeToMinutes, todayIso } from './lib/dates.js';
 import { t, applyI18n } from './lib/i18n.js';
+import { send } from './lib/comandi.js';
 
 // L'indice nell'elenco più uno dà il giorno ISO: 1 = lunedì.
 const DAY_KEYS = ['dayMon', 'dayTue', 'dayWed', 'dayThu', 'dayFri', 'daySat', 'daySun'];
 
 const $ = (id) => document.getElementById(id);
 let config = null;
-
-function send(type) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ type }, (response) => {
-      if (chrome.runtime.lastError) return reject(new Error(chrome.runtime.lastError.message));
-      if (!response?.ok) return reject(new Error(response?.error || 'Unknown error'));
-      resolve(response.data);
-    });
-  });
-}
 
 function setResult(node, text, kind) {
   node.className = `result ${kind}`;

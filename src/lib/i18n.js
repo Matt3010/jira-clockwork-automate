@@ -34,10 +34,10 @@ export function applyI18n(root = document) {
     const testo = t(node.dataset.i18n);
     if (testo !== node.dataset.i18n) node.textContent = testo;
   }
-  for (const [attributo, chiave] of [['title', 'i18nTitle'], ['placeholder', 'i18nPlaceholder']]) {
-    for (const node of root.querySelectorAll(`[data-${attributo === 'title' ? 'i18n-title' : 'i18n-placeholder'}]`)) {
-      const testo = t(node.dataset[chiave]);
-      if (testo !== node.dataset[chiave]) node.setAttribute(attributo, testo);
+  for (const [attributo, dato] of [['title', 'i18nTitle'], ['placeholder', 'i18nPlaceholder']]) {
+    for (const node of root.querySelectorAll(`[data-i18n-${attributo}]`)) {
+      const testo = t(node.dataset[dato]);
+      if (testo !== node.dataset[dato]) node.setAttribute(attributo, testo);
     }
   }
   const titolo = root.querySelector?.('title');
