@@ -639,7 +639,8 @@ async function removeWorklogs(row, worklogIds, button) {
       );
     } else {
       message(
-        t('msgDeleted', row.issueKey, out.deleted, formatMinutes(out.minutes)),
+        t(out.deleted === 1 ? 'msgDeletedOne' : 'msgDeleted',
+          row.issueKey, out.deleted, formatMinutes(out.minutes)),
         'ok'
       );
     }
@@ -1207,9 +1208,10 @@ async function submit() {
     if (ok.length) {
       const parti = ok.reduce((sum, r) => sum + (r.parts || 1), 0);
       const chiavi = ok.map((r) => r.issueKey).join(', ');
+      const una = ok.length === 1;
       message(parti > ok.length
-        ? t('msgSentSplit', ok.length, parti, chiavi)
-        : t('msgSent', ok.length, chiavi), 'ok');
+        ? t(una ? 'msgSentSplitOne' : 'msgSentSplit', ok.length, parti, chiavi)
+        : t(una ? 'msgSentOne' : 'msgSent', ok.length, chiavi), 'ok');
     }
     failed.forEach((r) => message(t('msgSendFailed', r.issueKey, r.error), 'err'));
 
@@ -1303,7 +1305,9 @@ function renderLog() {
 
   el.logEmpty.hidden = eventi.length > 0;
   el.logCopy.hidden = eventi.length === 0;
-  el.logCount.textContent = eventi.length ? t('logCount', eventi.length) : '';
+  el.logCount.textContent = eventi.length
+    ? t(eventi.length === 1 ? 'logCountOne' : 'logCount', eventi.length)
+    : '';
   syncLabel();
 }
 
@@ -1810,7 +1814,7 @@ async function copyFromDay() {
 
     redistribute();
     render();
-    message(t('msgCopied', entries.length, fromDate), 'ok');
+    message(t(entries.length === 1 ? 'msgCopiedOne' : 'msgCopied', entries.length, fromDate), 'ok');
   } catch (error) {
     reportAuthError(error, copyFromDay);
   } finally {
@@ -1841,7 +1845,8 @@ el.ticketsSearch.addEventListener('keydown', (event) => {
 el.logCopy.addEventListener('click', async () => {
   try {
     await navigator.clipboard.writeText(logAsText(state.logEvents));
-    message(t('msgLogCopied', state.logEvents.length), 'ok');
+    const righe = state.logEvents.length;
+    message(t(righe === 1 ? 'msgLogCopiedOne' : 'msgLogCopied', righe), 'ok');
   } catch (error) {
     message(t('msgLogCopyFailed', error.message), 'err');
   }

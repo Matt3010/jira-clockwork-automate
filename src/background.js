@@ -666,12 +666,16 @@ async function analyze({ isoDate }) {
 
       if (dev.skippedOther) {
         notes.push({
-          level: 'info', key: 'noteOtherAuthors', params: [dev.skippedOther]
+          level: 'info',
+          key: dev.skippedOther === 1 ? 'noteOtherAuthorsOne' : 'noteOtherAuthors',
+          params: [dev.skippedOther]
         });
       }
       if (!dev.appType && candidates.length) {
         notes.push({
-          level: 'info', key: 'noteNoCommits', params: [candidates.length]
+          level: 'info',
+          key: candidates.length === 1 ? 'noteNoCommitsOne' : 'noteNoCommits',
+          params: [candidates.length]
         });
       }
     } catch (error) {

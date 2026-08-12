@@ -557,6 +557,17 @@
       }
     }
   },
+  "msgDeletedOne": {
+    "message": "$ISSUE$: cancellato 1 worklog ($AMOUNT$).",
+    "placeholders": {
+      "issue": {
+        "content": "$1"
+      },
+      "amount": {
+        "content": "$3"
+      }
+    }
+  },
   "msgDeletedPartial": {
     "message": "$ISSUE$: cancellati $DONE$ worklog su $TOTAL$ ($AMOUNT$), poi si è fermato: $ERROR$",
     "placeholders": {
@@ -588,12 +599,31 @@
       }
     }
   },
+  "msgSentOne": {
+    "message": "1 riga registrata: $ISSUES$.",
+    "placeholders": {
+      "issues": {
+        "content": "$2"
+      }
+    }
+  },
   "msgSentSplit": {
     "message": "$COUNT$ righe registrate ($PARTS$ worklog, alcune spezzate dalla pausa): $ISSUES$.",
     "placeholders": {
       "count": {
         "content": "$1"
       },
+      "parts": {
+        "content": "$2"
+      },
+      "issues": {
+        "content": "$3"
+      }
+    }
+  },
+  "msgSentSplitOne": {
+    "message": "1 riga registrata ($PARTS$ worklog, spezzata dalla pausa): $ISSUES$.",
+    "placeholders": {
       "parts": {
         "content": "$2"
       },
@@ -785,6 +815,9 @@
       }
     }
   },
+  "noteOtherAuthorsOne": {
+    "message": "1 commit di oggi risulta di un altro autore e non è stato contato. Se era tuo, aggiungi nelle opzioni il nome con cui firmi i commit."
+  },
   "noteNoCommits": {
     "message": "Nessun commit collegato trovato sulle $COUNT$ issue controllate: o il pannello Sviluppo non è collegato, o il ticket non era fra le candidate.",
     "placeholders": {
@@ -792,6 +825,9 @@
         "content": "$1"
       }
     }
+  },
+  "noteNoCommitsOne": {
+    "message": "Nessun commit collegato trovato sull'unica issue controllata: o il pannello Sviluppo non è collegato, o il ticket non era fra le candidate."
   },
   "noteDevPanelUnreadable": {
     "message": "Pannello Sviluppo non leggibile ($ERROR$). Vado avanti con la sola attività Jira.",
@@ -874,6 +910,14 @@
       }
     }
   },
+  "msgCopiedOne": {
+    "message": "1 riga copiata dal $DATE$. Le ore sono arrivate così com'erano: correggile se la giornata è stata diversa.",
+    "placeholders": {
+      "date": {
+        "content": "$2"
+      }
+    }
+  },
   "msgCopiedNone": {
     "message": "Il $DATE$ non risulta registrato niente.",
     "placeholders": {
@@ -921,6 +965,9 @@
       }
     }
   },
+  "logCountOne": {
+    "message": "1 evento"
+  },
   "logCreated": {
     "message": "creata"
   },
@@ -953,6 +1000,9 @@
         "content": "$1"
       }
     }
+  },
+  "msgLogCopiedOne": {
+    "message": "1 riga copiata negli appunti."
   },
   "msgLogCopyFailed": {
     "message": "Non ho potuto copiare: $ERROR$",

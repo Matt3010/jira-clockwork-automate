@@ -94,6 +94,26 @@ const orfane = chiaviEn.filter((chiave) => {
 });
 assert.deepEqual(orfane, [], `chiavi definite ma mai usate: ${orfane.join(', ')}`);
 
+// --- «1 righe» non si deve poter scrivere ---------------------------------
+// Una frase che conta qualcosa deve avere anche la versione al singolare, o
+// prima o poi si legge «1 worklogs» — che è il difetto che si nota per primo e
+// si sistema per ultimo, perché non rompe niente.
+//
+// Le due forme convivono con due nomi diversi, ed entrambi valgono: `chiaveOne`
+// accanto alla plurale, oppure `chiaveOne` accanto a `chiaveMany`, oppure il
+// singolare senza la `s` finale (`activityComment` / `activityComments`).
+{
+  const haSingolare = (chiave) =>
+    Boolean(en[`${chiave}One`])
+    || (chiave.endsWith('Many') && Boolean(en[`${chiave.slice(0, -4)}One`]))
+    || (chiave.endsWith('s') && Boolean(en[chiave.slice(0, -1)]));
+
+  const senza = chiaviEn.filter(
+    (chiave) => /\$COUNT\$ \w+s\b/.test(en[chiave].message) && !haSingolare(chiave)
+  );
+  assert.deepEqual(senza, [], `frasi che contano senza la versione al singolare: ${senza.join(', ')}`);
+}
+
 // --- e `t` deve comportarsi come dicono i commenti ------------------------
 // Sono tre decisioni prese apposta, e nessuna delle tre si vedrebbe fallire:
 // un buco nell'interfaccia non solleva niente.
