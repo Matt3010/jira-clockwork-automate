@@ -24,6 +24,37 @@ export function distributeMinutes(totalMinutes, count, increment) {
   return Array.from({ length: count }, (_, i) => (base + (i < remainder ? 1 : 0)) * inc);
 }
 
+/**
+ * Divide `totalMinutes` in proporzione ai pesi, sempre in multipli di
+ * `increment` e con la somma esatta.
+ *
+ * I resti non vanno "ai primi" come nella divisione in parti uguali, ma a chi
+ * ha la frazione piu' alta: con pesi diversi, dare il resto per posizione
+ * significherebbe premiare l'ordine invece del lavoro. A parita' di frazione
+ * decide il peso, cosi' il risultato non dipende dall'ordine delle righe.
+ */
+export function distributeByWeight(totalMinutes, weights, increment) {
+  const pesi = (weights || []).map((peso) => Math.max(0, Number(peso) || 0));
+  if (!pesi.length) return [];
+  const inc = Math.max(1, increment);
+  const units = Math.floor(Math.max(0, totalMinutes) / inc);
+  const totale = pesi.reduce((somma, peso) => somma + peso, 0);
+  // Senza pesi non c'e' proporzione da rispettare: meglio parti uguali che
+  // tutto alla prima riga.
+  if (!totale) return distributeMinutes(totalMinutes, pesi.length, inc);
+
+  const esatte = pesi.map((peso) => (units * peso) / totale);
+  const quote = esatte.map((valore) => Math.floor(valore));
+  let resto = units - quote.reduce((somma, valore) => somma + valore, 0);
+
+  const ordine = esatte
+    .map((valore, indice) => ({ indice, frazione: valore - Math.floor(valore), peso: pesi[indice] }))
+    .sort((a, b) => b.frazione - a.frazione || b.peso - a.peso || a.indice - b.indice);
+
+  for (let i = 0; resto > 0; i += 1, resto -= 1) quote[ordine[i % ordine.length].indice] += 1;
+  return quote.map((unita) => unita * inc);
+}
+
 export function meetingsForDay(meetings, isoDate) {
   const weekday = isoWeekday(isoDate);
   return (meetings || [])
@@ -117,13 +148,13 @@ export function guessMeetingIssue(label, recentIssues, { isoDate, taken = new Se
   };
 }
 
+/** Le modifiche fatte da altri su una issue tua: non sono lavoro tuo. */
+const ESTRANEO = new Set(['foreign', 'foreignComment']);
+
 /**
  * Da cosa nasce la riga, in numeri. La frase la compone chi disegna: il planner
  * non deve produrre prosa, o non si puo' tradurre.
  */
-/** Le modifiche fatte da altri su una issue tua: non sono lavoro tuo. */
-const ESTRANEO = new Set(['foreign', 'foreignComment']);
-
 function countActivity(jiraEvents, gitCommits) {
   const eventi = jiraEvents || [];
   const comments = eventi.filter((e) => e.kind === 'comment').length;
@@ -141,6 +172,69 @@ function countActivity(jiraEvents, gitCommits) {
     foreign,
     commits: (gitCommits || []).length
   };
+}
+
+/**
+ * L'evento ti ha assegnato la task.
+ *
+ * Lo decide chi legge da Jira, che vede l'accountId del nuovo assegnatario:
+ * qui arriverebbe solo il nome del campo cambiato, e "assegnata a un terzo"
+ * e' indistinguibile da "assegnata a te".
+ */
+const touchesAssignee = (evento) => Boolean(evento?.assignsYou);
+
+/**
+ * Chi altro ha messo mano a questa issue oggi, e quanto.
+ *
+ * Vale su tutte le righe, non solo su quelle dove non hai fatto niente: sapere
+ * che sulla tua task ha committato un collega e' meta' del daily, e prima non
+ * si vedeva da nessuna parte — i suoi commit erano un numero in un avviso in
+ * cima, staccato dalla task a cui appartengono.
+ */
+function othersOn(jiraEvents, foreignCommits) {
+  const per = new Map();
+  const voce = (nome) => {
+    const chiave = nome || '';
+    if (!per.has(chiave)) {
+      // `commitUrls` serve a chi disegna: da «2 commit» si deve poter arrivare
+      // ai commit, non alla issue e poi cercarli a mano. `firstAt`/`lastAt`
+      // servono a dire *quando*: «3 modifiche» senza un orario non si colloca
+      // nella giornata, e chi legge non sa se e' successo prima o dopo il suo
+      // lavoro.
+      per.set(chiave, {
+        name: chiave, assigned: false, changes: 0, commits: 0, commitUrls: [],
+        firstAt: null, lastAt: null
+      });
+    }
+    return per.get(chiave);
+  };
+
+  /** Gli istanti arrivano sia in millisecondi sia come testo ISO. */
+  const quando = (chi, at) => {
+    const ms = typeof at === 'number' ? at : Date.parse(at);
+    if (!Number.isFinite(ms)) return;
+    if (chi.firstAt === null || ms < chi.firstAt) chi.firstAt = ms;
+    if (chi.lastAt === null || ms > chi.lastAt) chi.lastAt = ms;
+  };
+
+  for (const evento of jiraEvents || []) {
+    if (!ESTRANEO.has(evento.kind)) continue;
+    const chi = voce(evento.by);
+    chi.changes += 1;
+    quando(chi, evento.at);
+    if (touchesAssignee(evento)) {
+      chi.assigned = true;
+      chi.assignedAt = typeof evento.at === 'number' ? evento.at : Date.parse(evento.at);
+    }
+  }
+  for (const commit of foreignCommits || []) {
+    const chi = voce(commit.author);
+    chi.commits += 1;
+    quando(chi, commit.at);
+    if (commit.url) chi.commitUrls.push(commit.url);
+  }
+
+  return [...per.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
@@ -170,6 +264,7 @@ function defaultComment(jira, commits) {
  * @param {object} input.config
  * @param {Map<string, {key,summary,events}>} input.jiraActivity
  * @param {Map<string, Array>} input.gitByIssue
+ * @param {Map<string, Array>} input.foreignGitByIssue  commit dei colleghi, per issue
  * @param {Record<string,string>} input.summaries      fallback key -> summary
  * @param {Array<{key,summary}>} input.recentIssues    per indovinare i ticket riunione
  * @param {number} input.alreadyLoggedMinutes          ore gia' registrate quel giorno
@@ -179,6 +274,7 @@ export function buildPlan({
   config,
   jiraActivity,
   gitByIssue,
+  foreignGitByIssue = new Map(),
   summaries = {},
   recentIssues = [],
   loggedEntries = [],
@@ -230,27 +326,28 @@ export function buildPlan({
   // l'attivita' Jira sul ticket delle cerimonie e' la riunione stessa.
   const meetingKeys = new Set(meetingRows.map((row) => row.issueKey).filter(Boolean));
 
-  const taskKeys = [...new Set([...jiraActivity.keys(), ...gitByIssue.keys()])]
-    .filter((key) => !meetingKeys.has(key));
+  // Anche le issue su cui le ore ci sono gia': le hai messe a mano da
+  // Clockwork, o da qui in un invio precedente. Senza, una giornata segnata
+  // altrove risultava vuota qui — e la riga che manca e' proprio quella che
+  // spiega dove sono finite le ore.
+  const taskKeys = [...new Set([
+    ...jiraActivity.keys(), ...gitByIssue.keys(), ...Object.keys(loggedByIssue)
+  ])].filter((key) => !meetingKeys.has(key));
 
   const taskRows = taskKeys.map((key) => {
     const jira = jiraActivity.get(key);
     const commits = gitByIssue.get(key) || [];
+    const altrui = foreignGitByIssue.get(key) || [];
+    // Il titolo di una issue vista solo dalle ore gia' registrate arriva dal
+    // worklog: la ricerca del giorno non la restituisce, perche' registrare
+    // ore non e' un'attivita'.
+    const daWorklog = loggedEntries.find((entry) => entry.key === key);
     const activity = countActivity(jira?.events, commits);
-    // Se sulla issue non c'e' niente di tuo, l'unica cosa successa e' che
-    // qualcuno l'ha mossa: la riga c'e' — l'hai chiesta tu, e' roba tua — ma
-    // non porta il marchio "jira", che sta per "ci hai lavorato".
     // Il marchio "jira" vuol dire "ci hai lavorato dentro Jira": una issue che
     // porta solo la mossa di un collega non lo merita, nemmeno quando hai
     // commit che la riguardano.
     const tuoSuJira = Boolean(activity.changes || activity.created || activity.comments);
     const soloAltrui = Boolean(activity.foreign) && !tuoSuJira && !commits.length;
-    const estranei = (jira?.events || []).filter((e) => ESTRANEO.has(e.kind));
-    // Con chi e cosa: "assegnata a te da Dario" dice perche' la riga e' li',
-    // "1 modifica" no.
-    const assegnata = estranei.some((e) => (e.items || [])
-      .some((item) => String(item.field).toLowerCase() === 'assignee'));
-    const foreignBy = estranei.find((e) => e.by)?.by || '';
     const sources = [];
     if (tuoSuJira) sources.push('jira');
     if (commits.length) sources.push('git');
@@ -260,14 +357,16 @@ export function buildPlan({
       id: `task:${key}`,
       kind: 'task',
       issueKey: key,
-      summary: jira?.summary || summaries[key] || '',
+      summary: jira?.summary || summaries[key] || daWorklog?.summary || '',
       label: '',
       minutes: 0,
       time: '',
       sources,
       activity,
-      assignedToYou: soloAltrui && assegnata,
-      foreignBy: soloAltrui ? foreignBy : '',
+      // Chi altro ci ha messo mano oggi, su ogni riga: e' la domanda
+      // "in quali delle mie task hanno lavorato altri", e la risposta sta
+      // accanto alla task, non in un avviso in cima.
+      others: othersOn(jira?.events, altrui),
       // Peso per l'ordinamento: piu' fonti e piu' eventi vuol dire piu'
       // probabilmente il lavoro principale della giornata. Una issue mossa
       // solo da altri pesa zero: finisce in fondo e non prende mai il resto
@@ -389,6 +488,12 @@ export function endOfPlan(rows) {
  * Unica implementazione, usata sia alla costruzione del piano sia a ogni
  * modifica nel popup: due copie divergerebbero al primo ritocco.
  */
+/** Quanto risulta fatto su una riga: e' la misura della divisione a proporzione. */
+function effortOf(row) {
+  const { changes = 0, created = 0, comments = 0, commits = 0 } = row.activity || {};
+  return Math.max(1, changes + created + comments + commits);
+}
+
 export function allocate(rows, config, budgetMinutes, warnings = []) {
   const increment = config.work.roundingMinutes || 15;
 
@@ -435,10 +540,16 @@ export function allocate(rows, config, budgetMinutes, warnings = []) {
     return rows;
   }
 
-  const slices = distributeMinutes(remaining, free.length, increment);
+  // In proporzione al lavoro, se lo hai scelto: una task con sei commit non ha
+  // preso lo stesso tempo di una con un cambio di stato. Il minimo di uno
+  // tiene dentro le righe senza tracce — aggiunte a mano, o lavorate senza
+  // lasciare niente in Jira — che altrimenti prenderebbero zero.
+  const slices = config.work.split === 'activity'
+    ? distributeByWeight(remaining, free.map(effortOf), increment)
+    : distributeMinutes(remaining, free.length, increment);
   free.forEach((row, index) => { row.minutes = slices[index]; });
 
-  if (free.length && slices[slices.length - 1] === 0) {
+  if (free.length && slices.some((fetta) => fetta === 0)) {
     warnings.push({
       level: 'action',
       key: 'planTooManyTasks',

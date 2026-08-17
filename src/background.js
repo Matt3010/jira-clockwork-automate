@@ -15,6 +15,7 @@ import {
   collectCreatedIssues,
   mergeCreatedIssues,
   collectOpenIssues,
+  collectPullRequests,
   searchIssues,
   loggedMinutesForDay
 } from './lib/jira.js';
@@ -33,6 +34,7 @@ const HANDLERS = {
   copyFrom,
   activity,
   openIssues,
+  pullRequests,
   findIssues,
   issueTransitions,
   moveIssue,
@@ -368,7 +370,11 @@ async function activity({ isoDate }) {
 
   const [attivita, create] = await Promise.all([
     collectJiraActivity(jira, {
-      isoDate, projects, accountId: me.accountId, scanComments: config.jira.scanComments
+      isoDate,
+      projects,
+      accountId: me.accountId,
+      displayName: me.displayName,
+      scanComments: config.jira.scanComments
     }),
     collectCreatedIssues(jira, { isoDate, projects })
   ]);
@@ -416,6 +422,44 @@ async function activity({ isoDate }) {
   return {
     isoDate,
     events: eventi.map((evento) => ({ ...evento, summary: titoli.get(evento.key) || '' }))
+  };
+}
+
+// ------------------------------------------------------------------ pull request
+
+/**
+ * Le pull request aperte nei progetti, non solo le tue.
+ *
+ * Si leggono dal pannello Sviluppo delle issue, come i commit: nessuna scheda
+ * su Bitbucket, nessuna credenziale. Ed e' sola lettura — unire, rifiutare e
+ * approvare sono scritture sull'API di Bitbucket, che Jira non fa da tramite:
+ * da qui si puo' solo aprire la PR dove quei tasti stanno.
+ *
+ * Le candidate sono i ticket aperti dei progetti configurati, di chiunque: una
+ * PR che aspetta la tua revisione sta quasi sempre su un ticket di qualcun
+ * altro. Il tetto tiene il conto delle richieste in piedi — una per ticket —
+ * su una vista che si apre a mano e non a ogni analisi.
+ */
+async function pullRequests() {
+  const config = await loadConfig();
+  const channel = await jiraChannel(config);
+  const jira = new JiraClient(channel);
+  const me = await resolveMe(jira, config).catch((error) => withSiteContext(error, channel.host));
+
+  const aperti = await collectOpenIssues(jira, {
+    projects: config.jira.projects || [], limit: 50, mine: false
+  }).catch((error) => withSiteContext(error, channel.host));
+
+  const candidates = aperti
+    .filter((issue) => issue.id)
+    .map((issue) => ({ id: issue.id, key: issue.key }));
+  const titoli = Object.fromEntries(aperti.map((issue) => [issue.key, issue.summary]));
+  const identities = [me.displayName, me.emailAddress, ...(config.identity.extraAuthors || [])];
+  const dev = await collectPullRequests(jira, { candidates, identities });
+
+  return {
+    items: dev.items.map((pr) => ({ ...pr, issueSummary: titoli[pr.issueKey] || '' })),
+    checked: dev.checked
   };
 }
 
@@ -594,11 +638,12 @@ async function rememberMeetingIssue({ memoryKey, issueKey }) {
  * segnalarlo o tirare dritto.
  */
 async function gatherCommits(jira, { jiraActivity, config, isoDate, me }) {
-  if (!config.jira.devPanel) return null;
   try {
     const candidates = await devCandidates(jira, { jiraActivity, config });
     const identities = [me.displayName, me.emailAddress, ...(config.identity.extraAuthors || [])];
-    const dev = await collectDevPanelCommits(jira, { candidates, isoDate, identities });
+    const dev = await collectDevPanelCommits(jira, {
+      candidates, isoDate, identities, countMerges: config.jira.countMerges !== false
+    });
     return { ...dev, candidates };
   } catch (error) {
     return { error };
@@ -648,6 +693,7 @@ async function analyze({ isoDate }) {
     isoDate,
     projects,
     accountId,
+    displayName: me.displayName,
     scanComments: config.jira.scanComments
   });
 
@@ -657,33 +703,33 @@ async function analyze({ isoDate }) {
   // probabile che tu abbia committato.
   mergeCreatedIssues(jiraActivity, await collectCreatedIssues(jira, { isoDate, projects }));
 
+  // La ricerca del giorno ha un tetto: raggiunto, qualcosa e' rimasto fuori e
+  // la giornata che stai guardando e' incompleta. Un piano incompleto senza
+  // dirlo e' peggio di un piano incompleto.
+  if (jiraActivity.truncated) notes.push({ level: 'info', key: 'noteActivityTruncated', params: [] });
+
   // I commit arrivano dal pannello "Sviluppo" delle issue: sono dentro Jira,
   // quindi non serve nessun'altra scheda aperta.
   const gitByIssue = new Map();
-  if (config.jira.devPanel) {
-    try {
-      const candidates = await devCandidates(jira, { jiraActivity, config });
-      const identities = [me.displayName, me.emailAddress, ...(config.identity.extraAuthors || [])];
-      const dev = await collectDevPanelCommits(jira, { candidates, isoDate, identities });
-      for (const [key, commits] of dev.byIssue) gitByIssue.set(key, commits);
-
-      if (dev.skippedOther) {
-        notes.push({
-          level: 'info',
-          key: dev.skippedOther === 1 ? 'noteOtherAuthorsOne' : 'noteOtherAuthors',
-          params: [dev.skippedOther]
-        });
-      }
-      if (!dev.appType && candidates.length) {
-        notes.push({
-          level: 'info',
-          key: candidates.length === 1 ? 'noteNoCommitsOne' : 'noteNoCommits',
-          params: [candidates.length]
-        });
-      }
-    } catch (error) {
+  const foreignGitByIssue = new Map();
+  // Serve piu' in basso, dopo il piano: solo li' si sa se un commit altrui ha
+  // trovato una riga a cui attaccarsi.
+  let skipped = null;
+  // Stessa sequenza del registro, e la stessa funzione: qui ce n'era una
+  // seconda copia, e alla prima modifica — l'impostazione sui merge — sono
+  // andate corrette tutte e due a mano.
+  const dev = await gatherCommits(jira, { jiraActivity, config, isoDate, me });
+  if (dev?.error) {
+    notes.push({ level: 'info', key: 'noteDevPanelUnreadable', params: [dev.error.message] });
+  } else if (dev) {
+    for (const [key, commits] of dev.byIssue) gitByIssue.set(key, commits);
+    for (const [key, commits] of dev.othersByIssue) foreignGitByIssue.set(key, commits);
+    skipped = dev;
+    if (!dev.appType && dev.candidates.length) {
       notes.push({
-        level: 'info', key: 'noteDevPanelUnreadable', params: [error.message]
+        level: 'info',
+        key: dev.candidates.length === 1 ? 'noteNoCommitsOne' : 'noteNoCommits',
+        params: [dev.candidates.length]
       });
     }
   }
@@ -714,12 +760,32 @@ async function analyze({ isoDate }) {
     config,
     jiraActivity,
     gitByIssue,
+    foreignGitByIssue,
     summaries,
     recentIssues,
     loggedEntries: logged.entries,
     loggedByIssue: logged.byIssue,
     alreadyLoggedMinutes: logged.total
   });
+
+  // I commit dei colleghi sulle tue task adesso stanno sulla riga a cui
+  // appartengono. L'avviso in cima resta solo per quelli che non hanno trovato
+  // una riga dove posarsi — altrimenti direbbe tutti i giorni una cosa che si
+  // legge gia' due centimetri piu' sotto.
+  if (skipped?.skippedOther) {
+    const senzaRiga = [...skipped.othersByIssue]
+      .filter(([key]) => !plan.rows.some((row) => row.issueKey === key))
+      .flatMap(([, commits]) => commits);
+    if (senzaRiga.length) {
+      const chi = [...new Set(senzaRiga.map((c) => c.author).filter(Boolean))].join(', ')
+        || t('noteOtherAuthorsUnknown');
+      notes.push({
+        level: 'info',
+        key: senzaRiga.length === 1 ? 'noteOtherAuthorsOne' : 'noteOtherAuthors',
+        params: senzaRiga.length === 1 ? [chi] : [senzaRiga.length, chi]
+      });
+    }
+  }
 
   // Se su un ticket riunione proposto hai gia' registrato ore quel giorno, la
   // proposta e' confermata dai fatti: la si ricorda e si smette di chiedere.
@@ -791,7 +857,10 @@ async function submit({ isoDate, rows }) {
         await jira.addWorklog(row.issueKey, {
           started: jiraStarted(isoDate, segment.time),
           timeSpentSeconds: Math.round(segment.minutes * 60),
-          comment: row.comment || undefined
+          // La nota si scrive solo se la vuoi: spenta, i worklog restano nudi
+          // — e questo e' l'unico punto che la manda, quindi non c'e' modo che
+          // sfugga da un'altra strada.
+          comment: config.work.sendComments === false ? undefined : (row.comment || undefined)
         });
         scritti += 1;
       }

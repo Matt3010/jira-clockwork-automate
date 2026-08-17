@@ -33,12 +33,13 @@ export const DEFAULT_CONFIG = {
     baseUrl: '',
     projects: [],
     scanComments: true,
-    // Legge i commit dal pannello "Sviluppo" delle issue: nessuna scheda
-    // Bitbucket da tenere aperta.
-    devPanel: true,
     // Oltre alle issue toccate oggi, quante altre issue tue controllare per
     // trovare commit su ticket che oggi non hai aperto in Jira.
-    devCandidates: 25
+    devCandidates: 25,
+    // I merge contano come lavoro? Acceso e' quello che faceva prima. Spento,
+    // spariscono da tutte e tre le cose che i commit alimentano: il conto sulla
+    // riga, la nota precompilata e il peso nella divisione a proporzione.
+    countMerges: true
   },
   ui: {
     // Il pannello laterale resta aperto mentre lavori su Jira, il popup si
@@ -53,9 +54,18 @@ export const DEFAULT_CONFIG = {
   work: {
     dailyHours: 8,
     roundingMinutes: 15,
+    // Come si dividono le ore fra le task: in parti uguali, oppure in
+    // proporzione a quanto risulta fatto su ognuna (commit e modifiche Jira).
+    // Default alle parti uguali: e' quello che faceva prima, e non e' una
+    // scelta peggiore — una task con un commit solo puo' esserti costata
+    // l'intera mattina.
+    split: 'equal',
     startTime: '09:00',
     // Ore mancanti sull'icona dell'estensione: si vedono senza aprire niente.
     showBadge: true,
+    // La nota del worklog. Chi la vuole non trova niente di diverso; chi tiene
+    // i worklog nudi la spegne e non deve piu' svuotare i campi a mano.
+    sendComments: true,
     // Le pause non consumano monte ore: sono buchi nella linea del tempo. Un
     // blocco di lavoro che ci finisce sopra viene spezzato in piu' worklog.
     breaks: [

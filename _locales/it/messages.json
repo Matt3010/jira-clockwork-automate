@@ -38,11 +38,14 @@
   "secCommits": {
     "message": "Commit"
   },
-  "checkDevPanel": {
-    "message": "Leggi i commit dal pannello «Sviluppo» delle issue"
-  },
   "hintDevPanel": {
     "message": "I commit vengono letti da Jira stesso — lo stesso pannello che vedi in fondo a ogni ticket. Nessuna scheda Bitbucket da tenere aperta, nessun workspace da configurare."
+  },
+  "checkCountMerges": {
+    "message": "Conta anche i commit di merge"
+  },
+  "hintCountMerges": {
+    "message": "Un merge non è lavoro da registrare: spento, i merge spariscono dal conto dei commit sulla riga, dalla nota precompilata e dal peso quando le ore si dividono in proporzione."
   },
   "fieldDevCandidates": {
     "message": "Issue da controllare oltre a quelle di oggi"
@@ -67,6 +70,18 @@
   },
   "fieldRounding": {
     "message": "Arrotondamento (minuti)"
+  },
+  "fieldSplit": {
+    "message": "Come dividere le ore"
+  },
+  "splitEqual": {
+    "message": "In parti uguali fra le task"
+  },
+  "splitActivity": {
+    "message": "In proporzione a commit e modifiche Jira"
+  },
+  "hintSplit": {
+    "message": "In proporzione, una task con sei commit prende più di una con un solo cambio di stato. Una riga senza tracce prende comunque la sua parte."
   },
   "fieldStartTime": {
     "message": "Inizio giornata"
@@ -225,6 +240,12 @@
   },
   "titleNextDay": {
     "message": "Giorno successivo"
+  },
+  "btnToday": {
+    "message": "Oggi"
+  },
+  "titleToday": {
+    "message": "Torna a oggi"
   },
   "titleOptions": {
     "message": "Opzioni"
@@ -445,27 +466,33 @@
       }
     }
   },
-  "activityAssigned": {
-    "message": "assegnata a te"
+  "activityYou": {
+    "message": "tu"
   },
-  "activityAssignedBy": {
-    "message": "assegnata a te da $NAME$",
+  "othersLabel": {
+    "message": "$WHO$: $WHAT$",
     "placeholders": {
-      "name": {
+      "who": {
+        "content": "$1"
+      },
+      "what": {
+        "content": "$2"
+      }
+    }
+  },
+  "othersAssigned": {
+    "message": "te l'ha assegnata"
+  },
+  "othersAssignedAt": {
+    "message": "te l'ha assegnata alle $TIME$",
+    "placeholders": {
+      "time": {
         "content": "$1"
       }
     }
   },
-  "activityUpdated": {
-    "message": "aggiornata da altri"
-  },
-  "activityUpdatedBy": {
-    "message": "aggiornata da $NAME$",
-    "placeholders": {
-      "name": {
-        "content": "$1"
-      }
-    }
+  "othersUnknown": {
+    "message": "qualcun altro"
   },
   "commentProgressAndComments": {
     "message": "Avanzamento e commenti"
@@ -753,6 +780,14 @@
       }
     }
   },
+  "msgOpeningTab": {
+    "message": "Nessuna scheda aperta su $HOST$: ne apro una in secondo piano e riprovo.",
+    "placeholders": {
+      "host": {
+        "content": "$1"
+      }
+    }
+  },
   "errNoTabOthers": {
     "message": " Hai aperto $OTHERS$, ma la configurazione punta a $HOST$.",
     "placeholders": {
@@ -830,15 +865,26 @@
     "message": "Nessun progetto configurato: la ricerca attività guarda tutte le issue aggiornate nel sito (al massimo 100) e su un'istanza trafficata può perdersi le tue. Imposta le chiavi dei tuoi progetti nelle opzioni."
   },
   "noteOtherAuthors": {
-    "message": "$COUNT$ commit di oggi risultano di altri autori e non sono stati contati. Se qualcuno era tuo, aggiungi nelle opzioni il nome con cui firmi i commit.",
+    "message": "$COUNT$ commit di oggi risultano di $WHO$ e non sono stati contati. Se qualcuno è tuo con un'altra firma, aggiungi quel nome nelle opzioni.",
     "placeholders": {
       "count": {
         "content": "$1"
+      },
+      "who": {
+        "content": "$2"
       }
     }
   },
+  "noteOtherAuthorsUnknown": {
+    "message": "un autore senza nome"
+  },
   "noteOtherAuthorsOne": {
-    "message": "1 commit di oggi risulta di un altro autore e non è stato contato. Se era tuo, aggiungi nelle opzioni il nome con cui firmi i commit."
+    "message": "1 commit di oggi risulta di $WHO$ e non è stato contato. Se sei tu con un'altra firma, aggiungi quel nome nelle opzioni.",
+    "placeholders": {
+      "who": {
+        "content": "$1"
+      }
+    }
   },
   "noteNoCommits": {
     "message": "Nessun commit collegato trovato sulle $COUNT$ issue controllate: o il pannello Sviluppo non è collegato, o il ticket non era fra le candidate.",
@@ -858,6 +904,9 @@
         "content": "$1"
       }
     }
+  },
+  "noteActivityTruncated": {
+    "message": "La ricerca del giorno ha raggiunto il limite: qualche issue può essere rimasta fuori. Restringi i progetti nelle impostazioni per una giornata completa."
   },
   "noteWorklogsUnreadable": {
     "message": "Non ho potuto leggere i worklog già presenti: controlla di non star raddoppiando le ore."
@@ -892,6 +941,12 @@
   },
   "checkShowBadge": {
     "message": "Mostra le ore mancanti sull'icona dell'estensione"
+  },
+  "checkSendComments": {
+    "message": "Invia la nota insieme alle ore"
+  },
+  "hintSendComments": {
+    "message": "Spenta, i worklog partono nudi: la nota resta nel popup come promemoria di quello che hai fatto, ma su Jira non viene scritta."
   },
   "hintShowBadge": {
     "message": "Un numero sull'icona quando la giornata non è ancora coperta, aggiornato ogni 15 minuti. Per leggerlo serve una scheda Jira aperta: senza, il badge viene cancellato invece di restare fermo su un numero vecchio."
@@ -1092,6 +1147,66 @@
   "tabTickets": {
     "message": "Ticket"
   },
+  "tabPr": {
+    "message": "PR"
+  },
+  "prEmpty": {
+    "message": "Nessuna pull request aperta sui progetti configurati."
+  },
+  "prCount": {
+    "message": "$COUNT$ pull request aperte",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "prCountOne": {
+    "message": "1 pull request aperta"
+  },
+  "prWaitingYou": {
+    "message": "Aspettano te ($COUNT$)",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "prYours": {
+    "message": "Tue ($COUNT$)",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "prOthers": {
+    "message": "Altre ($COUNT$)",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "prApprovals": {
+    "message": "$COUNT$ ok",
+    "placeholders": {
+      "count": {
+        "content": "$1"
+      }
+    }
+  },
+  "prBy": {
+    "message": "di $WHO$",
+    "placeholders": {
+      "who": {
+        "content": "$1"
+      }
+    }
+  },
+  "titleOpenPr": {
+    "message": "Apri la pull request"
+  },
   "btnMove": {
     "message": "Sposta"
   },
@@ -1107,7 +1222,7 @@
     }
   },
   "ticketsOpenedOn": {
-    "message": "Aperto il $DATE$",
+    "message": "Ultimo movimento il $DATE$",
     "placeholders": {
       "date": {
         "content": "$1"
@@ -1115,7 +1230,7 @@
     }
   },
   "ticketsNoDate": {
-    "message": "Senza data di apertura"
+    "message": "Senza data di movimento"
   },
   "ticketsNoStatus": {
     "message": "Senza stato"
@@ -1141,6 +1256,9 @@
         "content": "$1"
       }
     }
+  },
+  "titleOpenCommit": {
+    "message": "Apri il commit"
   },
   "msgTicketMoved": {
     "message": "$KEY$ ora è in $STATUS$.",
@@ -1204,6 +1322,6 @@
     }
   },
   "activityCreated": {
-    "message": "creata"
+    "message": "creata da te"
   }
 }

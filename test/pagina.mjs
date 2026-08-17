@@ -42,7 +42,7 @@ const definisci = (nome, valore) =>
  * @param {string} opzioni.query  la parte dopo `?` nell'URL della pagina
  * @param {object} opzioni.disco  cosa c'e' gia' in `chrome.storage.local`
  */
-export async function apriPagina(pagina, { risposte = {}, query = '', disco = {} } = {}) {
+export async function apriPagina(pagina, { risposte = {}, query = '', disco = {}, schedeBloccate = false } = {}) {
   const html = readFileSync(join(root, 'src', `${pagina}.html`), 'utf8');
 
   // jsdom non sa navigare, e scaricare un file e' una navigazione: quel
@@ -149,7 +149,16 @@ export async function apriPagina(pagina, { risposte = {}, query = '', disco = {}
       openOptionsPage() { opzioniAperte += 1; }
     },
     tabs: {
+      // Chrome rifiuta di aprire schede mentre l'utente ne sta trascinando
+      // una: l'errore arriva in `runtime.lastError` e il callback riceve
+      // `undefined`. `schedeBloccate` riproduce proprio quel caso.
       create(opzioni, callback) {
+        if (schedeBloccate) {
+          chrome.runtime.lastError = { message: 'Tabs cannot be edited right now' };
+          callback?.(undefined);
+          delete chrome.runtime.lastError;
+          return;
+        }
         tabs.push(opzioni);
         callback?.({ id: tabs.length, status: 'complete' });
       },

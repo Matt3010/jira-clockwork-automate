@@ -12,6 +12,10 @@
       <input type="date" id="date" />
       <button id="prev-day" class="ghost icon-only" data-i18n-title="titlePrevDay" title="Previous day"></button>
       <button id="next-day" class="ghost icon-only" data-i18n-title="titleNextDay" title="Next day"></button>
+      <!-- Compare solo quando sei altrove: sul giorno corrente non avrebbe
+           niente da fare, e un comando spento è un comando da leggere. -->
+      <button id="today" class="ghost" data-i18n="btnToday" data-i18n-title="titleToday"
+        title="Back to today" hidden>Today</button>
     </div>
     <div class="bar-right">
       <span id="sync" class="sync"></span>
@@ -25,6 +29,8 @@
             aria-controls="hours-view" data-i18n="tabHours">Hours</button>
     <button id="tab-log" class="tab" role="tab" aria-selected="false"
             aria-controls="log-view" data-i18n="tabLog">Activity</button>
+    <button id="tab-pr" class="tab" role="tab" aria-selected="false"
+            aria-controls="pr-view" data-i18n="tabPr">PR</button>
     <button id="tab-tickets" class="tab" role="tab" aria-selected="false"
             aria-controls="tickets-view" data-i18n="tabTickets">Tickets</button>
   </nav>
@@ -38,6 +44,16 @@
     </div>
     <ol id="log" class="log"></ol>
     <p id="log-empty" class="empty" data-i18n="logEmpty">Nothing recorded on Jira for this day.</p>
+  </section>
+
+  <!-- Sola lettura: unire e rifiutare sono scritture su Bitbucket, che Jira
+       non fa da tramite. Da qui si apre la PR dove quei tasti stanno. -->
+  <section id="pr-view" class="log-view" role="tabpanel" aria-labelledby="tab-pr" hidden>
+    <div class="log-head">
+      <span id="pr-count" class="log-count"></span>
+    </div>
+    <div id="pr"></div>
+    <p id="pr-empty" class="empty" data-i18n="prEmpty">No open pull requests on the configured projects.</p>
   </section>
 
   <section id="tickets-view" class="tickets-view" role="tabpanel" aria-labelledby="tab-tickets" hidden>

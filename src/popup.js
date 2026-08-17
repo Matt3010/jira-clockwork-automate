@@ -17,6 +17,7 @@ const el = {
   date: document.getElementById('date'),
   prevDay: document.getElementById('prev-day'),
   nextDay: document.getElementById('next-day'),
+  today: document.getElementById('today'),
   analyze: document.getElementById('analyze'),
   openOptions: document.getElementById('open-options'),
   messages: document.getElementById('messages'),
@@ -39,7 +40,12 @@ const el = {
   datalist: document.getElementById('recent-issues'),
   tabHours: document.getElementById('tab-hours'),
   tabLog: document.getElementById('tab-log'),
+  tabPr: document.getElementById('tab-pr'),
   tabTickets: document.getElementById('tab-tickets'),
+  prView: document.getElementById('pr-view'),
+  pr: document.getElementById('pr'),
+  prCount: document.getElementById('pr-count'),
+  prEmpty: document.getElementById('pr-empty'),
   dayPicker: document.getElementById('day-picker'),
   logView: document.getElementById('log-view'),
   log: document.getElementById('log'),
@@ -82,6 +88,9 @@ const state = {
   ticketsTotal: 0,
   ticketsLoaded: false,
   ticketsAt: 0,
+  prItems: [],
+  prLoaded: false,
+  prAt: 0,
   // Le transizioni già lette, per non richiederle a ogni apertura del menu.
   transitionsByKey: new Map(),
   // Ricerca: quando è attiva prende il posto dell'elenco, e i risultati non
@@ -171,6 +180,11 @@ function message(text, kind = 'info', action = null, { channel = '' } = {}) {
   node.className = `msg ${level}`;
   node.dataset.rank = String(rank);
   node.dataset.text = text;
+  // Un avviso appartiene alla vista che lo ha prodotto: «ticket riunione
+  // proposto» parla del piano, e sotto l'elenco delle pull request non vuol
+  // dire niente. Il contenitore e' uno solo, quindi ognuno si ricorda da dove
+  // viene e chi cambia scheda nasconde gli altri.
+  node.dataset.tab = state.tab;
   if (channel) node.dataset.channel = channel;
 
   const mark = document.createElement('span');
@@ -199,6 +213,13 @@ function message(text, kind = 'info', action = null, { channel = '' } = {}) {
   if (level === 'ok' && !action) setTimeout(() => node.remove(), DURATA_OK);
 }
 
+/** Restano a schermo solo gli avvisi della vista che stai guardando. */
+function mostraAvvisi() {
+  for (const avviso of el.messages.children) {
+    avviso.hidden = (avviso.dataset.tab || 'hours') !== state.tab;
+  }
+}
+
 function clearMessages() {
   el.messages.replaceChildren();
 }
@@ -206,8 +227,19 @@ function clearMessages() {
 function shiftDay(days) {
   const date = localDateTime(state.isoDate);
   date.setDate(date.getDate() + days);
-  state.isoDate = toIsoDate(date);
-  el.date.value = state.isoDate;
+  setDay(toIsoDate(date));
+}
+
+/**
+ * Il giorno guardato, in un posto solo: campo, stato e comandi restano
+ * d'accordo. Scritti a mano uno per uno, il ritorno a oggi dimenticava il
+ * campo o il campo dimenticava il pulsante.
+ */
+function setDay(isoDate) {
+  state.isoDate = isoDate;
+  el.date.value = isoDate;
+  // Il ritorno a oggi si mostra solo quando c'e' qualcosa da cui tornare.
+  el.today.hidden = isoDate === todayIso();
 }
 
 /**
@@ -399,14 +431,132 @@ function describeRow(row) {
   if (commits) parti.push(t(commits === 1 ? 'activityCommit' : 'activityCommits', commits));
   // Una riga senza niente di tuo c'è perché la issue è tua e qualcuno l'ha
   // mossa: senza dirlo sembrerebbe comparsa dal nulla, per giunta spenta.
-  if (!parti.length && row.activity?.foreign) {
-    if (row.assignedToYou) {
-      parti.push(row.foreignBy ? t('activityAssignedBy', row.foreignBy) : t('activityAssigned'));
-    } else {
-      parti.push(row.foreignBy ? t('activityUpdatedBy', row.foreignBy) : t('activityUpdated'));
-    }
+  // Su una riga dove non hai fatto niente questa frase resterebbe vuota: dice
+  // tutto quella dei colleghi, che li elenca uno per uno invece di nominare
+  // solo il primo.
+  if (!parti.length) return '';
+  // Con un collega sotto, "2 commit" non dice piu' di chi sono: le due righe
+  // portano tutte e due un nome davanti, e la domanda non si pone.
+  const frase = parti.join(' · ');
+  return othersOf(row).length ? t('othersLabel', t('activityYou'), frase) : frase;
+}
+
+/**
+ * La riga «ci ha messo mano anche qualcun altro».
+ *
+ * Torna `null` quando non c'e' niente da dire, cosi' chi disegna non aggiunge
+ * un contenitore vuoto. Su una riga dove non hai fatto niente il perche' sta
+ * gia' nella frase sopra («assegnata a te da…»): ripeterlo qui sarebbe la
+ * stessa cosa scritta due volte.
+ */
+function othersLine(row) {
+  const altri = othersOf(row);
+  if (!altri.length) return null;
+
+  const nodo = document.createElement('div');
+  nodo.className = 'altri';
+  altri.forEach((chi, indice) => {
+    if (indice) nodo.append(' · ');
+    nodo.append(...describeOther(chi, row.issueKey));
+  });
+  return nodo;
+}
+
+/** L'indirizzo della issue su Jira, vuoto finche' non si sa su quale sito. */
+function issueUrl(issueKey) {
+  return state.host && issueKey ? `https://${state.host}/browse/${issueKey}` : '';
+}
+
+/**
+ * Un indirizzo si apre in una scheda nuova, e solo se lo abbiamo davvero.
+ *
+ * Un `<a>` senza `href` resta un pezzo di testo: meglio quello di un link che
+ * non porta da nessuna parte. `noreferrer` perche' l'indirizzo di una pagina
+ * interna non deve viaggiare fuori.
+ */
+function link(testo, href, titolo = '') {
+  const nodo = document.createElement(href ? 'a' : 'span');
+  nodo.textContent = testo;
+  if (titolo) nodo.title = titolo;
+  if (href) {
+    nodo.href = href;
+    nodo.target = '_blank';
+    nodo.rel = 'noreferrer';
   }
-  return parti.join(' · ');
+  return nodo;
+}
+
+/** I colleghi che hanno lasciato una traccia su questa riga. */
+function othersOf(row) {
+  return (row.others || []).filter((chi) => chi.changes || chi.commits);
+}
+
+/**
+ * Un collega e cosa ha fatto: "Dario Decarlo: 2 commit", con i pezzi cliccabili.
+ *
+ * Le modifiche Jira portano alla issue — la cronologia sta in fondo alla
+ * pagina, e un indirizzo per la sola scheda «Cronologia» Jira Cloud non lo
+ * espone. I commit portano al commit vero, che l'indirizzo ce l'ha: da un solo
+ * commit ci si va dritti, da piu' di uno si apre il primo.
+ */
+function describeOther(chi, issueKey) {
+  const dove = issueUrl(issueKey);
+  const parti = [];
+  if (chi.assigned) {
+    // L'ora dell'assegnazione sta attaccata a lei, non in fondo: e' il fatto
+    // che colloca la riga nella giornata — assegnata alle 9 o alle 17 sono due
+    // cose diverse.
+    const testo = chi.assignedAt
+      ? t('othersAssignedAt', eventTime(chi.assignedAt))
+      : t('othersAssigned');
+    parti.push(link(testo, dove, t('titleOpenInJira', issueKey)));
+  }
+  // L'assegnazione e' gia' una modifica: dirla due volte gonfierebbe il conto.
+  const modifiche = chi.assigned ? chi.changes - 1 : chi.changes;
+  if (modifiche > 0) {
+    parti.push(link(
+      t(modifiche === 1 ? 'activityChange' : 'activityChanges', modifiche),
+      dove,
+      t('titleOpenInJira', issueKey)
+    ));
+  }
+  if (chi.commits) {
+    const [primo] = chi.commitUrls || [];
+    parti.push(link(
+      t(chi.commits === 1 ? 'activityCommit' : 'activityCommits', chi.commits),
+      primo || dove,
+      primo ? t('titleOpenCommit') : t('titleOpenInJira', issueKey)
+    ));
+  }
+
+  const nome = document.createElement('span');
+  nome.className = 'chi';
+  nome.textContent = chi.name || t('othersUnknown');
+  if (!parti.length) return [nome];
+
+  const nodi = [nome, ': '];
+  parti.forEach((parte, indice) => {
+    if (indice) nodi.push(', ');
+    nodi.push(parte);
+  });
+
+  // E quando, per il resto: un istante solo, o l'arco in cui ci ha messo mano.
+  // Senza, «3 modifiche Jira» non si colloca nella giornata, e chi legge non
+  // sa se e' successo prima o dopo il suo lavoro.
+  const arco = periodOf(chi);
+  if (arco) nodi.push(` (${arco})`);
+  return nodi;
+}
+
+/** Quando ci ha messo mano: un'ora sola, o da quando a quando. */
+function periodOf(chi) {
+  if (!chi.firstAt) return '';
+  // L'assegnazione ha gia' la sua ora scritta accanto: se e' l'unica cosa che
+  // ha fatto, ripeterla in coda sarebbe la stessa ora due volte.
+  if (chi.assignedAt && chi.changes === 1 && !chi.commits) return '';
+  const dalle = eventTime(chi.firstAt);
+  const alle = eventTime(chi.lastAt);
+  return dalle === alle ? dalle : `${dalle}–${alle}`;
 }
 
 /**
@@ -418,13 +568,31 @@ function describeRow(row) {
  * neutro — tre è il numero che regge il controllo su tutte le coppie, e
  * inventare una quarta tinta la renderebbe indistinguibile da una delle altre.
  */
+/**
+ * Tinta e riempimento di un ticket. Nove combinazioni, tutte diverse.
+ *
+ * Le tinte restano tre perche' tre e' quanto ne regge il confronto: sotto
+ * protanopia il viola *e'* blu — il validatore dice 2.7 di distanza
+ * percettiva, cioe' lo stesso colore — quindi una quarta tinta sarebbe un
+ * doppione travestito. La quarta attivita' prende allora la prima tinta con un
+ * riempimento diverso: pieno, rigato, vuoto col contorno. Il riempimento si
+ * legge anche in bianco e nero, quindi le nove combinazioni sono distinte per
+ * chiunque, e non solo per chi distingue tutte le tinte.
+ *
+ * Oltre la nona si ricomincia: nessun codice visivo resta leggibile piu' in
+ * la', e la pastiglia sta comunque accanto alla chiave, che e' l'identita'
+ * vera della riga.
+ */
 function seriesClass(issueKey) {
   if (!issueKey) return '';
   const chiavi = [...new Set(
     state.rows.filter((row) => row.kind === 'task' && row.issueKey).map((row) => row.issueKey)
   )].sort();
   const posizione = chiavi.indexOf(issueKey);
-  return posizione >= 0 && posizione < 3 ? `s${posizione + 1}` : '';
+  if (posizione < 0) return '';
+  const tinta = `s${(posizione % 3) + 1}`;
+  const riempimento = Math.floor(posizione / 3) % 3;
+  return riempimento ? `${tinta} v${riempimento + 1}` : tinta;
 }
 
 function badge(text, kind) {
@@ -529,6 +697,11 @@ function renderRow(row) {
   detail.className = 'detail';
   detail.textContent = describeRow(row);
 
+  // Chi altro ci ha messo mano oggi, sotto la riga a cui appartiene. Vale anche
+  // dove hai lavorato tu: "sulla mia task ha committato un collega" e' meta'
+  // del daily, e finiva o in un avviso in cima o da nessuna parte.
+  const altri = othersLine(row);
+
   // Una casella su piu' righe, non un campo di testo: la nota precompilata e'
   // la lista dei commit, uno per riga, e in un `input` si vedrebbe solo il
   // primo — con gli altri nascosti dentro un campo largo mezza finestra.
@@ -542,7 +715,13 @@ function renderRow(row) {
     adattaAltezza(comment);
   });
 
-  tdWhat.append(summary, detail, comment);
+  tdWhat.append(summary);
+  // Una riga vuota conterebbe come blocco e aprirebbe un vuoto in mezzo alla
+  // card: i passi verticali sono uguali per tutti, quindi ci vanno solo i
+  // pezzi che hanno qualcosa da dire.
+  if (detail.textContent) tdWhat.append(detail);
+  if (altri) tdWhat.append(altri);
+  tdWhat.append(comment);
 
   // Ore
   const tdHours = document.createElement('td');
@@ -628,7 +807,7 @@ async function afterWrite(issueKeys) {
   // L'esito va detto: ingoiando l'errore, un service worker non ricaricato
   // (che risponde "comando sconosciuto") sembrava un semplice non-succede-nulla.
   try {
-    const out = await send('reloadSite');
+    const out = await comando('reloadSite');
     if (!out.reloaded) {
       message(
         t('msgReloadNone'),
@@ -652,7 +831,7 @@ async function removeWorklogs(row, worklogIds, button) {
   const originale = button.textContent;
   button.textContent = '…';
   try {
-    const out = await send('deleteLogged', {
+    const out = await comando('deleteLogged', {
       isoDate: state.isoDate,
       issueKey: row.issueKey,
       worklogIds
@@ -801,14 +980,19 @@ function timelineExtent(blocchi) {
 }
 
 function renderTimeline() {
-  if (!state.config || !state.rows.length) {
+  // Senza configurazione non si sa nemmeno quanto e' lunga una giornata: l'asse
+  // non si puo' disegnare. Con la configurazione ma senza righe — cioe'
+  // mentre l'analisi carica — l'asse resta, vuoto: e' la cornice della
+  // giornata, non un dato. Toglierlo faceva collassare la pagina verso l'alto
+  // a ogni rilettura, e riapparire faceva saltare tutto indietro.
+  if (!state.config) {
     el.timeline.hidden = true;
     el.legend.hidden = true;
     return;
   }
   el.timeline.hidden = false;
 
-  const blocchi = timelineBlocks();
+  const blocchi = state.rows.length ? timelineBlocks() : [];
   const { da, a } = timelineExtent(blocchi);
   const span = a - da;
   const pct = (minuti) => `${((minuti - da) / span) * 100}%`;
@@ -834,6 +1018,13 @@ function renderTimeline() {
   // serve solo per diradare le etichette: la larghezza la prende dal
   // contenitore, così l'ultima ora cade sul bordo e non poco prima.
   scale.style.setProperty('--lungo-asse', `${lungoAsse}px`);
+  // Quanto e' alto l'asse coricato: serve al foglio per fermare la legenda
+  // appena sopra, invece di lasciarla scivolare via mentre l'asse resta
+  // incollato al fondo. Misurata, non scritta a mano: cambia col righello.
+  if (orizzontale) {
+    const alto = Math.round(el.timeline.getBoundingClientRect().height);
+    if (alto) el.timeline.parentElement?.style.setProperty('--asse-alto', `${alto}px`);
+  }
 
   const ruler = el.timeline.querySelector('.ruler');
   ruler.replaceChildren();
@@ -873,11 +1064,14 @@ function renderTimeline() {
     track.appendChild(nodo);
   }
 
-  // La legenda sta sopra la tabella, non in fondo alla colonna: lì finiva
-  // fuori dall'area visibile del popup.
+  // Dove sta la legenda lo decide il foglio di stile, e cambia con la
+  // larghezza: sopra la tabella quando l'asse è la colonna di lato, in fondo
+  // quando l'asse si corica sotto. Qui si riempie e basta.
   const legend = el.legend;
   legend.replaceChildren();
-  legend.hidden = false;
+  // Senza blocchi non ci sono categorie da spiegare: la legenda sparisce, ma
+  // l'asse resta — la cornice non e' un dato.
+  legend.hidden = !blocchi.length;
   // Le attività non hanno una voce di legenda: hanno un colore ciascuna, e la
   // corrispondenza sta nella pastiglia accanto alla riga — che è una legenda
   // migliore, perché dice anche di quale ticket si tratta. Qui restano le
@@ -996,7 +1190,7 @@ function setSite(text, kind = '') {
 
 async function refreshSite() {
   try {
-    const status = await send('siteStatus');
+    const status = await comando('siteStatus');
     // Serve anche ai link dei ticket: senza host non si sa dove puntano.
     state.host = status.host || '';
     if (!status.host) return setSite(t('siteNoneConfigured'), 'down');
@@ -1011,10 +1205,25 @@ async function refreshSite() {
   }
 }
 
-/** Apre il sito in una scheda di servizio e aspetta che abbia finito di caricare. */
+/**
+ * Apre il sito in una scheda e aspetta che abbia finito di caricare.
+ * Torna `null` se la scheda non si e' potuta aprire.
+ *
+ * `chrome.tabs.create` puo' fallire — «Tabs cannot be edited right now», per
+ * esempio mentre l'utente sta trascinando una scheda. L'errore va letto dentro
+ * la callback: non leggerlo lo lascia in console come "unchecked
+ * runtime.lastError", e soprattutto lascia la promessa appesa fino al timer di
+ * quindici secondi, con l'interfaccia che aspetta una scheda che non arrivera'.
+ */
 function openAndWait(host, { active = false } = {}) {
   return new Promise((resolve) => {
     chrome.tabs.create({ url: `https://${host}/`, active }, (tab) => {
+      if (chrome.runtime.lastError || !tab) return resolve(null);
+      // Una scheda gia' pronta non ha niente da aspettare. In Chrome nasce
+      // "loading" e si passa di li' sotto; ma dove nasce gia' completa,
+      // restare in ascolto di un evento che non arrivera' piu' significa
+      // aspettare i quindici secondi del timer per niente.
+      if (tab?.status === 'complete') return resolve(tab.id);
       const timer = setTimeout(finish, 15000);
       function onUpdated(tabId, info) {
         if (tabId === tab.id && info.status === 'complete') finish();
@@ -1029,10 +1238,74 @@ function openAndWait(host, { active = false } = {}) {
   });
 }
 
-/** Errori di autenticazione: invece del solo messaggio, offre il rimedio. */
-function reportAuthError(error, retry) {
-  const host = error.detail?.host;
+// Quanti tentativi automatici abbiamo gia' speso per un sito. Serve a non
+// ritentare in cerchio, ma anche a non arrendersi al primo colpo: una scheda
+// appena aperta puo' non essere ancora utilizzabile — il documento e' completo
+// ma la pagina non risponde ancora alle richieste iniettate — e la seconda
+// richiesta falliva, mostrando l'errore rosso al posto del rimedio. Da fuori
+// sembrava che l'apertura automatica funzionasse "ogni tanto".
+const tentativiAperti = new Map();
+const TENTATIVI = 3;
+
+/**
+ * Un comando andato a buon fine dice che la sessione funziona di nuovo: i
+ * tentativi spesi si dimenticano, o la prossima volta che chiudi la scheda il
+ * rimedio non scatterebbe piu'.
+ *
+ * Non lo puo' dire `siteStatus`, che guarda le schede aperte senza passare
+ * dalla sessione: azzerando anche su quello, i tentativi si ripulivano *mentre*
+ * la catena era in volo e il ciclo poteva non finire mai.
+ */
+async function comando(type, payload) {
+  const dati = await send(type, payload);
+  if (type !== 'siteStatus') tentativiAperti.delete(state.host);
+  return dati;
+}
+
+const pausa = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Errori di autenticazione: invece del solo messaggio, il rimedio.
+ *
+ * Sulla scheda mancante il rimedio si applica da solo, una volta: era un
+ * pulsante «apri e riprova» che l'utente premeva sempre, perche' non c'e'
+ * un'altra risposta possibile. La scheda si apre in secondo piano — in primo
+ * piano ruberebbe il fuoco e il popup si chiuderebbe, portandosi via quello
+ * che stavi compilando.
+ */
+async function reportAuthError(error, retry) {
+  // Il sito lo sa gia' il popup, da `siteStatus`: se l'errore arriva spoglio,
+  // il rimedio deve funzionare lo stesso. Senza questo ripiego bastava una
+  // strada che non attaccava il contesto perche' l'avviso perdesse il suo
+  // pulsante — e chi guarda si trovava un errore rosso e nient'altro.
+  const host = error.detail?.host || state.host;
   const openHosts = error.detail?.openHosts || [];
+
+  // La scheda mancante o chiusa si rimedia da soli. La sessione scaduta no:
+  // quella vuole un login, e il login vuole una scheda davanti.
+  const rimediabile = error.code === 'NO_TAB' || error.code === 'TAB_GONE';
+  const spesi = tentativiAperti.get(host) || 0;
+  if (rimediabile && host && spesi < TENTATIVI) {
+    tentativiAperti.set(host, spesi + 1);
+    let pronta = true;
+    if (spesi === 0) {
+      message(t('msgOpeningTab', host), 'ok');
+      // Se la scheda non si e' potuta aprire il tentativo non e' stato speso,
+      // e si prosegue col rimedio a mano invece di ritentare a vuoto.
+      pronta = Boolean(await openAndWait(host));
+      if (!pronta) tentativiAperti.set(host, spesi);
+    } else {
+      // La scheda c'e' gia': le si da' il tempo di diventare utilizzabile.
+      // Il documento risulta completo prima che la pagina risponda alle
+      // richieste iniettate, ed e' in quella fessura che il secondo tentativo
+      // falliva — da fuori sembrava che l'apertura funzionasse "ogni tanto".
+      await pausa(800);
+    }
+    // Nessuno aspetta questa funzione: un rifiuto qui resterebbe senza
+    // padrone. Chi ritenta riporta i suoi errori per conto suo, e al terzo
+    // tentativo il rimedio torna in mano all'utente.
+    if (pronta) return Promise.resolve(retry()).catch(() => {});
+  }
 
   if (error.code === 'NO_TAB' && host) {
     const altri = openHosts.filter((h) => h !== host);
@@ -1055,7 +1328,7 @@ function reportAuthError(error, retry) {
       'action',
       {
         label: t('btnGoLogin'),
-        onClick: () => chrome.tabs.create({ url: `https://${host}/`, active: true })
+        onClick: () => openAndWait(host, { active: true })
       }
     );
   }
@@ -1099,7 +1372,7 @@ async function refreshLogged({ force = [], silent = true } = {}) {
   const forzate = new Set(force);
 
   try {
-    const dati = await send('refreshLogged', { isoDate: state.isoDate });
+    const dati = await comando('refreshLogged', { isoDate: state.isoDate });
     if (token !== analyzeToken) return undefined;
 
     state.alreadyLoggedMinutes = dati.alreadyLoggedMinutes;
@@ -1150,7 +1423,7 @@ async function analyze({ preserveMessages = false } = {}) {
   render();
 
   try {
-    const data = await send('analyze', { isoDate: forDate });
+    const data = await comando('analyze', { isoDate: forDate });
     if (token !== analyzeToken) return;
     state.config = data.config;
     state.budgetMinutes = data.budgetMinutes;
@@ -1230,7 +1503,7 @@ async function submit() {
       memoryKey: row.memoryKey,
       enabled: row.enabled
     }));
-    const { results } = await send('submit', { isoDate: state.isoDate, rows: payload });
+    const { results } = await comando('submit', { isoDate: state.isoDate, rows: payload });
     clearMessages();
 
     const ok = results.filter((r) => r.ok);
@@ -1259,7 +1532,7 @@ async function submit() {
   }
 }
 
-el.date.value = state.isoDate;
+setDay(state.isoDate);
 el.copyDate.value = previousWorkday(state.isoDate);
 /**
  * Cambiare giorno tocca entrambe le viste: il piano si rilegge comunque, o
@@ -1274,7 +1547,14 @@ function onDateChanged(delay) {
 
 el.date.addEventListener('change', () => {
   if (!el.date.value) return;
-  state.isoDate = el.date.value;
+  setDay(el.date.value);
+  onDateChanged(0);
+});
+// Sfogliando indietro di qualche giorno, tornare a oggi voleva dire contare i
+// click all'indietro o riscrivere la data a mano.
+el.today.addEventListener('click', () => {
+  if (state.isoDate === todayIso()) return;
+  setDay(todayIso());
   onDateChanged(0);
 });
 el.prevDay.addEventListener('click', () => { shiftDay(-1); onDateChanged(); });
@@ -1353,6 +1633,7 @@ function renderLog() {
 // si attraversano cinque giorni in un secondo. Il timer fa partire una sola
 // lettura, il token impedisce a una risposta di un giorno superato di
 // atterrare comunque — arrivano fuori ordine, e vincerebbe l'ultima.
+let prToken = 0;
 let logToken = 0;
 let logTimer = null;
 
@@ -1374,7 +1655,7 @@ async function loadLog() {
   el.logEmpty.hidden = true;
   el.logCopy.hidden = true;
   try {
-    const { events } = await send('activity', { isoDate: forDate });
+    const { events } = await comando('activity', { isoDate: forDate });
     if (token !== logToken) return;
     state.logEvents = events;
     state.logDate = forDate;
@@ -1423,16 +1704,10 @@ function ticketRow(issue, { conStato = false } = {}) {
   const riga = document.createElement('div');
   riga.className = 'ticket-line';
 
-  const chiave = document.createElement('a');
-  chiave.className = 'chiave';
-  chiave.textContent = issue.key;
-  chiave.title = t('titleOpenInJira', issue.key);
   // Il link porta alla issue vera: da qui si legge il titolo, non il contenuto.
-  if (state.host) {
-    chiave.href = `https://${state.host}/browse/${issue.key}`;
-    chiave.target = '_blank';
-    chiave.rel = 'noreferrer';
-  }
+  // Senza sito configurato `link` restituisce testo, non un link morto.
+  const chiave = link(issue.key, issueUrl(issue.key), t('titleOpenInJira', issue.key));
+  chiave.className = 'chiave';
 
   const cosa = document.createElement('span');
   cosa.className = 'cosa';
@@ -1544,7 +1819,7 @@ async function loadTickets() {
   el.tickets.replaceChildren();
   el.ticketsEmpty.hidden = true;
   try {
-    const { groups, total } = await send('openIssues');
+    const { groups, total } = await comando('openIssues');
     if (token !== ticketsToken) return;
     await applyTickets(groups, total);
   } catch (error) {
@@ -1572,6 +1847,91 @@ async function applyTickets(groups, total, moved = '', { riapri = false } = {}) 
   else renderTickets();
 
   if (moved) followMoved(moved, riapri);
+}
+
+/**
+ * Le pull request dei progetti, lette quando apri la vista.
+ *
+ * Sola lettura: unire, rifiutare e approvare sono scritture sull'API di
+ * Bitbucket, e Jira non fa da tramite. Ogni riga porta il link alla PR, dove
+ * quei tasti stanno.
+ */
+async function loadPr() {
+  const token = ++prToken;
+  el.prCount.textContent = t('emptyAnalysing');
+  el.pr.replaceChildren();
+  el.prEmpty.hidden = true;
+  try {
+    const { items } = await comando('pullRequests');
+    if (token !== prToken) return;
+    state.prItems = items || [];
+    state.prLoaded = true;
+    state.prAt = Date.now();
+    renderPr();
+  } catch (error) {
+    if (token !== prToken) return;
+    state.prItems = [];
+    renderPr();
+    reportAuthError(error, loadPr);
+  }
+}
+
+/** Prima quelle che aspettano te: e' la domanda con cui apri questa vista. */
+function prGroups() {
+  const aperte = state.prItems.filter((pr) => pr.status !== 'MERGED' && pr.status !== 'DECLINED');
+  const recenti = (a, b) => (b.at || 0) - (a.at || 0);
+  return [
+    { key: 'prWaitingYou', items: aperte.filter((pr) => pr.waitingForYou).sort(recenti) },
+    { key: 'prYours', items: aperte.filter((pr) => !pr.waitingForYou && pr.mine).sort(recenti) },
+    { key: 'prOthers', items: aperte.filter((pr) => !pr.waitingForYou && !pr.mine).sort(recenti) }
+  ].filter((gruppo) => gruppo.items.length);
+}
+
+function renderPr() {
+  const gruppi = prGroups();
+  const totale = gruppi.reduce((somma, g) => somma + g.items.length, 0);
+
+  el.pr.replaceChildren(...gruppi.map((gruppo) => {
+    const sezione = document.createElement('div');
+    sezione.className = 'pr-group';
+
+    const titolo = document.createElement('div');
+    titolo.className = 'pr-group-title';
+    titolo.textContent = t(gruppo.key, String(gruppo.items.length));
+    sezione.append(titolo, ...gruppo.items.map(renderPrRow));
+    return sezione;
+  }));
+
+  el.prEmpty.hidden = totale > 0;
+  el.prCount.textContent = totale
+    ? t(totale === 1 ? 'prCountOne' : 'prCount', totale)
+    : '';
+  syncLabel();
+}
+
+function renderPrRow(pr) {
+  const riga = document.createElement('div');
+  riga.className = 'pr-row';
+
+  const testa = document.createElement('div');
+  testa.className = 'pr-line';
+  // La chiave porta al ticket, il titolo alla PR: sono due posti diversi e
+  // servono a due momenti diversi.
+  const chiave = link(pr.issueKey, issueUrl(pr.issueKey), t('titleOpenInJira', pr.issueKey));
+  chiave.className = 'chiave';
+  const titolo = link(pr.title || `#${pr.number}`, pr.url, t('titleOpenPr'));
+  titolo.className = 'pr-title';
+  testa.append(chiave, ' ', titolo);
+  if (pr.approvals) testa.append(badge(t('prApprovals', String(pr.approvals)), 'ok'));
+
+  const sotto = document.createElement('div');
+  sotto.className = 'pr-meta';
+  const parti = [pr.issueSummary, pr.author && t('prBy', pr.author)].filter(Boolean);
+  if (pr.at) parti.push(eventTime(pr.at));
+  sotto.textContent = parti.join(' · ');
+
+  riga.append(testa, sotto);
+  return riga;
 }
 
 // Stessa protezione del piano e del registro: si digita una lettera alla
@@ -1603,7 +1963,7 @@ async function runSearch() {
   el.ticketsCount.textContent = t('emptyAnalysing');
   el.ticketsEmpty.hidden = true;
   try {
-    const { issues } = await send('findIssues', { query });
+    const { issues } = await comando('findIssues', { query });
     if (token !== searchToken) return;
     state.searchResults = issues;
     renderSearch();
@@ -1652,7 +2012,7 @@ async function toggleMoves(issue, menu, bottone) {
   menu.replaceChildren(hint(t('ticketsLoadingMoves')));
   bottone.disabled = true;
   try {
-    const { transitions } = await send('issueTransitions', {
+    const { transitions } = await comando('issueTransitions', {
       issueKey: issue.key, status: issue.status
     });
     state.transitionsByKey.set(issue.key, transitions);
@@ -1693,7 +2053,7 @@ async function moveTicket(issue, transizione, menu) {
   for (const b of menu.querySelectorAll('button')) b.disabled = true;
   menu.replaceChildren(hint(t('ticketsMoving', transizione.to || transizione.name)));
   try {
-    const esito = await send('moveIssue', {
+    const esito = await comando('moveIssue', {
       issueKey: issue.key, transitionId: transizione.id
     });
     // Il menu si riapre sulla riga spostata: attraversare un workflow lungo è
@@ -1718,22 +2078,29 @@ function showTab(nome) {
   const ore = nome === 'hours';
   const registro = nome === 'log';
   const ticket = nome === 'tickets';
+  const pr = nome === 'pr';
 
   el.tabHours.setAttribute('aria-selected', String(ore));
   el.tabLog.setAttribute('aria-selected', String(registro));
   el.tabTickets.setAttribute('aria-selected', String(ticket));
+  el.tabPr.setAttribute('aria-selected', String(pr));
 
   el.main.hidden = !ore;
   el.footer.hidden = !ore;
   el.logView.hidden = !registro;
   el.ticketsView.hidden = !ticket;
-  // I ticket aperti sono quelli di adesso: il giorno scelto non c'entra, e
-  // lasciare il selettore lì accanto farebbe pensare il contrario.
-  el.dayPicker.hidden = ticket;
+  el.prView.hidden = !pr;
+  // Ticket aperti e pull request sono quelli di adesso: il giorno scelto non
+  // c'entra, e lasciare il selettore lì accanto farebbe pensare il contrario.
+  el.dayPicker.hidden = ticket || pr;
 
   // Il registro si legge quando lo apri, e si rilegge se hai cambiato giorno.
   if (registro && state.logDate !== state.isoDate) loadLog();
   if (ticket && !state.ticketsLoaded) loadTickets();
+  // Le pull request costano una richiesta per ticket aperto: si leggono solo
+  // quando apri la vista, mai a ogni analisi.
+  if (pr && !state.prLoaded) loadPr();
+  mostraAvvisi();
   // Ogni vista ha la sua freschezza: cambiando scheda cambia il riferimento.
   syncLabel();
 }
@@ -1755,6 +2122,7 @@ const TICK_MS = 15000;
 /** Quando è stato letto quello che si sta guardando adesso. */
 function freshnessAt() {
   if (state.tab === 'tickets') return state.ticketsAt;
+  if (state.tab === 'pr') return state.prAt;
   if (state.tab === 'log') return state.logAt;
   return state.analyzedAt;
 }
@@ -1831,7 +2199,7 @@ async function copyFromDay() {
 
   el.copyDo.disabled = true;
   try {
-    const { entries } = await send('copyFrom', { fromDate });
+    const { entries } = await comando('copyFrom', { fromDate });
     if (!entries.length) {
       message(t('msgCopiedNone', fromDate), 'info');
       return;
@@ -1873,6 +2241,7 @@ el.copyDo.addEventListener('click', copyFromDay);
 
 el.tabHours.addEventListener('click', () => showTab('hours'));
 el.tabLog.addEventListener('click', () => showTab('log'));
+el.tabPr.addEventListener('click', () => showTab('pr'));
 el.tabTickets.addEventListener('click', () => showTab('tickets'));
 
 el.ticketsSearch.addEventListener('input', () => {
@@ -1911,6 +2280,7 @@ el.toggleAll.addEventListener('change', () => {
 // Il tasto in alto ricarica quello che stai guardando, non sempre le ore.
 el.analyze.addEventListener('click', () => {
   if (state.tab === 'tickets') return loadTickets();
+  if (state.tab === 'pr') return loadPr();
   if (state.tab === 'log') return loadLog();
   analyze();
 });

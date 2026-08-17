@@ -19,6 +19,68 @@ const SORGENTI = ['src/popup.js', 'src/options.js', 'src/background.js', ...LIB]
 const MARKUP = ['src/popup.html', 'src/options.html'];
 const TUTTO = [...SORGENTI, ...MARKUP, 'manifest.json'].map(leggi).join('\n');
 
+// --- ogni tipo di campo deve essere vestito -------------------------------
+// Due volte oggi lo stesso difetto: la `textarea` della nota è nata col testo
+// nero su fondo scuro, e il menu della divisione ore con la freccia del
+// sistema in mezzo ai campi nostri. La regola condivisa è scritta per
+// esclusione (`input:not([type="checkbox"])`) proprio per non dimenticarsene,
+// ma un tipo che non è un `input` le sfugge comunque. Qui si controlla che
+// ogni tipo di campo presente nel markup sia dentro quella regola.
+{
+  for (const [markup, foglio] of [
+    ['src/popup.html', 'src/popup.css'],
+    ['src/options.html', 'src/options.css']
+  ]) {
+    const html = leggi(markup);
+    const css = leggi(foglio);
+    const selettore = css.slice(
+      css.indexOf('input:not([type="checkbox"])'),
+      css.indexOf('{', css.indexOf('input:not([type="checkbox"])'))
+    );
+    assert.ok(selettore, `${foglio} non ha una regola condivisa per i campi`);
+
+    for (const tag of ['textarea', 'select']) {
+      if (!new RegExp(`<${tag}[\\s>]`).test(html)) continue;
+      assert.ok(selettore.includes(tag),
+        `${markup} usa <${tag}> ma ${foglio} non lo veste: nascerà con lo stile del browser`);
+    }
+  }
+}
+
+// --- un passo verticale solo dentro la card -------------------------------
+// I margini decisi uno per uno facevano 2px fra titolo e dettaglio, 4px prima
+// della nota e 5px prima dell'orario: ogni riga risultava spaziata a modo suo
+// a seconda dei pezzi che aveva. Uno che aggiunge un blocco nuovo con il suo
+// `margin-top` rimette esattamente quel difetto.
+{
+  const css = leggi('src/popup.css');
+  const regola = (selettore) => {
+    const inizio = css.indexOf(selettore + ' {');
+    return inizio < 0 ? '' : css.slice(inizio, css.indexOf('}', inizio));
+  };
+
+  for (const selettore of ['tr', '.col-what']) {
+    assert.match(regola(selettore), /gap: var\(--passo-card\)/,
+      `${selettore} deve usare il passo condiviso, non una misura sua`);
+  }
+  for (const selettore of ['.detail', '.altri', '.comment', '.time']) {
+    assert.doesNotMatch(regola(selettore), /margin-top|padding-top/,
+      `${selettore} si spazia da sé: la card torna a due passi diversi`);
+  }
+}
+
+// --- la nota si manda da un punto solo, e passa dall'impostazione ---------
+// È l'unica strada per cui una nota arriva su Jira: se un domani ne spuntasse
+// una seconda, l'impostazione varrebbe per metà — e chi l'ha spenta si
+// ritroverebbe i worklog scritti lo stesso.
+{
+  const bg = leggi('src/background.js');
+  assert.equal((bg.match(/addWorklog\(/g) || []).length, 1,
+    'le ore si scrivono da un posto solo, o l impostazione varrebbe per metà');
+  assert.match(bg, /config\.work\.sendComments === false \? undefined/,
+    'e chi l ha spenta non deve vedersela scritta lo stesso');
+}
+
 // --- i comandi del service worker ----------------------------------------
 {
   const bg = leggi('src/background.js');
@@ -27,7 +89,9 @@ const TUTTO = [...SORGENTI, ...MARKUP, 'manifest.json'].map(leggi).join('\n');
     .map((m) => m[1]);
   const usati = [...new Set(
     ['src/popup.js', 'src/options.js'].map(leggi).join('\n')
-      .matchAll(/send\('(\w+)'/g)
+      // Il popup passa da un guscio (`comando`) che dimentica i tentativi di
+      // rimedio quando un comando riesce; le opzioni chiamano `send` diretto.
+      .matchAll(/\b(?:send|comando)\('(\w+)'/g)
   )].map((m) => m[1]);
 
   assert.ok(dichiarati.length > 5, 'la scansione ha trovato la tabella dei comandi');

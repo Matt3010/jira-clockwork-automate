@@ -83,7 +83,9 @@ assert.match(leggi('src/background.js'), /chrome\.sidePanel\?\.\w+|chrome\.sideP
 
   // Ogni cella deve avere un posto, o finisce dove capita.
   for (const colonna of ['check', 'issue', 'what', 'hours', 'time', 'actions']) {
-    assert.match(css, new RegExp(`\\.col-${colonna} \\{ grid-area: ${colonna}`),
+    // La regola può stare su più righe: quello che conta è che la cella
+    // dichiari il suo posto, non come è scritta.
+    assert.match(css, new RegExp(`\\.col-${colonna} \\{[^}]*grid-area: ${colonna}`),
       `la cella ${colonna} non ha un posto nella disposizione`);
   }
 
@@ -147,6 +149,29 @@ assert.match(leggi('src/background.js'), /chrome\.sidePanel\?\.\w+|chrome\.sideP
   assert.match(coricata, /width: 100%/, 'coricata la scala deve arrivare al bordo del contenitore');
   assert.doesNotMatch(coricata, /width: var\(--lungo-asse\)/,
     'con la larghezza calcolata l ultima ora cade qualche pixel prima del bordo');
+
+  // Coricata in fondo alla colonna, l'anteprima scorreva via: si vedeva solo
+  // arrivando in fondo alla lista, cioè quasi mai. Deve restare attaccata al
+  // bordo come in largo, con un fondo suo — altrimenti le righe che le passano
+  // sotto si leggono attraverso.
+  const asse = css.match(/@media \(max-width: \d+px\) \{.*?\.timeline \{[^}]*\}/s)?.[0] || '';
+  assert.match(asse, /position: sticky/, 'coricata, l anteprima deve restare visibile');
+  assert.match(asse, /bottom: 0/, 'attaccata al bordo dove sta');
+  assert.match(asse, /background: var\(--bg\)/, 'e con un fondo suo, o si legge attraverso');
+
+  // La legenda spiega i colori dell'asse: separarla dall'asse la rende una
+  // riga di simboli senza referente. In stretto l'asse è in fondo, e la
+  // legenda deve seguirlo — con `order`, che non tocca l'ordine del markup.
+  const stretto = css.match(/@media \(max-width: \d+px\) \{.*?\n\}/s)?.[0] || '';
+  assert.match(stretto, /\.legend \{[^}]*order:/, 'in stretto la legenda deve scendere in fondo');
+  // E ferma insieme all'asse: scivolando via mentre lui resta incollato,
+  // spiegherebbe dei colori che non sta più toccando.
+  assert.match(stretto, /\.legend \{[^}]*position: sticky/, 'la legenda deve restare col suo asse');
+  assert.match(stretto, /\.legend \{[^}]*bottom: var\(--asse-alto/,
+    'appoggiata sull altezza misurata dell asse, non su una misura scritta a mano');
+  assert.match(popup, /--asse-alto/, 'e quell altezza qualcuno deve misurarla');
+  assert.match(stretto, /\.grid-area \{[^}]*flex-direction: column/,
+    'senza un contenitore in colonna, `order` sulla legenda non fa niente');
 
   assert.match(popup, /setProperty\('--inizio'/, 'la posizione del blocco passa per una variabile');
   assert.match(popup, /setProperty\('--durata'/, 'e anche la durata');

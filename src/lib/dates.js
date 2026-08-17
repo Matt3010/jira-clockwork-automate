@@ -98,8 +98,8 @@ export function formatMinutes(minutes) {
 }
 
 /** JQL vuole "yyyy-MM-dd HH:mm" fra virgolette. */
-export function jqlDayRange(isoDate) {
+export function jqlDayRange(isoDate, giorni = 1) {
   const next = localDateTime(isoDate);
-  next.setDate(next.getDate() + 1);
+  next.setDate(next.getDate() + Math.max(1, giorni));
   return { from: `${isoDate} 00:00`, to: `${toIsoDate(next)} 00:00` };
 }

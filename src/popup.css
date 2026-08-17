@@ -1,4 +1,7 @@
 :root {
+  /* Il passo verticale dentro una card: uno solo, o le righe finiscono
+     spaziate ognuna a modo suo a seconda di quali pezzi hanno. */
+  --passo-card: 6px;
   --bg: #ffffff;
   --surface: #f4f5f7;
   --border: #dfe1e6;
@@ -280,6 +283,18 @@ body.busy #analyze .icon { animation: girando 1s linear infinite; }
 .block.task.s2 { background: var(--series-2); }
 .block.task.s3 { background: var(--series-3); }
 
+/* Le stesse tre tinte, seconda e terza mano. Sull'asse il riempimento e' piu'
+   grosso che sulla pastiglia: qui c'e' spazio, e si deve leggere a colpo. */
+.block.task.v2 {
+  background: repeating-linear-gradient(
+    45deg, currentColor, currentColor 4px, var(--bg) 4px, var(--bg) 8px
+  );
+}
+.block.task.v3 { background: var(--bg); box-shadow: inset 0 0 0 3px currentColor; }
+.block.task.v2.s1, .block.task.v3.s1 { color: var(--series-1); }
+.block.task.v2.s2, .block.task.v3.s2 { color: var(--series-2); }
+.block.task.v2.s3, .block.task.v3.s3 { color: var(--series-3); }
+
 /* La pastiglia accanto alla riga è la mappa colore→ticket, ed è la codifica
    secondaria che il controllo daltonismo richiede su questa terna. */
 .chip {
@@ -294,6 +309,22 @@ body.busy #analyze .icon { animation: girando 1s linear infinite; }
 .chip.s1 { background: var(--series-1); }
 .chip.s2 { background: var(--series-2); }
 .chip.s3 { background: var(--series-3); }
+
+/* Seconda e terza mano delle stesse tinte: il riempimento le distingue dove il
+   colore non puo' — tre tinte sono quante ne regge il confronto sotto
+   daltonismo, e una quarta sarebbe un doppione travestito. Rigato e vuoto si
+   riconoscono anche in bianco e nero. */
+.chip.v2 {
+  background: repeating-linear-gradient(
+    45deg, currentColor, currentColor 2px, transparent 2px, transparent 4px
+  );
+}
+.chip.v3 { background: none; box-shadow: inset 0 0 0 2px currentColor; }
+/* Il gradiente e il contorno disegnano con `currentColor`: la tinta della
+   serie va quindi passata da li', non dal fondo. */
+.chip.v2.s1, .chip.v3.s1 { color: var(--series-1); }
+.chip.v2.s2, .chip.v3.s2 { color: var(--series-2); }
+.chip.v2.s3, .chip.v3.s3 { color: var(--series-3); }
 .block.meeting { background: var(--warn); }
 .block.logged {
   background:
@@ -311,7 +342,8 @@ body.busy #analyze .icon { animation: girando 1s linear infinite; }
 }
 
 /* Legenda in orizzontale sopra la tabella: nella colonna verticale finiva
-   fuori dall'area visibile del popup. */
+   fuori dall'area visibile del popup. In stretto scende in fondo, attaccata
+   all'asse coricato — vedi la soglia in fondo al foglio. */
 .legend {
   display: flex;
   flex-wrap: wrap;
@@ -363,7 +395,12 @@ tr {
     "what  what  what  what"
     "time  time  time  time";
   align-items: center;
-  gap: 6px;
+  /* Un solo passo verticale per tutta la card, righe della griglia e blocchi
+     dentro la cella «what» compresi: i margini decisi uno per uno facevano
+     2px fra titolo e dettaglio, 4px prima della nota e 5px prima dell'orario,
+     e ogni riga risultava spaziata in modo suo a seconda di quali pezzi
+     avesse. */
+  gap: var(--passo-card);
   padding: 8px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -373,7 +410,13 @@ td { padding: 0; border: none; }
 
 .col-check { grid-area: check; }
 .col-issue { grid-area: issue; }
-.col-what { grid-area: what; }
+.col-what {
+  grid-area: what;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--passo-card);
+}
 .col-hours { grid-area: hours; }
 .col-time { grid-area: time; }
 .col-actions { grid-area: actions; display: flex; gap: 2px; }
@@ -396,10 +439,9 @@ tr.section-start { margin-top: 8px; }
    chiave di issue è corta, e in largo l'input arrivava a mezza finestra. */
 .issue-input { width: 100%; max-width: 260px; }
 .summary { font-weight: 500; }
-.detail { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.detail { color: var(--muted); font-size: 12px; }
 .comment {
   width: 100%;
-  margin-top: 4px;
   font-size: 12px;
   line-height: 1.4;
   /* In verticale la decide il contenuto (`rows` cambia con le righe scritte);
@@ -424,7 +466,7 @@ tr.section-start { margin-top: 8px; }
 
 .hours { width: 100%; text-align: right; }
 .hours.locked { border-color: var(--accent); }
-.time { color: var(--muted); padding-top: 5px; display: block; }
+.time { color: var(--muted); display: block; }
 
 .col-actions { width: 58px; }
 
@@ -532,6 +574,44 @@ tr.disabled .remove.wipe { opacity: 1; }
    contorno, ma deve restare leggibile — serve proprio a non attribuirsi il
    lavoro di un altro. */
 .log .cosa .da-altri { color: var(--muted); font-style: italic; }
+
+/* Chi altro ha messo mano alla task, sotto la riga a cui appartiene. Smorta
+   come il resto del contorno: non e' lavoro da registrare, e' un fatto da
+   sapere — ma sta accanto alla task, non in un avviso in cima staccato da
+   tutto. */
+.altri {
+  font-size: 11px;
+  color: var(--muted);
+  font-style: italic;
+}
+/* Il nome resta testo, quello che ha fatto e' cliccabile: il link porta dove
+   si va a controllare — la issue per le modifiche, il commit per i commit. */
+.altri .chi { font-style: normal; font-weight: 500; color: var(--text); }
+.altri a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.altri a:hover { color: var(--accent); }
+
+/* Pull request. Tre gruppi, e il primo è la domanda con cui apri la vista:
+   cosa aspetta te. Sola lettura — unire e rifiutare stanno su Bitbucket, e da
+   qui ci si arriva col link. */
+.pr-group { margin-bottom: 12px; }
+.pr-group-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.pr-row {
+  padding: 8px;
+  margin-bottom: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.pr-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pr-line .chiave { font-weight: 600; color: var(--text); text-decoration: none; flex: none; }
+.pr-title { color: var(--text); }
+.pr-meta { margin-top: 4px; font-size: 11px; color: var(--muted); }
 
 /* Ticket aperti. Due livelli: lo stato dice a che punto sei, la data dice da
    quanto quel ticket è lì. Il secondo livello è rientrato, così si vede a
@@ -664,7 +744,27 @@ tr.disabled .remove.wipe { opacity: 1; }
 @media (max-width: 720px) {
   main { flex-direction: column; padding: 0 8px; }
   .bar { padding: 8px; gap: 6px; flex-wrap: wrap; }
-  .grid-area { width: 100%; }
+  .grid-area {
+    width: 100%;
+    /* Colonna, per poter spostare la legenda con `order`: in stretto l'asse
+       sta in fondo, e una legenda in cima spiegherebbe una cosa che si vede
+       due schermate piu' sotto. */
+    display: flex;
+    flex-direction: column;
+  }
+  /* Ultima dentro la sua area, cioe' appena sopra l'asse coricato — e ferma
+     insieme a lui: scorrendo, una legenda che scivola via mentre l'asse resta
+     incollato spiega dei colori che non sta piu' toccando. L'altezza dell'asse
+     la misura il disegno e la scrive qui: fissarla a mano si scollerebbe al
+     primo cambio di righello. */
+  .legend {
+    order: 9;
+    padding: 8px 0 4px;
+    position: sticky;
+    bottom: var(--asse-alto, 52px);
+    z-index: 1;
+    background: var(--bg);
+  }
 
   /* L'anteprima passa in fondo e si corica. `order` la sposta senza toccare
      l'ordine del markup, che in largo è quello giusto. */
@@ -672,7 +772,16 @@ tr.disabled .remove.wipe { opacity: 1; }
     --asse: orizzontale;
     order: 2;
     width: 100%;
-    position: static;
+    /* Resta attaccata al fondo mentre le righe scorrono sopra: coricata in
+       fondo alla colonna scorreva via, e l'anteprima della giornata si vedeva
+       solo arrivando in fondo — cioe' quasi mai. In largo e' la stessa cosa
+       con l'altro bordo: incollata in alto. */
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    /* Un fondo suo: senza, le righe che le passano sotto si leggono
+       attraverso. */
+    background: var(--bg);
     padding: 4px 0 8px;
   }
   /* Il righello sotto la traccia: le ore si leggono come su un asse x. In

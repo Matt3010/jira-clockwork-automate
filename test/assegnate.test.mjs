@@ -30,7 +30,7 @@ const piano = (jiraActivity, gitByIssue = new Map()) => buildPlan({
       key: 'ABC-1',
       summary: 'Assegnata a me',
       events: [{
-        kind: 'foreign', at: quando(17), by: 'Dario Decarlo',
+        kind: 'foreign', at: quando(17), by: 'Dario Decarlo', assignsYou: true,
         items: [{ field: 'assignee', from: '', to: 'Matteo Scanferla' }]
       }]
     }]
@@ -46,9 +46,15 @@ const piano = (jiraActivity, gitByIssue = new Map()) => buildPlan({
   assert.equal(riga.activity.foreign, 1);
   assert.equal(riga.activity.changes, 0,
     'contarla fra le modifiche direbbe "1 modifica" di una giornata in cui non hai toccato niente');
-  // Perché la riga è lì, e per mano di chi.
-  assert.equal(riga.assignedToYou, true);
-  assert.equal(riga.foreignBy, 'Dario Decarlo');
+  // Perché la riga è lì, e per mano di chi: lo dice `others`, persona per
+  // persona. Prima c'erano due campi in più che dicevano solo del primo, e
+  // con due colleghi il secondo spariva.
+  assert.equal(riga.others.length, 1, 'una persona sola ci ha messo mano');
+  assert.deepEqual(
+    [riga.others[0].name, riga.others[0].assigned, riga.others[0].changes],
+    ['Dario Decarlo', true, 1]
+  );
+  assert.equal(riga.others[0].assignedAt, Date.parse(quando(17)), 'con l ora dell assegnazione');
 }
 
 // --- una riga spenta non toglie ore alle altre -----------------------------
@@ -62,7 +68,7 @@ const piano = (jiraActivity, gitByIssue = new Map()) => buildPlan({
     }],
     ['ABC-2', {
       key: 'ABC-2', summary: 'Assegnata e basta',
-      events: [{ kind: 'foreign', at: quando(17), by: 'Dario Decarlo', items: [{ field: 'assignee', from: '', to: 'Matteo Scanferla' }] }]
+      events: [{ kind: 'foreign', at: quando(17), by: 'Dario Decarlo', assignsYou: true, items: [{ field: 'assignee', from: '', to: 'Matteo Scanferla' }] }]
     }]
   ]);
 
@@ -84,7 +90,7 @@ const piano = (jiraActivity, gitByIssue = new Map()) => buildPlan({
     ['ABC-1', {
       key: 'ABC-1', summary: 'Assegnata e poi lavorata',
       events: [
-        { kind: 'foreign', at: quando(9), by: 'Dario Decarlo', items: [{ field: 'assignee', from: '', to: 'Matteo Scanferla' }] },
+        { kind: 'foreign', at: quando(9), by: 'Dario Decarlo', assignsYou: true, items: [{ field: 'assignee', from: '', to: 'Matteo Scanferla' }] },
         { kind: 'changelog', at: quando(14), by: '', items: [{ field: 'status', from: 'To Do', to: 'In Progress' }] }
       ]
     }]
@@ -95,7 +101,8 @@ const piano = (jiraActivity, gitByIssue = new Map()) => buildPlan({
   assert.deepEqual(riga.sources, ['jira']);
   assert.equal(riga.activity.changes, 1, 'una modifica tua, non due');
   assert.equal(riga.activity.foreign, 1, 'quella del collega resta contata a parte');
-  assert.equal(riga.assignedToYou, false, 'e la riga non si presenta come "assegnata e basta"');
+  assert.deepEqual(riga.others.map((chi) => chi.assigned), [true],
+    'l assegnazione resta scritta accanto a chi l ha fatta');
 }
 
 // --- lo stesso vale con i commit -------------------------------------------
@@ -103,7 +110,7 @@ const piano = (jiraActivity, gitByIssue = new Map()) => buildPlan({
   const attivita = new Map([
     ['ABC-1', {
       key: 'ABC-1', summary: 'Assegnata, e ci sono commit',
-      events: [{ kind: 'foreign', at: quando(9), by: 'Dario Decarlo', items: [{ field: 'assignee', from: '', to: 'Matteo' }] }]
+      events: [{ kind: 'foreign', at: quando(9), by: 'Dario Decarlo', assignsYou: true, items: [{ field: 'assignee', from: '', to: 'Matteo' }] }]
     }]
   ]);
   const commit = new Map([['ABC-1', [{ subject: 'fix: qualcosa', at: quando(15) }]]]);
@@ -132,6 +139,80 @@ const piano = (jiraActivity, gitByIssue = new Map()) => buildPlan({
   assert.doesNotMatch(tua, /\(/, 'sulle tue non si aggiunge niente: sono già tue');
 }
 
+// --- chi altro ci ha messo mano, riga per riga -----------------------------
+// La domanda è «in quali delle mie task ha lavorato qualcun altro», e vale
+// anche — soprattutto — dove hai lavorato pure tu: lì prima non si vedeva
+// niente, e i commit dei colleghi finivano contati in un avviso in cima,
+// staccati dalla task a cui appartengono.
+{
+  const attivita = new Map([
+    ['ABC-1', {
+      key: 'ABC-1', summary: 'Nostra',
+      events: [
+        { kind: 'changelog', at: quando(11), by: '', items: [{ field: 'status', from: 'To Do', to: 'In Progress' }] },
+        { kind: 'foreign', at: quando(12), by: 'Dario Decarlo', items: [{ field: 'status', from: 'In Progress', to: 'In Review' }] },
+        { kind: 'foreignComment', at: quando(13), by: 'Anna Bianchi', items: 'commento' }
+      ]
+    }]
+  ]);
+  const miei = new Map([['ABC-1', [{ subject: 'fix: mio', at: quando(15) }]]]);
+  const altrui = new Map([['ABC-1', [
+    { author: 'Dario Decarlo', subject: 'feat: suo', at: quando(16), url: 'https://git/uno' },
+    { author: 'Dario Decarlo', subject: 'fix: suo', at: quando(17), url: 'https://git/due' }
+  ]]]);
+
+  const riga = buildPlan({
+    isoDate: '2026-08-10',
+    config,
+    jiraActivity: attivita,
+    gitByIssue: miei,
+    foreignGitByIssue: altrui,
+    recentIssues: [],
+    loggedEntries: [],
+    alreadyLoggedMinutes: 0
+  }).rows.find((r) => r.issueKey === 'ABC-1');
+
+  assert.equal(riga.enabled, true, 'è lavoro tuo: resta una riga normale');
+  assert.deepEqual(riga.others.map((chi) => chi.name), ['Anna Bianchi', 'Dario Decarlo'],
+    'in ordine di nome');
+  assert.deepEqual(riga.others.map((chi) => [chi.changes, chi.commits]), [[1, 0], [1, 2]],
+    'ognuno con quello che ha fatto');
+  // Gli indirizzi arrivano fin qui, o da «2 commit» non si va da nessuna
+  // parte: il pannello li dà, buttarli via costava un link.
+  assert.deepEqual(riga.others[1].commitUrls, ['https://git/uno', 'https://git/due']);
+  // E quando: senza un orario «2 commit» non si colloca nella giornata.
+  assert.deepEqual(
+    [riga.others[1].firstAt, riga.others[1].lastAt],
+    [Date.parse(quando(12)), Date.parse(quando(17))],
+    'dal primo all ultimo momento in cui ci ha messo mano'
+  );
+  assert.equal(riga.others[0].firstAt, Date.parse(quando(13)),
+    'chi ha fatto una cosa sola ha lo stesso istante da tutte e due le parti');
+  assert.equal(riga.others[0].lastAt, riga.others[0].firstAt);
+
+  // I commit dei colleghi non entrano nei tuoi conti: né nel numero di commit
+  // della riga, né nella nota precompilata, che è la lista di quello che hai
+  // fatto tu.
+  assert.equal(riga.activity.commits, 1, 'un commit tuo, non tre');
+  assert.equal(riga.comment, 'fix: mio');
+}
+
+// --- una riga solo altrui non ripete due volte la stessa cosa --------------
+{
+  const attivita = new Map([
+    ['ABC-1', {
+      key: 'ABC-1', summary: 'Assegnata',
+      events: [{ kind: 'foreign', at: quando(17), by: 'Dario Decarlo', assignsYou: true, items: [{ field: 'assignee', from: '', to: 'Matteo' }] }]
+    }]
+  ]);
+  const riga = piano(attivita).rows.find((r) => r.issueKey === 'ABC-1');
+
+  assert.equal(riga.others.length, 1);
+  assert.equal(riga.others[0].assigned, true);
+  assert.equal(riga.others[0].assignedAt, Date.parse(quando(17)),
+    'l ora dell assegnazione va tenuta a parte: e il fatto che colloca la riga');
+}
+
 // --- e non si riaccende quando il worklog sparisce -------------------------
 // Il caso storto: sulla issue assegnata da un altro c'erano già delle ore, poi
 // le cancelli da Jira. Il controllo duplicati l'aveva marcata `autoDisabled`,
@@ -143,7 +224,7 @@ const piano = (jiraActivity, gitByIssue = new Map()) => buildPlan({
   const attivita = new Map([
     ['ABC-1', {
       key: 'ABC-1', summary: 'Assegnata, e con ore sopra',
-      events: [{ kind: 'foreign', at: quando(17), by: 'Dario Decarlo', items: [{ field: 'assignee', from: '', to: 'Matteo' }] }]
+      events: [{ kind: 'foreign', at: quando(17), by: 'Dario Decarlo', assignsYou: true, items: [{ field: 'assignee', from: '', to: 'Matteo' }] }]
     }]
   ]);
 

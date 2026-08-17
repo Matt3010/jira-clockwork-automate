@@ -57,6 +57,19 @@ assert.equal(injected.length, 0, 'non prova nemmeno a iniettare nella scheda sba
 reset();
 await assert.rejects(jira().resolve(), (e) => e.code === 'NO_TAB' && e.message.includes('esempio.atlassian.net'));
 
+// 3-bis. e l errore si porta dietro dove stava andando: senza host chi lo
+// riceve ha un codice e una frase, ma non puo' proporre nessun rimedio —
+// aprire *cosa*? Il contesto veniva appeso da chi chiamava, un `.catch` alla
+// volta, e una strada che non ci passava lasciava l avviso senza pulsante.
+tabs = [{ id: 9, url: 'https://altro.atlassian.net/browse/ABC-1' }];
+await assert.rejects(jira().resolve(), (e) => {
+  assert.equal(e.detail?.host, 'esempio.atlassian.net', 'l errore deve dire quale sito');
+  assert.deepEqual(e.detail?.openHosts, ['altro.atlassian.net'],
+    'e quali altri sono aperti, per poter dire «forse intendevi questo»');
+  return true;
+});
+tabs = [];
+
 // 4. scheda giusta ma non loggata (redirect HTML) -> SESSION_INVALID
 reset();
 tabs = [{ id: 3, url: 'https://esempio.atlassian.net/' }];

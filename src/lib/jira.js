@@ -96,9 +96,9 @@ export class JiraClient {
    * supportato da Atlassian, ma evita di dover aprire anche Bitbucket.
    * Vuole l'id numerico, non la chiave.
    */
-  async getDevelopment(issueId, applicationType = 'bitbucket') {
+  async getDevelopment(issueId, applicationType = 'bitbucket', dataType = 'repository') {
     return this.request('/rest/dev-status/1.0/issue/detail', {
-      query: { issueId, applicationType, dataType: 'repository' }
+      query: { issueId, applicationType, dataType }
     });
   }
 
@@ -247,19 +247,57 @@ function issueIsMine(issue, accountId) {
  * suo nome, non il tuo, e veniva scartata: il ticket non compariva da nessuna
  * parte, nemmeno spento.
  */
-export async function collectJiraActivity(client, { isoDate, projects, accountId, scanComments }) {
-  const { from, to } = jqlDayRange(isoDate);
-  const jql = `${projectClause(projects)}updated >= "${from}" AND updated < "${to}" ORDER BY updated DESC`;
+export async function collectJiraActivity(client, { isoDate, projects, accountId, displayName, scanComments }) {
+  // La finestra e' larga una settimana, non un giorno, ed e' il punto:
+  // `updated` in JQL e' l'*ultima* modifica della issue, non "e' stata
+  // modificata quel giorno". Con la finestra di un giorno esatto, una issue
+  // ripresa in mano il giorno dopo usciva dall'insieme e spariva dal giorno in
+  // cui ci avevi lavorato — compilare ieri stamattina, dopo averci messo mano,
+  // la faceva sparire da ieri. In JQL non esiste "ha avuto una modifica in
+  // quella finestra": quella cosa sta nel changelog, che non e' interrogabile.
+  // Quindi si allarga la rete e si taglia riga per riga, come gia' si faceva.
+  //
+  // Una settimana e non oltre: senza limite superiore, su un giorno di mesi fa
+  // "toccate da allora" sono migliaia, il tetto scatta sempre e quello che
+  // rientra e' rumore. Sette giorni coprono il caso vero — compilare ieri, o
+  // recuperare la settimana — e oltre quello il recupero e' perso comunque,
+  // perche' finisce sotto il tetto.
+  //
+  // In ordine crescente, non decrescente: col tetto il decrescente riempirebbe
+  // l'elenco con le issue piu' fresche della settimana, e taglierebbe proprio
+  // quelle ferme dal giorno che stai guardando.
+  const { from, to } = jqlDayRange(isoDate, 7);
+  const jql = `${projectClause(projects)}updated >= "${from}" AND updated < "${to}" `
+    + 'ORDER BY updated ASC';
+  const MAX = 100;
   const issues = await client.search(jql, {
     // `assignee` e `reporter` non si disegnano: dicono se la issue e' tua, e
     // quindi se le modifiche altrui vanno riportate o buttate.
     fields: ['summary', 'status', 'issuetype', 'assignee', 'reporter'],
     expand: 'changelog',
-    maxResults: 100
+    maxResults: MAX
   });
 
   const activity = new Map();
-  const record = (issue, kind, at, items = [], by = '') => {
+  // La rete larga ha un tetto, e un tetto raggiunto vuol dire che qualcosa e'
+  // rimasto fuori: va detto, non lasciato indovinare. Sta appeso alla mappa
+  // per non cambiare la forma del ritorno a tutti quelli che la leggono.
+  activity.truncated = issues.length >= MAX;
+  /**
+   * Il campo assegnatario e' passato *a te*, non solo cambiato.
+   *
+   * Nel changelog `to` e' l'accountId e `toString` il nome: il primo e' quello
+   * su cui si decide, il secondo e' il ripiego per le istanze che non lo
+   * mandano. Senza questo controllo, un collega che passa la issue a un terzo
+   * risultava come "te l'ha assegnata".
+   */
+  const assegnaATe = (items) => (items || []).some((item) => {
+    if (String(item.field).toLowerCase() !== 'assignee') return false;
+    if (item.to) return item.to === accountId;
+    return Boolean(displayName) && item.toString === displayName;
+  });
+
+  const record = (issue, kind, at, items = [], by = '', extra = {}) => {
     const key = issue.key;
     if (!activity.has(key)) {
       activity.set(key, {
@@ -275,7 +313,7 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
     // poter dire "passata a In corso" invece di "una modifica".
     // `by` e' vuoto quando la modifica e' tua: il nome serve solo a non far
     // passare per tuo il lavoro di un altro.
-    activity.get(key).events.push({ kind, at, items, by });
+    activity.get(key).events.push({ kind, at, items, by, ...extra });
   };
 
   for (const issue of issues) {
@@ -313,7 +351,10 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
       // issue non deve nemmeno entrare nell'elenco.
       if (!items.length) continue;
       if (tua) record(issue, 'changelog', history.created, items);
-      else record(issue, 'foreign', history.created, items, history.author?.displayName || '');
+      else {
+        record(issue, 'foreign', history.created, items, history.author?.displayName || '',
+          { assignsYou: assegnaATe(history.items) });
+      }
     }
   }
 
@@ -405,9 +446,13 @@ export function mergeCreatedIssues(activity, created) {
  * "Tuoi" comprende anche quelli che hai aperto tu e sono in mano a un altro:
  * il richiedente aspetta una risposta, ed e' lavoro suo tenerli d'occhio.
  */
-export async function collectOpenIssues(client, { projects, limit = 60 }) {
-  const jql = `${projectClause(projects)}(assignee = currentUser() OR reporter = currentUser()) ` +
-    'AND statusCategory != Done ORDER BY updated DESC';
+export async function collectOpenIssues(client, { projects, limit = 60, mine = true }) {
+  // `mine: false` serve alla vista delle pull request, che guarda il lavoro
+  // della squadra: una PR che aspetta la tua revisione sta quasi sempre su un
+  // ticket di qualcun altro, e restringendo ai tuoi non si vedrebbe mai.
+  const tuoi = mine ? '(assignee = currentUser() OR reporter = currentUser()) AND ' : '';
+  const jql = `${projectClause(projects)}${tuoi}`
+    + 'statusCategory != Done ORDER BY updated DESC';
   const issues = await client.search(jql, {
     fields: ['summary', 'status', 'created', 'updated', 'issuetype'],
     maxResults: limit
@@ -432,6 +477,35 @@ const jqlString = (testo) => String(testo).replace(/["\\]/g, '\\$&');
 /** Sembra una chiave di issue: due lettere o piu', trattino, numero. */
 const PARE_UNA_CHIAVE = /^[A-Za-z][A-Za-z0-9_]+-\d+$/;
 
+/** Solo cifre: il numero di un ticket, senza il progetto davanti. */
+const SOLO_NUMERO = /^\d+$/;
+
+/** Progetto e numero senza trattino, o col trattino sbagliato: "EGLVPN 2004". */
+const CHIAVE_SCIOLTA = /^([A-Za-z][A-Za-z0-9_]+)[\s_-]+(\d+)$/;
+
+/**
+ * Le chiavi che l'utente potrebbe avere in mente.
+ *
+ * Digitare solo "2004" e' il modo piu' rapido di cercare un ticket, e finora
+ * finiva nella ricerca a testo — che il numero dentro la chiave non lo guarda
+ * nemmeno, e restituiva i ticket che avevano "2004" nel titolo. Con i progetti
+ * configurati le chiavi possibili sono poche e si provano tutte.
+ */
+function chiaviCandidate(termine, projects) {
+  if (PARE_UNA_CHIAVE.test(termine)) return [termine.toUpperCase()];
+
+  const sciolta = termine.match(CHIAVE_SCIOLTA);
+  if (sciolta) return [`${sciolta[1].toUpperCase()}-${sciolta[2]}`];
+
+  if (SOLO_NUMERO.test(termine)) {
+    return (projects || [])
+      .map((p) => String(p).trim().toUpperCase())
+      .filter(Boolean)
+      .map((p) => `${p}-${termine}`);
+  }
+  return [];
+}
+
 /**
  * Cerca un ticket, anche di altri.
  *
@@ -440,28 +514,38 @@ const PARE_UNA_CHIAVE = /^[A-Za-z][A-Za-z0-9_]+-\d+$/;
  * o perche' ci devi registrare sopra delle ore. Per questo torna anche
  * l'assegnatario: senza, un elenco di ticket non tuoi non dice di chi sono.
  */
+const CAMPI_RICERCA = ['summary', 'status', 'created', 'updated', 'issuetype', 'assignee'];
+
 export async function searchIssues(client, { query, projects, limit = 25 }) {
   const termine = String(query || '').trim();
   if (!termine) return [];
 
-  // Una chiave si cerca per quello che e': `text ~ "ABC-12"` non la trova, e
-  // incollare una chiave e' il modo piu' comune di cercare un ticket.
-  const filtro = PARE_UNA_CHIAVE.test(termine)
-    ? `key = "${jqlString(termine.toUpperCase())}"`
-    : `text ~ "${jqlString(termine)}"`;
+  // Le chiavi si chiedono una per una, non con `key in (...)`: una chiave che
+  // non esiste fa fallire tutta la query con un 400, e provando "2004" su tre
+  // progetti quasi sempre due non esistono. Chieste separatamente, quelle che
+  // non ci sono rispondono 404 e basta.
+  const candidate = chiaviCandidate(termine, projects);
+  if (candidate.length) {
+    const trovate = (await Promise.all(
+      candidate.map((key) => client.getIssue(key, CAMPI_RICERCA).catch(() => null))
+    )).filter(Boolean);
+    if (trovate.length) return trovate.map(mappaIssue);
+    // Nessuna esiste: puo' essere un titolo che sembra una chiave. Si continua
+    // con la ricerca a testo invece di rispondere "niente".
+  }
 
-  // Il filtro progetti non si applica alla ricerca per chiave: se incolli una
-  // chiave sai gia' quale ticket vuoi, e non trovarlo perche' sta fuori dai
-  // progetti configurati sarebbe solo fastidioso.
-  const ambito = PARE_UNA_CHIAVE.test(termine) ? '' : projectClause(projects);
-  const jql = `${ambito}${filtro} ORDER BY updated DESC`;
+  const jql = `${projectClause(projects)}text ~ "${jqlString(termine)}" ORDER BY updated DESC`;
 
   const issues = await client.search(jql, {
-    fields: ['summary', 'status', 'created', 'updated', 'issuetype', 'assignee'],
+    fields: CAMPI_RICERCA,
     maxResults: limit
   }).catch(() => []);
 
-  return issues.map((issue) => ({
+  return issues.map(mappaIssue);
+}
+
+function mappaIssue(issue) {
+  return {
     key: issue.key,
     summary: issue.fields?.summary || '',
     status: issue.fields?.status?.name || '',
@@ -470,7 +554,7 @@ export async function searchIssues(client, { query, projects, limit = 25 }) {
     assignee: issue.fields?.assignee?.displayName || '',
     created: issue.fields?.created || null,
     updated: issue.fields?.updated || null
-  }));
+  };
 }
 
 // ------------------------------------------------ commit dal pannello Sviluppo
@@ -497,16 +581,50 @@ function normalize(value) {
     .trim();
 }
 
+/**
+ * Come si chiama l'autore di un commit, per come lo scrive il pannello.
+ *
+ * Il nome puo' arrivare come firma git intera — `Nome Cognome <mail@dominio>`
+ * — invece che nel solo campo email. Confrontata cosi' com'e' non combacia con
+ * niente, e il commit finisce fra quelli "di un altro autore": tuo, ma non
+ * contato, e l'avviso ti manda a dichiarare un nome che avevi gia' dichiarato.
+ */
+function authorIdentities(author) {
+  const grezzo = String(author?.name || '');
+  const dentro = grezzo.match(/<([^>]+)>/)?.[1] || '';
+  return [
+    normalize(grezzo.replace(/<[^>]*>/, '')),
+    normalize(dentro),
+    normalize(author?.emailAddress)
+  ].filter(Boolean);
+}
+
 /** L'autore di un commit sei tu se il nome o l'email combaciano con una delle identita'. */
 function isMine(author, identities) {
-  const name = normalize(author?.name);
-  const email = normalize(author?.emailAddress);
-  const local = email.split('@')[0];
+  const sue = authorIdentities(author);
+  const locali = sue.map((valore) => valore.split('@')[0]).filter(Boolean);
   return identities.some((raw) => {
     const id = normalize(raw);
     if (!id) return false;
-    return id === name || id === email || (local && id.split('@')[0] === local);
+    return sue.includes(id) || locali.includes(id.split('@')[0]);
   });
+}
+
+/** Come chiamare in un avviso l'autore che non hai riconosciuto. */
+function authorLabel(author) {
+  return String(author?.name || author?.emailAddress || '').replace(/\s*<[^>]*>/, '').trim();
+}
+
+/**
+ * Il commit e' un merge.
+ *
+ * Il pannello lo dichiara con `merge`, ma non tutte le istanze lo mandano:
+ * il ripiego e' il soggetto, che git scrive sempre allo stesso modo.
+ */
+function isMerge(commit) {
+  if (typeof commit?.merge === 'boolean') return commit.merge;
+  return /^merge (branch|pull request|remote-tracking branch|commit)/i
+    .test(String(commit?.message || '').trim());
 }
 
 function extractCommits(payload) {
@@ -529,10 +647,18 @@ function extractCommits(payload) {
  * ma anche quelle assegnate a te di recente — cosi' un commit su un ticket che
  * oggi non hai aperto in Jira viene comunque trovato.
  *
- * @returns {{byIssue: Map, checked: number, skippedOther: number, appType: string|null}}
+ * @returns {{byIssue: Map, othersByIssue: Map, checked: number, skippedOther: number, skippedAuthors: string[], appType: string|null}}
  */
-export async function collectDevPanelCommits(client, { candidates, isoDate, identities, concurrency = 6 }) {
+export async function collectDevPanelCommits(client, {
+  candidates, isoDate, identities, countMerges = true, concurrency = 6
+}) {
   const byIssue = new Map();
+  // Chi sono, non solo quanti: un conto non ti fa distinguere il commit di un
+  // collega — dove non c'e' niente da fare — dal tuo firmato con un altro nome.
+  const skippedAuthors = new Set();
+  // E su quale issue: un commit di un collega su una task tua e' una cosa che
+  // vuoi vedere accanto a quella task, non contata in un avviso in cima.
+  const othersByIssue = new Map();
   let skippedOther = 0;
   let appType = null;
 
@@ -549,8 +675,24 @@ export async function collectDevPanelCommits(client, { candidates, isoDate, iden
         found += 1;
         const at = Date.parse(commit.authorTimestamp);
         if (!Number.isFinite(at) || !isSameLocalDay(at, isoDate)) continue;
+        // I merge si contano solo se lo hai chiesto: "Merge branch X into Y"
+        // non e' lavoro da registrare, ed e' la riga che si prende la nota.
+        // `found` resta contato: serve a capire se il pannello risponde, e
+        // saltarlo farebbe ripiegare sul vecchio applicationType per niente.
+        if (!countMerges && isMerge(commit)) continue;
         if (!isMine(commit.author, identities)) {
           skippedOther += 1;
+          const chi = authorLabel(commit.author);
+          if (chi) skippedAuthors.add(chi);
+          if (!othersByIssue.has(candidate.key)) othersByIssue.set(candidate.key, []);
+          othersByIssue.get(candidate.key).push({
+            repo: repository,
+            author: chi,
+            subject: String(commit.message || '').split('\n')[0].trim(),
+            at,
+            hash: commit.displayId || commit.id || '',
+            url: commit.url || ''
+          });
           continue;
         }
         if (!byIssue.has(candidate.key)) byIssue.set(candidate.key, []);
@@ -558,7 +700,8 @@ export async function collectDevPanelCommits(client, { candidates, isoDate, iden
           repo: repository,
           subject: String(commit.message || '').split('\n')[0].trim(),
           at,
-          hash: commit.displayId || commit.id || ''
+          hash: commit.displayId || commit.id || '',
+          url: commit.url || ''
         });
       }
     });
@@ -571,7 +714,86 @@ export async function collectDevPanelCommits(client, { candidates, isoDate, iden
   if (await pass('bitbucket') > 0) appType = 'bitbucket';
   else if (await pass('stash') > 0) appType = 'stash';
 
-  return { byIssue, checked: candidates.length, skippedOther, appType };
+  return {
+    byIssue, othersByIssue, checked: candidates.length, skippedOther, appType,
+    skippedAuthors: [...skippedAuthors]
+  };
+}
+
+/**
+ * Le pull request collegate alle issue indicate.
+ *
+ * Stesso pannello dei commit, altro `dataType`. Ed e' l'unica strada che non
+ * chiede una scheda su Bitbucket: quei dati Jira se li tiene per disegnare il
+ * pannello che vedi in fondo a ogni ticket. In cambio si legge e basta —
+ * unire, rifiutare e approvare sono scritture sull'API di Bitbucket, che Jira
+ * non fa da tramite: da qui si puo' solo aprire la PR dove quei tasti stanno.
+ *
+ * La stessa PR puo' essere collegata a piu' issue: si tiene una volta sola,
+ * con la chiave da cui e' arrivata per prima.
+ */
+export async function collectPullRequests(client, { candidates, identities, concurrency = 6 }) {
+  const perId = new Map();
+  let appType = null;
+
+  async function pass(type) {
+    let trovate = 0;
+    await mapLimit(candidates, concurrency, async (candidate) => {
+      let payload;
+      try {
+        payload = await client.getDevelopment(candidate.id, type, 'pullrequest');
+      } catch {
+        return; // pannello non disponibile su questa issue: si tira dritto
+      }
+      for (const detail of payload?.detail || []) {
+        for (const pr of detail.pullRequests || []) {
+          trovate += 1;
+          const id = String(pr.id || pr.url || '');
+          if (!id || perId.has(id)) continue;
+          perId.set(id, leggiPr(pr, candidate.key, identities));
+        }
+      }
+    });
+    return trovate;
+  }
+
+  if (await pass('bitbucket') > 0) appType = 'bitbucket';
+  else if (await pass('stash') > 0) appType = 'stash';
+
+  return { items: [...perId.values()], checked: candidates.length, appType };
+}
+
+/** Una PR come la scrive il pannello, ridotta a quello che serve a schermo. */
+function leggiPr(pr, issueKey, identities) {
+  const revisori = (pr.reviewers || []).map((r) => ({
+    name: r.name || r.displayName || '',
+    approved: Boolean(r.approved)
+  }));
+  const autore = pr.author?.name || pr.author?.displayName || '';
+  const mioPr = isMine({ name: autore, emailAddress: pr.author?.emailAddress }, identities);
+  const revisoreTu = revisori.find((r) => isMine({ name: r.name }, identities));
+
+  return {
+    id: String(pr.id || pr.url || ''),
+    issueKey,
+    // Il nome che il pannello da' alla PR e' del tipo "#42: titolo": il titolo
+    // e' l'unica parte che dice qualcosa a chi guarda.
+    title: String(pr.name || '').replace(/^#\d+:?\s*/, '').trim(),
+    number: String(pr.id || '').replace(/^#/, ''),
+    url: pr.url || '',
+    status: String(pr.status || '').toUpperCase(),
+    author: autore,
+    mine: mioPr,
+    // "Aspetta te" e' la domanda vera della giornata: sei fra i revisori e non
+    // hai ancora approvato.
+    waitingForYou: Boolean(revisoreTu) && !revisoreTu.approved,
+    reviewers: revisori,
+    approvals: revisori.filter((r) => r.approved).length,
+    comments: Number(pr.commentCount) || 0,
+    source: pr.source?.branch || '',
+    destination: pr.destination?.branch || '',
+    at: Date.parse(pr.lastUpdate) || null
+  };
 }
 
 /**

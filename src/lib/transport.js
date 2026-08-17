@@ -99,13 +99,28 @@ export class Channel {
     return this._resolving;
   }
 
+  /**
+   * L'errore si porta dietro dove stava cercando di andare.
+   *
+   * Senza, chi lo riceve ha un codice e una frase ma nessun sito, e non puo'
+   * proporre nessun rimedio: aprire *cosa*? Il contesto veniva appeso da chi
+   * chiamava, un `.catch` alla volta, e bastava una strada che non ci passava
+   * — l'identita' letta dalla cache, per dire — perche' l'errore arrivasse
+   * spoglio e il rimedio sparisse.
+   */
+  async _errore(code, message) {
+    const errore = new TransportError(code, message);
+    errore.detail = {
+      host: this.host,
+      openHosts: (await detectAtlassianHosts().catch(() => [])).map((h) => h.host)
+    };
+    return errore;
+  }
+
   async _resolve() {
     const tabs = await tabsOnHost(this.host);
     if (!tabs.length) {
-      throw new TransportError(
-        'NO_TAB',
-        `${this.label}: no tab open on ${this.host}.`
-      );
+      throw await this._errore('NO_TAB', `${this.label}: no tab open on ${this.host}.`);
     }
 
     for (const tab of tabs) {
@@ -121,7 +136,7 @@ export class Channel {
       }
     }
 
-    throw new TransportError(
+    throw await this._errore(
       'SESSION_INVALID',
       `${this.label}: a tab on ${this.host} exists but the session is not valid.`
     );
@@ -152,13 +167,13 @@ export class Channel {
     try {
       result = await this._viaTab(this.tabId, this.base + path, init);
     } catch (error) {
-      throw new TransportError(
+      throw await this._errore(
         'TAB_GONE',
         `${this.label}: the session tab no longer responds (${error.message}).`
       );
     }
     if (!result) {
-      throw new TransportError('TAB_GONE', `${this.label}: the session tab no longer responds.`);
+      throw await this._errore('TAB_GONE', `${this.label}: the session tab no longer responds.`);
     }
     return result;
   }

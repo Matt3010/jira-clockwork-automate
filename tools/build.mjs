@@ -39,7 +39,8 @@
 import { spawnSync } from 'node:child_process';
 import { deflateRawSync } from 'node:zlib';
 import {
-  cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync
+  cpSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync,
+  writeFileSync
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -265,9 +266,15 @@ const sorgente = JSON.parse(readFileSync(join(ROOT, 'manifest.json'), 'utf8'));
 
 cancelloTest();
 
-// Si riparte da zero: cosi' `dist/` non si porta dietro i pacchetti di una
-// versione precedente, che finirebbero caricati per buoni.
-rmSync(DIST, { recursive: true, force: true });
+// Si costruisce in disparte, e si mette al posto giusto solo alla fine.
+//
+// Cancellare `dist/` all'inizio lasciava la cartella caricata dal browser
+// inesistente per tutta la durata della build: Chrome la sorveglia, e chi
+// ricaricava in quel mezzo minuto si prendeva un «Manifest is not valid JSON.
+// Can't read file» — che sembra un difetto del manifest e invece e' una
+// cartella che in quel momento non c'era.
+const STAGE = join(DIST, '.stage');
+rmSync(STAGE, { recursive: true, force: true });
 
 const fatti = [];
 for (const nome of Object.keys(BERSAGLI)) {
@@ -275,8 +282,7 @@ for (const nome of Object.keys(BERSAGLI)) {
 
   const bersaglio = BERSAGLI[nome];
   const manifest = bersaglio.manifest(sorgente);
-  const cartella = join(DIST, nome);
-  const stage = join(cartella, 'unpacked');
+  const stage = join(STAGE, nome, 'unpacked');
 
   await costruisci(nome, bersaglio, manifest, stage);
 
@@ -286,18 +292,43 @@ for (const nome of Object.keys(BERSAGLI)) {
 
   const nomeZip = `clockwork-autofill-${manifest.version}-${nome}.zip`;
   const pacchetto = zip(stage, file);
-  writeFileSync(join(cartella, nomeZip), pacchetto);
-  fatti.push({ nome, zip: `${nome}/${nomeZip}`, file: file.length, peso: pacchetto.length });
+  writeFileSync(join(STAGE, nome, nomeZip), pacchetto);
+  fatti.push({ nome, zip: `${nome}/${nomeZip}`, nomeZip, file: file.length, peso: pacchetto.length });
 }
 
 if (problemi.length) {
-  // Niente mezze build in giro: se qualcosa non torna, `dist/` sparisce.
-  rmSync(DIST, { recursive: true, force: true });
+  // Niente mezze build in giro: sparisce quello che stavamo costruendo. Il
+  // pacchetto precedente resta dov'e' — cancellarlo lascerebbe senza
+  // estensione chi ce l'ha caricata, per un guaio che non e' suo.
+  rmSync(STAGE, { recursive: true, force: true });
   console.error(`\nBuild annullata — ${problemi.length} problem${problemi.length === 1 ? 'a' : 'i'}:\n`);
   for (const p of problemi) console.error(`  ✗ ${p}`);
   console.error('');
   process.exit(1);
 }
+
+// Lo scambio: la cartella nuova prende il posto della vecchia con un
+// `rename`, non ricopiando file uno per uno. La finestra in cui il percorso
+// caricato non esiste dura microsecondi invece di tutta la build.
+for (const f of fatti) {
+  const cartella = join(DIST, f.nome);
+  mkdirSync(cartella, { recursive: true });
+
+  // Gli zip delle versioni precedenti se ne vanno: restando, verrebbero
+  // caricati per buoni.
+  for (const voce of readdirSync(cartella)) {
+    if (voce.endsWith('.zip')) rmSync(join(cartella, voce), { force: true });
+  }
+  renameSync(join(STAGE, f.nome, f.nomeZip), join(cartella, f.nomeZip));
+
+  const finale = join(cartella, 'unpacked');
+  const vecchia = join(cartella, 'unpacked.vecchia');
+  rmSync(vecchia, { recursive: true, force: true });
+  if (existsSync(finale)) renameSync(finale, vecchia);
+  renameSync(join(STAGE, f.nome, 'unpacked'), finale);
+  rmSync(vecchia, { recursive: true, force: true });
+}
+rmSync(STAGE, { recursive: true, force: true });
 
 console.log('');
 for (const f of fatti) {

@@ -49,15 +49,20 @@
 
   <section>
     <h2 data-i18n="secCommits">Commits</h2>
-    <div class="field check">
-      <input type="checkbox" id="dev-panel" />
-      <label for="dev-panel" data-i18n="checkDevPanel">
-        Read commits from the issue Development panel
-      </label>
-    </div>
     <p class="hint" data-i18n="hintDevPanel">
       Commits are read from Jira itself — the same panel you see at the bottom of every ticket.
       No Bitbucket tab to keep open, no workspace to configure.
+    </p>
+    <div class="field check">
+      <input type="checkbox" id="count-merges" />
+      <label for="count-merges" data-i18n="checkCountMerges">
+        Count merge commits too
+      </label>
+    </div>
+    <p class="hint" data-i18n="hintCountMerges">
+      A merge is not work you log: turned off, merges disappear from the commit
+      count on the row, from the pre-filled note, and from the weight when hours
+      are split in proportion.
     </p>
     <div class="field">
       <label for="dev-candidates" data-i18n="fieldDevCandidates">Issues to check besides today's</label>
@@ -95,6 +100,27 @@
         <input type="time" id="work-start" />
       </div>
     </div>
+    <div class="field">
+      <label for="work-split" data-i18n="fieldSplit">How to split the hours</label>
+      <select id="work-split">
+        <option value="equal" data-i18n="splitEqual">Equally between tasks</option>
+        <option value="activity" data-i18n="splitActivity">In proportion to commits and Jira changes</option>
+      </select>
+      <p class="hint" data-i18n="hintSplit">
+        In proportion, a task with six commits takes more than one with a single
+        status change. A row with no traces still gets a share.
+      </p>
+    </div>
+    <div class="field check">
+      <input type="checkbox" id="send-comments" />
+      <label for="send-comments" data-i18n="checkSendComments">
+        Send the note with each worklog
+      </label>
+    </div>
+    <p class="hint" data-i18n="hintSendComments">
+      Off, the worklogs go in bare: the note stays in the popup as a reminder of
+      what you did, but nothing is written to Jira.
+    </p>
     <div class="field check">
       <input type="checkbox" id="show-badge" />
       <label for="show-badge" data-i18n="checkShowBadge">

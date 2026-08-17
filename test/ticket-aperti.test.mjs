@@ -7,18 +7,39 @@
 
 import assert from 'node:assert/strict';
 import { JiraClient, collectOpenIssues, searchIssues } from '../src/lib/jira.js';
-import { groupOpenIssues, openedOn, usefulTransitions } from '../src/lib/ticket.js';
+import { groupOpenIssues, movedOn, usefulTransitions } from '../src/lib/ticket.js';
 
-function fakeClient(issues) {
+function fakeClient(issues, perChiave = {}) {
   const chiamate = [];
+  const chieste = [];
   return {
     chiamate,
+    chieste,
     async search(jql, opzioni) {
       chiamate.push({ jql, opzioni });
       return issues;
+    },
+    // Le chiavi si chiedono una per una: quelle che non esistono rispondono
+    // 404, e qui il 404 è un rifiuto.
+    async getIssue(key, campi) {
+      chieste.push({ key, campi });
+      const issue = perChiave[key];
+      if (!issue) throw new Error(`Jira 404: ${key}`);
+      return issue;
     }
   };
 }
+
+const issueFinta = (key, extra = {}) => ({
+  key,
+  fields: {
+    summary: `Titolo di ${key}`,
+    status: { name: 'In corso', statusCategory: { key: 'indeterminate' } },
+    issuetype: { name: 'Task' },
+    updated: '2026-08-10T09:00:00.000+0200',
+    ...extra
+  }
+});
 
 function canale(rispondi) {
   const chiamate = [];
@@ -77,6 +98,18 @@ const issue = (key, status, category, created, extra = {}) => ({
   });
 }
 
+// --- la vista delle PR guarda i ticket di tutti ---------------------------
+// Una pull request che aspetta la tua revisione sta quasi sempre su un ticket
+// di qualcun altro: restringendo ai tuoi non si vedrebbe mai.
+{
+  const client = fakeClient([]);
+  await collectOpenIssues(client, { projects: ['ABC'], mine: false });
+  const { jql } = client.chiamate[0];
+  assert.doesNotMatch(jql, /currentUser/, 'senza il filtro su di te');
+  assert.match(jql, /statusCategory != Done/, 'ma sempre solo quelli ancora aperti');
+  assert.match(jql, /project in \(ABC\)/, 'e dentro i progetti configurati');
+}
+
 // --- senza progetti configurati la ricerca non ha il filtro ---------------
 {
   const client = fakeClient([]);
@@ -109,7 +142,7 @@ const issue = (key, status, category, created, extra = {}) => ({
     summary: i.fields.summary,
     status: i.fields.status.name,
     category: i.fields.status.statusCategory.key,
-    created: i.fields.created
+    updated: i.fields.updated
   })));
 
   // Quello che stai già facendo sta sopra a quello che devi cominciare, e a
@@ -123,16 +156,16 @@ const issue = (key, status, category, created, extra = {}) => ({
   assert.deepEqual(inCorso.days[0].issues.map((i) => i.key), ['ABC-2']);
 
   const daFare = gruppi[2];
-  assert.equal(daFare.days.length, 1, 'due ticket aperti lo stesso giorno stanno sotto una data sola');
-  assert.deepEqual(daFare.days[0].issues.map((i) => i.key), ['ABC-3', 'ABC-4'],
-    'e a parità di giorno l ordine è quello delle chiavi');
+  assert.equal(daFare.days.length, 1, 'due ticket mossi lo stesso giorno stanno sotto una data sola');
+  assert.deepEqual(daFare.days[0].issues.map((i) => i.key), ['ABC-4', 'ABC-3'],
+    'e dentro la giornata l ultimo mosso viene per primo: ABC-4 alle 18, ABC-3 alle 9');
 }
 
 // --- date mancanti in fondo, non in cima ----------------------------------
 {
   const [gruppo] = groupOpenIssues([
-    { key: 'ABC-1', status: 'Da fare', category: 'new', created: null },
-    { key: 'ABC-2', status: 'Da fare', category: 'new', created: '2026-01-05T09:00:00.000+0100' }
+    { key: 'ABC-1', status: 'Da fare', category: 'new', updated: null },
+    { key: 'ABC-2', status: 'Da fare', category: 'new', updated: '2026-01-05T09:00:00.000+0100' }
   ]);
   assert.deepEqual(gruppo.days.map((g) => g.day), ['2026-01-05', ''],
     'un ticket senza data è un dato mancante, non il più vecchio di tutti');
@@ -142,11 +175,11 @@ const issue = (key, status, category, created, extra = {}) => ({
 {
   const [gruppo] = groupOpenIssues(
     ['ABC-10', 'ABC-9', 'ABC-100'].map((key) => ({
-      key, status: 'Da fare', category: 'new', created: '2026-08-10T09:00:00.000+0200'
+      key, status: 'Da fare', category: 'new', updated: '2026-08-10T09:00:00.000+0200'
     }))
   );
   assert.deepEqual(gruppo.days[0].issues.map((i) => i.key), ['ABC-9', 'ABC-10', 'ABC-100'],
-    'ABC-100 non viene prima di ABC-9');
+    'a parità di istante decide la chiave, e ABC-100 non viene prima di ABC-9');
 }
 
 // --- niente in ingresso, niente in uscita ---------------------------------
@@ -156,10 +189,15 @@ assert.deepEqual(groupOpenIssues([{ summary: 'senza chiave' }]), [],
   'una issue senza chiave non è cliccabile né spostabile: non si mostra');
 
 // --- la data di apertura ---------------------------------------------------
-assert.equal(openedOn({ created: '2026-08-04T23:30:00.000+0200' }), '2026-08-04');
-assert.equal(openedOn({ created: 'non una data' }), '');
-assert.equal(openedOn({}), '');
-assert.equal(openedOn(null), '');
+// Il giorno che conta è l'ultimo movimento, non l'apertura: nell'elenco dei
+// ticket aperti si cerca cosa si è mosso e cosa è fermo da settimane, non chi
+// è nato prima.
+assert.equal(movedOn({ updated: '2026-08-04T23:30:00.000+0200' }), '2026-08-04');
+assert.equal(movedOn({ created: '2026-01-01T10:00:00.000+0100' }), '',
+  'la data di apertura non conta più: se manca quella di movimento, manca');
+assert.equal(movedOn({ updated: 'non una data' }), '');
+assert.equal(movedOn({}), '');
+assert.equal(movedOn(null), '');
 
 // ======================================================== transizioni
 {
@@ -245,14 +283,64 @@ assert.equal(openedOn(null), '');
 
 // --- una chiave si cerca per quello che è ---------------------------------
 {
-  const client = fakeClient([]);
-  await searchIssues(client, { query: 'abc-123', projects: ['XYZ'] });
-  const { jql } = client.chiamate[0];
+  const client = fakeClient([], { 'ABC-123': issueFinta('ABC-123') });
+  const trovati = await searchIssues(client, { query: 'abc-123', projects: ['XYZ'] });
+
   // `text ~ "ABC-123"` non trova la issue ABC-123, e incollare una chiave è
-  // il modo più comune di cercare un ticket.
-  assert.match(jql, /^key = "ABC-123"/, 'la chiave si normalizza in maiuscolo e si cerca per uguaglianza');
-  assert.doesNotMatch(jql, /project in/,
-    'e non si filtra per progetto: se incolli una chiave sai già quale ticket vuoi');
+  // il modo più comune di cercare un ticket. Si chiede la issue, non si
+  // interroga: e non si filtra per progetto — se incolli una chiave sai già
+  // quale ticket vuoi.
+  assert.deepEqual(client.chieste.map((c) => c.key), ['ABC-123'],
+    'la chiave si normalizza in maiuscolo e si chiede direttamente');
+  assert.equal(client.chiamate.length, 0, 'nessuna ricerca a testo da fare');
+  assert.deepEqual(trovati.map((i) => i.key), ['ABC-123']);
+}
+
+// --- solo il numero: si provano i progetti configurati --------------------
+// «2004» è il modo più rapido di cercare un ticket, e finiva nella ricerca a
+// testo — che dentro la chiave non guarda: tornavano i ticket con "2004" nel
+// titolo, non XYZ-2004.
+{
+  const client = fakeClient([], { 'XYZ-2004': issueFinta('XYZ-2004') });
+  const trovati = await searchIssues(client, { query: '2004', projects: ['ABC', 'XYZ', 'DEF'] });
+
+  assert.deepEqual(client.chieste.map((c) => c.key), ['ABC-2004', 'XYZ-2004', 'DEF-2004'],
+    'una per progetto configurato');
+  assert.deepEqual(trovati.map((i) => i.key), ['XYZ-2004'],
+    'e quelle che non esistono spariscono, invece di far fallire tutta la query');
+
+  // Chieste una per una proprio per questo: `key in (ABC-2004, XYZ-2004)`
+  // con una chiave inesistente risponde 400 e non trova più niente.
+  assert.equal(client.chiamate.length, 0);
+}
+
+// --- progetto e numero staccati, o col separatore sbagliato ---------------
+{
+  const client = fakeClient([], { 'XYZ-2004': issueFinta('XYZ-2004') });
+  for (const query of ['XYZ 2004', 'xyz_2004']) {
+    client.chieste.length = 0;
+    const trovati = await searchIssues(client, { query, projects: [] });
+    assert.deepEqual(trovati.map((i) => i.key), ['XYZ-2004'], `«${query}» deve trovarla`);
+  }
+}
+
+// --- una chiave che non esiste ricade sulla ricerca a testo ---------------
+// Può essere un titolo che sembra una chiave: meglio cercarlo che rispondere
+// «niente trovato».
+{
+  const client = fakeClient([issueFinta('ABC-9')]);
+  const trovati = await searchIssues(client, { query: 'ABC-123', projects: ['ABC'] });
+  assert.deepEqual(client.chieste.map((c) => c.key), ['ABC-123']);
+  assert.match(client.chiamate[0].jql, /text ~ "ABC-123"/, 'poi si cerca a testo');
+  assert.deepEqual(trovati.map((i) => i.key), ['ABC-9']);
+}
+
+// --- solo cifre senza progetti configurati: resta il testo ----------------
+{
+  const client = fakeClient([]);
+  await searchIssues(client, { query: '2004', projects: [] });
+  assert.deepEqual(client.chieste, [], 'senza progetti non c è nessuna chiave da provare');
+  assert.match(client.chiamate[0].jql, /text ~ "2004"/);
 }
 
 // --- il termine non deve poter rompere la query ---------------------------

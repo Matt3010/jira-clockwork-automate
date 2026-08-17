@@ -35,6 +35,16 @@ const scrivi = (nodo, valore) => { nodo.value = valore; };
   assert.equal($('jira-url').value, 'esempio');
   assert.equal($('jira-projects').value, 'ABC, XYZ');
   assert.equal($('work-hours').value, '7');
+  // Il modo di dividere le ore è una scelta che cambia tutta la giornata: se
+  // il campo non rilegge quello che c'è sul disco, salvando si riporta al
+  // default senza che nessuno l'abbia chiesto.
+  assert.equal($('work-split').value, 'equal');
+  assert.equal($('count-merges').checked, true, 'i merge si contano, finché non dici il contrario');
+  assert.equal($('send-comments').checked, true, 'e la nota parte con le ore, finché non dici il contrario');
+  // Leggere i commit non è più una scelta: la casella non c'è più, e quello
+  // che resta è quanto in là guardare.
+  assert.equal($('dev-panel'), null, 'l interruttore dei commit non deve tornare');
+  assert.ok($('dev-candidates'), 'quello che resta è quante issue controllare');
   assert.equal($('work-start').value, '08:30');
   assert.equal($('authors').value, 'Nessuno <nessuno@esempio.test>');
   assert.equal($('side-panel').checked, true, 'il pannello è il valore di partenza');
@@ -60,6 +70,9 @@ const scrivi = (nodo, valore) => { nodo.value = valore; };
 
   const $ = (id) => p.document.getElementById(id);
   scrivi($('work-hours'), '6');
+  scrivi($('work-split'), 'activity');
+  $('count-merges').checked = false;
+  $('send-comments').checked = false;
   scrivi($('jira-projects'), 'def, abc');
   scrivi($('jira-url'), 'https://altro.atlassian.net/jira/software');
   clic($('save'));
@@ -67,6 +80,10 @@ const scrivi = (nodo, valore) => { nodo.value = valore; };
 
   const scritta = p.archivio.local.config;
   assert.equal(scritta.work.dailyHours, 6);
+  assert.equal(scritta.work.split, 'activity', 'la divisione a proporzione va salvata');
+  assert.equal(scritta.jira.countMerges, false, 'e la scelta sui merge pure');
+  assert.equal(scritta.work.sendComments, false, 'e quella sulla nota');
+  assert.equal($('work-split').value, 'activity');
   assert.deepEqual(scritta.jira.projects, ['DEF', 'ABC'], 'i progetti si normalizzano in maiuscolo');
   assert.equal(scritta.jira.baseUrl, 'https://altro.atlassian.net',
     'dell URL incollato resta il sito, senza percorso');

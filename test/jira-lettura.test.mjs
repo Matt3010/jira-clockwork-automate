@@ -85,7 +85,21 @@ function fakeClient(risposte) {
 
   assert.match(client.chiamate.search[0].jql, /project in \(ABC\)/, 'la ricerca è ristretta ai progetti');
   assert.match(client.chiamate.search[0].jql, /updated >= "2026-08-10 00:00"/);
-  assert.match(client.chiamate.search[0].jql, /updated < "2026-08-11 00:00"/, 'finestra di un giorno esatto');
+  // La finestra è larga una settimana, non un giorno: `updated` è l'*ultima*
+  // modifica della issue, non «è stata modificata quel giorno». Con un giorno
+  // esatto, un ticket ripreso in mano il giorno dopo spariva dal giorno in cui
+  // ci avevi lavorato — cioè proprio quando compili ieri stamattina.
+  assert.match(client.chiamate.search[0].jql, /updated < "2026-08-17 00:00"/,
+    'sette giorni: con la finestra di uno i giorni passati si svuotano da soli');
+  // E non oltre: senza limite superiore, su un giorno di mesi fa «toccate da
+  // allora» sono migliaia, il tetto scatta sempre e quello che rientra è
+  // rumore — una giornata vuota con l avviso che dice che manca qualcosa.
+  assert.doesNotMatch(client.chiamate.search[0].jql, /updated >= "2026-08-10 00:00" ORDER/,
+    'la rete larga senza fondo riporta rumore e basta');
+  // E in ordine crescente: col tetto di 100 il decrescente riempirebbe
+  // l elenco con le issue calde di oggi e taglierebbe quelle ferme dal giorno
+  // che stai guardando.
+  assert.match(client.chiamate.search[0].jql, /ORDER BY updated ASC/);
   assert.equal(client.chiamate.comments.length, 0, 'con scanComments spento i commenti non si leggono');
 }
 
@@ -169,6 +183,107 @@ function fakeClient(risposte) {
     assert.ok(client.chiamate.search[0].opzioni.fields.includes(campo),
       `senza ${campo} non si può sapere se la issue è tua`);
   }
+}
+
+// ======================================================== quando la rete larga tocca il tetto
+// Allargata la ricerca, il tetto di 100 si può raggiungere per davvero su un
+// giorno vecchio. Raggiunto, la giornata è incompleta: va detto a chi guarda,
+// non lasciato indovinare da una riga che manca.
+{
+  const tante = Array.from({ length: 100 }, (_, i) => ({
+    id: String(i), key: `ABC-${i}`, fields: { summary: 'x' },
+    changelog: { total: 0, histories: [] }
+  }));
+  const piena = await collectJiraActivity(fakeClient({ issues: tante }), {
+    isoDate: '2026-08-10', projects: [], accountId: IO, scanComments: false
+  });
+  assert.equal(piena.truncated, true, 'il tetto raggiunto va segnalato');
+
+  const scarsa = await collectJiraActivity(fakeClient({ issues: tante.slice(0, 99) }), {
+    isoDate: '2026-08-10', projects: [], accountId: IO, scanComments: false
+  });
+  assert.equal(scarsa.truncated, false, 'sotto il tetto non c è niente da dire');
+}
+
+// ======================================================== e sempre del giorno scelto
+// La riga scrive un'ora sola, senza data: regge solo perché tutto quello che
+// entra è del giorno che stai guardando. Una modifica di ieri su una issue tua
+// scriverebbe «14:00» in mezzo a oggi, e nessuno saprebbe che è di ieri.
+{
+  const client = fakeClient({
+    issues: [{
+      id: '1', key: 'ABC-1',
+      fields: { summary: 'Mia, mossa ieri da un collega', assignee: { accountId: IO } },
+      changelog: {
+        total: 2,
+        histories: [
+          {
+            author: { accountId: ALTRO, displayName: 'Dario Decarlo' },
+            created: quando(14, 0, 9),
+            items: [{ field: 'status', fromString: 'To Do', toString: 'In Progress' }]
+          },
+          {
+            author: { accountId: ALTRO, displayName: 'Dario Decarlo' },
+            created: quando(16),
+            items: [{ field: 'priority', fromString: 'Low', toString: 'High' }]
+          }
+        ]
+      }
+    }]
+  });
+
+  const attivita = await collectJiraActivity(client, {
+    isoDate: '2026-08-10', projects: [], accountId: IO, scanComments: false
+  });
+
+  assert.equal(attivita.get('ABC-1').events.length, 1, 'quella di ieri resta fuori');
+  assert.deepEqual(attivita.get('ABC-1').events[0].items.map((i) => i.field), ['priority']);
+}
+
+// ======================================================== assegnata *a te*, non solo riassegnata
+// Il campo assegnatario cambia anche quando la issue passa da un collega a un
+// altro: leggere solo "il campo è cambiato" faceva scrivere «te l'ha
+// assegnata» sotto una task che a te non era arrivata. Nel changelog `to` è
+// l'accountId del nuovo assegnatario, ed è quello che decide.
+{
+  const storia = (chi, versoId, versoNome) => ({
+    total: 1,
+    histories: [{
+      author: { accountId: ALTRO, displayName: chi },
+      created: quando(16),
+      items: [{ field: 'assignee', to: versoId, toString: versoNome }]
+    }]
+  });
+
+  const client = fakeClient({
+    issues: [
+      {
+        id: '1', key: 'ABC-1',
+        fields: { summary: 'Passata a te', assignee: { accountId: IO } },
+        changelog: storia('Dario Decarlo', IO, 'Matteo Scanferla')
+      },
+      {
+        id: '2', key: 'ABC-2',
+        fields: { summary: 'Passata a un terzo', reporter: { accountId: IO } },
+        changelog: storia('Alessandro Greggio', 'account-terzo', 'Terza Persona')
+      },
+      {
+        id: '3', key: 'ABC-3',
+        fields: { summary: 'Istanza senza accountId nel changelog', assignee: { accountId: IO } },
+        changelog: storia('Dario Decarlo', '', 'Matteo Scanferla')
+      }
+    ]
+  });
+
+  const attivita = await collectJiraActivity(client, {
+    isoDate: '2026-08-10', projects: [], accountId: IO, displayName: 'Matteo Scanferla', scanComments: false
+  });
+
+  assert.equal(attivita.get('ABC-1').events[0].assignsYou, true);
+  assert.equal(attivita.get('ABC-2').events[0].assignsYou, false,
+    'riassegnata fra altri due: la issue ti riguarda, ma non te l ha assegnata nessuno');
+  assert.equal(attivita.get('ABC-3').events[0].assignsYou, true,
+    'senza accountId resta il nome, o le istanze che non lo mandano perdono il caso');
 }
 
 // ======================================================== commenti altrui sulle tue

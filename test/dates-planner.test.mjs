@@ -14,6 +14,12 @@ assert.equal(addMinutes('09:30', 45), '10:15');
 assert.equal(addMinutes('23:50', 30), '23:59');
 assert.equal(formatMinutes(90), '1h 30m');
 assert.deepEqual(jqlDayRange('2026-08-31'), { from: '2026-08-31 00:00', to: '2026-09-01 00:00' });
+// La ricerca delle attività chiede una settimana, non un giorno: `updated` è
+// l'ultima modifica della issue, quindi un ticket ripreso in mano il giorno
+// dopo uscirebbe dalla finestra del giorno in cui ci hai lavorato.
+assert.deepEqual(jqlDayRange('2026-08-31', 7), { from: '2026-08-31 00:00', to: '2026-09-07 00:00' });
+assert.deepEqual(jqlDayRange('2026-12-28', 7), { from: '2026-12-28 00:00', to: '2027-01-04 00:00' },
+  'e scavalca il capodanno senza inventare mesi');
 assert.equal(dayBounds('2026-08-10').end - dayBounds('2026-08-10').start, 86400000);
 assert.ok(isSameLocalDay(new Date(2026, 7, 10, 23, 59).toISOString(), '2026-08-10'));
 assert.ok(!isSameLocalDay(new Date(2026, 7, 11, 0, 1).toISOString(), '2026-08-10'));

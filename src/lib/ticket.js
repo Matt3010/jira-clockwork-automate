@@ -23,18 +23,28 @@ function pesoCategoria(category) {
   return peso === undefined ? 2 : peso;
 }
 
-/** La data di apertura come 'YYYY-MM-DD', o '' se Jira non l'ha data. */
-export function openedOn(issue) {
-  const quando = issue?.created ? new Date(issue.created) : null;
+/**
+ * Il giorno dell'ultimo movimento, come 'YYYY-MM-DD', o '' se Jira non l'ha
+ * dato.
+ *
+ * Era il giorno di apertura, e rispondeva alla domanda sbagliata: guardando
+ * l'elenco dei ticket aperti si vuole sapere cosa si e' mosso di recente e
+ * cosa e' fermo da tre settimane, non chi e' nato prima. Un ticket aperto a
+ * marzo e ripreso ieri sta in mano adesso, e stava in fondo all'elenco.
+ */
+export function movedOn(issue) {
+  const quando = issue?.updated ? new Date(issue.updated) : null;
   return quando && Number.isFinite(quando.getTime()) ? toIsoDate(quando) : '';
 }
 
 /**
- * I ticket divisi per stato e, dentro ogni stato, per giorno di apertura.
+ * I ticket divisi per stato e, dentro ogni stato, per giorno dell'ultimo
+ * movimento.
  *
  * Due livelli perche' rispondono a due domande diverse: lo stato dice a che
- * punto sei, la data dice da quanto quel ticket e' li'. Un ticket aperto tre
- * settimane fa e ancora "da fare" si vede solo se le date restano separate.
+ * punto sei, la data dice da quanto quel ticket e' fermo li'. Un ticket
+ * "da fare" che non si muove da tre settimane si vede solo se le date restano
+ * separate.
  *
  * Il piu' recente sta in cima a entrambi i livelli.
  */
@@ -50,7 +60,7 @@ export function groupOpenIssues(issues) {
     const gruppo = perStato.get(status);
     gruppo.count += 1;
 
-    const day = openedOn(issue);
+    const day = movedOn(issue);
     if (!gruppo.days.has(day)) gruppo.days.set(day, []);
     gruppo.days.get(day).push(issue);
   }
@@ -62,7 +72,13 @@ export function groupOpenIssues(issues) {
     days: [...gruppo.days.entries()]
       .map(([day, elenco]) => ({
         day,
-        issues: elenco.slice().sort(byKey)
+        // Dentro la giornata, l'ultimo mosso per primo; a parita' di istante
+        // decide la chiave, o l'ordine cambierebbe a ogni rilettura.
+        issues: elenco.slice().sort((a, b) => {
+          const qa = Date.parse(a.updated) || 0;
+          const qb = Date.parse(b.updated) || 0;
+          return qb - qa || byKey(a, b);
+        })
       }))
       // Senza data in fondo: e' un dato mancante, non un ticket vecchissimo.
       .sort((a, b) => (a.day && b.day ? b.day.localeCompare(a.day) : (a.day ? -1 : 1)))

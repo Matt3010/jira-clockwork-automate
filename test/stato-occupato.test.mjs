@@ -40,9 +40,12 @@ assert.match(css, /prefers-reduced-motion/,
 // `updateTotal`, e la copia del registro appartiene a una scheda che non sta
 // caricando.
 const A_PARTE = [
-  'date', 'prevDay', 'nextDay', 'openOptions',
+  // `today` sta con `prevDay`/`nextDay`: è navigazione fra i giorni, e mentre
+  // il piano carica cambiare giorno resta legittimo — la richiesta in volo
+  // viene invalidata dal suo token.
+  'date', 'prevDay', 'nextDay', 'today', 'openOptions',
   'submit', 'cancelSend',
-  'tabHours', 'tabLog', 'tabTickets', 'logCopy'
+  'tabHours', 'tabLog', 'tabTickets', 'tabPr', 'logCopy'
 ];
 
 const conAscoltatore = [...new Set(

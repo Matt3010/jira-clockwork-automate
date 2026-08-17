@@ -2,8 +2,14 @@
 //
 // Due regole reggono tutto, e sono quelle che si rompono in silenzio:
 // il colore segue il ticket (non la sua posizione, non quali righe sono
-// accese), e i colori sono tre perché tre è quanto regge il controllo su
-// tutte le coppie — un quarto sarebbe indistinguibile da un altro.
+// accese), e le tinte sono tre perché tre è quanto regge il controllo su tutte
+// le coppie — una quarta tinta sarebbe indistinguibile da un'altra (sotto
+// protanopia il viola *è* blu: 2.7 di distanza percettiva, cioè lo stesso
+// colore).
+//
+// Da qui la seconda dimensione: le stesse tre tinte con tre riempimenti —
+// pieno, rigato, vuoto col contorno — fanno nove identità tutte diverse, e il
+// riempimento si legge anche in bianco e nero.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -20,7 +26,10 @@ function seriesClass(rows, issueKey) {
     rows.filter((r) => r.kind === 'task' && r.issueKey).map((r) => r.issueKey)
   )].sort();
   const posizione = chiavi.indexOf(issueKey);
-  return posizione >= 0 && posizione < 3 ? `s${posizione + 1}` : '';
+  if (posizione < 0) return '';
+  const tinta = `s${(posizione % 3) + 1}`;
+  const riempimento = Math.floor(posizione / 3) % 3;
+  return riempimento ? `${tinta} v${riempimento + 1}` : tinta;
 }
 
 const task = (issueKey, over = {}) => ({ kind: 'task', issueKey, enabled: true, ...over });
@@ -62,10 +71,26 @@ const task = (issueKey, over = {}) => ({ kind: 'task', issueKey, enabled: true, 
   }
 }
 
-// --- oltre la terza si ripiega su un neutro, non si inventa ---------------
+// --- IL PUNTO: due attività non devono mai apparire uguali ----------------
+// Prima la quarta e le successive ripiegavano tutte sullo stesso neutro: in una
+// giornata da cinque ticket, due pastiglie identiche e nessun modo di sapere
+// quale blocco fosse quale.
 {
-  const rows = [task('ABC-1'), task('ABC-2'), task('ABC-3'), task('ABC-4'), task('ABC-5')];
-  assert.deepEqual(rows.map((r) => seriesClass(rows, r.issueKey)), ['s1', 's2', 's3', '', '']);
+  const rows = Array.from({ length: 9 }, (_, i) => task(`ABC-${i + 1}`));
+  const aspetti = rows.map((r) => seriesClass(rows, r.issueKey));
+  assert.equal(new Set(aspetti).size, 9, 'nove attività, nove aspetti diversi');
+  assert.deepEqual(aspetti, [
+    's1', 's2', 's3',
+    's1 v2', 's2 v2', 's3 v2',
+    's1 v3', 's2 v3', 's3 v3'
+  ], 'prima si esauriscono le tinte, poi si cambia riempimento');
+
+  // Oltre la nona si ricomincia, e va detto: nessun codice visivo regge più in
+  // là. La chiave accanto alla pastiglia resta l'identità vera della riga.
+  // Chiavi con lo zero davanti: l'ordine è alfabetico, e senza lo zero
+  // «ABC-10» starebbe fra «ABC-1» e «ABC-2» invece che in fondo.
+  const dieci = Array.from({ length: 10 }, (_, i) => task(`ABC-${String(i + 1).padStart(2, '0')}`));
+  assert.equal(seriesClass(dieci, 'ABC-10'), 's1', 'la decima ricomincia dalla prima combinazione');
 }
 
 // --- i tre colori esistono in entrambi i temi -----------------------------
@@ -89,6 +114,20 @@ for (const hex of ['#3987e5', '#199e70', '#e66767']) {
 for (const s of ['s1', 's2', 's3']) {
   assert.match(css, new RegExp(`\\.block\\.task\\.${s}`), `manca lo stile del blocco ${s}`);
   assert.match(css, new RegExp(`\\.chip\\.${s}`), `manca lo stile della pastiglia ${s}`);
+}
+
+// --- e ogni riempimento, o le classi in più non fanno niente --------------
+// È il modo silenzioso di rompere tutto: `seriesClass` distingue nove casi, il
+// foglio ne disegna tre, e le sei attività in fondo tornano identiche.
+for (const v of ['v2', 'v3']) {
+  assert.match(css, new RegExp(`\\.block\\.task\\.${v} \\{`), `manca il riempimento ${v} sul blocco`);
+  assert.match(css, new RegExp(`\\.chip\\.${v} \\{`), `manca il riempimento ${v} sulla pastiglia`);
+  // Il riempimento disegna con `currentColor`: senza la tinta passata da lì,
+  // riga e contorno prendono il colore del testo e sono tutti uguali.
+  for (const s of ['s1', 's2', 's3']) {
+    assert.match(css, new RegExp(`\\.chip\\.${v}\\.${s}`), `la pastiglia ${v}.${s} non ha una tinta`);
+    assert.match(css, new RegExp(`\\.block\\.task\\.${v}\\.${s}`), `il blocco ${v}.${s} non ha una tinta`);
+  }
 }
 
 console.log('colori attività: tutti i controlli passati.');

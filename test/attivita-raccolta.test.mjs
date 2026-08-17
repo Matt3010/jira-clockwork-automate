@@ -145,8 +145,15 @@ function fakeClient(risposta) {
   const analyze = bg.slice(bg.indexOf('async function analyze('), bg.indexOf('\n}', bg.indexOf('async function analyze(')));
 
   assert.match(analyze, /mergeCreatedIssues\(/, 'l analisi non cerca le issue che hai aperto');
+  // La ricerca del giorno è larga e ha un tetto: se lo tocca, la giornata è
+  // incompleta e chi guarda deve saperlo — una riga che manca, da sola, non si
+  // vede.
+  assert.match(analyze, /jiraActivity\.truncated/,
+    'il taglio della ricerca non arriva a schermo');
+  // Le candidate le sceglie `gatherCommits`, che è dove è finita la sequenza:
+  // quello che conta è che l'unione venga prima di quella chiamata.
   assert.ok(
-    analyze.indexOf('mergeCreatedIssues(') < analyze.indexOf('devCandidates('),
+    analyze.indexOf('mergeCreatedIssues(') < analyze.indexOf('gatherCommits('),
     'le issue create vanno unite prima di cercare i commit, o restano fuori dalle candidate'
   );
 }

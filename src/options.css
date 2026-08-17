@@ -59,8 +59,10 @@ section {
 .row .field { flex: 1 1 160px; }
 
 /* Per esclusione, non per elenco: elencando i tipi uno a uno, il primo campo
-   di un tipo nuovo nasce con lo stile del browser — bianco su tema scuro. */
-input:not([type="checkbox"]) {
+   di un tipo nuovo nasce con lo stile del browser — bianco su tema scuro.
+   `select` non e' un `input`, e infatti e' arrivato con la freccia e il fondo
+   del sistema in mezzo ai campi nostri: sta qui dentro insieme agli altri. */
+input:not([type="checkbox"]), select {
   width: 100%;
   font: inherit;
   padding: 6px 8px;
@@ -69,7 +71,7 @@ input:not([type="checkbox"]) {
   background: var(--bg);
   color: var(--text);
 }
-input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 
 .hint { color: var(--muted); font-size: 12px; margin: 4px 0 0; }
 
@@ -78,7 +80,9 @@ input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 .radios input { margin-top: 3px; }
 .radios span { flex: 1; }
 
-.with-button { display: flex; gap: 8px; align-items: center; }
+/* Lo stesso stacco che c'e' fra i campi: a 8px due tasti accostati si leggono
+   come un tasto solo diviso a meta'. */
+.with-button { display: flex; gap: 14px; align-items: center; }
 .with-button input { flex: 1; min-width: 120px; }
 .with-button button { white-space: nowrap; }
 .affix {

@@ -205,14 +205,16 @@ function fill() {
   $('jira-projects').value = (config.jira.projects || []).join(', ');
   $('jira-comments').checked = config.jira.scanComments;
 
-  $('dev-panel').checked = config.jira.devPanel;
   $('dev-candidates').value = config.jira.devCandidates;
+  $('count-merges').checked = config.jira.countMerges !== false;
   $('authors').value = (config.identity.extraAuthors || []).join(', ');
 
   $('work-hours').value = config.work.dailyHours;
   $('work-rounding').value = config.work.roundingMinutes;
   $('work-start').value = config.work.startTime;
+  $('work-split').value = config.work.split || 'equal';
   $('show-badge').checked = config.work.showBadge;
+  $('send-comments').checked = config.work.sendComments !== false;
   $('side-panel').checked = config.ui.sidePanel;
 
   $('meetings').replaceChildren(...(config.meetings || []).map(renderMeeting));
@@ -253,8 +255,8 @@ async function save() {
       baseUrl,
       projects: parseList($('jira-projects').value).map((p) => p.toUpperCase()),
       scanComments: $('jira-comments').checked,
-      devPanel: $('dev-panel').checked,
-      devCandidates: Math.max(0, Number($('dev-candidates').value) || 0)
+      devCandidates: Math.max(0, Number($('dev-candidates').value) || 0),
+      countMerges: $('count-merges').checked
     },
     identity: {
       extraAuthors: parseList($('authors').value)
@@ -263,7 +265,11 @@ async function save() {
       dailyHours: Math.max(0.5, Number($('work-hours').value) || 8),
       roundingMinutes: Math.max(1, Number($('work-rounding').value) || 15),
       startTime: $('work-start').value || '09:00',
+      // Un valore che non conosciamo vale come "parti uguali": e' il modo di
+      // dividere che non sorprende nessuno.
+      split: $('work-split').value === 'activity' ? 'activity' : 'equal',
       showBadge: $('show-badge').checked,
+      sendComments: $('send-comments').checked,
       breaks
     },
     ui: { sidePanel: $('side-panel').checked },
