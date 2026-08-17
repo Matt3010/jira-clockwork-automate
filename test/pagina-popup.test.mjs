@@ -384,8 +384,8 @@ const cambia = (nodo, valore) => {
 }
 
 // --- ogni avviso resta nella vista che lo ha prodotto --------------------
-// «Ticket riunione proposto» parla del piano: sotto l'elenco delle pull
-// request non vuol dire niente, e il contenitore degli avvisi è uno solo.
+// «Ticket riunione proposto» parla del piano: sotto l'elenco dei ticket
+// aperti non vuol dire niente, e il contenitore degli avvisi è uno solo.
 {
   const conProposta = {
     ...piano,
@@ -396,8 +396,7 @@ const cambia = (nodo, valore) => {
   const p = await apriPagina('popup', {
     risposte: {
       ...RISPOSTE,
-      analyze: { ...conProposta, config, site: { host: HOST } },
-      pullRequests: { items: [], checked: 0 }
+      analyze: { ...conProposta, config, site: { host: HOST } }
     }
   });
   await p.attendi();
@@ -405,97 +404,13 @@ const cambia = (nodo, valore) => {
   const visibili = () => tutti(p.document, '#messages .msg').filter((m) => !m.hidden);
   assert.equal(visibili().length, 1, 'sulle Ore l avviso del piano si vede');
 
-  p.document.getElementById('tab-pr').click();
+  p.document.getElementById('tab-tickets').click();
   await p.attendi(2);
   assert.equal(visibili().length, 0, 'cambiando vista non lo segue');
 
   p.document.getElementById('tab-hours').click();
   await p.attendi(1);
   assert.equal(visibili().length, 1, 'e tornando lo ritrovi: non è stato buttato');
-  p.chiudi();
-}
-
-// --- le pull request: nessuna richiesta finché non apri la vista ---------
-// Costano una chiamata per ticket aperto del progetto: partire da sole a ogni
-// analisi vorrebbe dire cinquanta richieste per una vista che magari non
-// guardi. E sono sola lettura: unire e rifiutare stanno su Bitbucket.
-{
-  const PR = [
-    {
-      id: '1', number: '1', issueKey: 'ABC-1', issueSummary: 'Titolo uno',
-      title: 'Aggiusta il tunnel', url: 'https://git/pr/1', status: 'OPEN',
-      author: 'Collega Qualsiasi', mine: false, waitingForYou: true,
-      approvals: 0, at: Date.parse('2026-08-10T15:00:00.000Z')
-    },
-    {
-      id: '2', number: '2', issueKey: 'ABC-2', issueSummary: 'Titolo due',
-      title: 'Mia proposta', url: 'https://git/pr/2', status: 'OPEN',
-      author: 'Nome Cognome', mine: true, waitingForYou: false,
-      approvals: 2, at: Date.parse('2026-08-10T11:00:00.000Z')
-    },
-    {
-      id: '3', number: '3', issueKey: 'ABC-3', issueSummary: 'Titolo tre',
-      title: 'Roba di altri', url: 'https://git/pr/3', status: 'OPEN',
-      author: 'Terza Persona', mine: false, waitingForYou: false,
-      approvals: 0, at: Date.parse('2026-08-10T09:00:00.000Z')
-    },
-    {
-      id: '4', number: '4', issueKey: 'ABC-4', issueSummary: 'Titolo quattro',
-      title: 'Già unita', url: 'https://git/pr/4', status: 'MERGED',
-      author: 'Nome Cognome', mine: true, waitingForYou: false,
-      approvals: 2, at: Date.parse('2026-08-10T08:00:00.000Z')
-    }
-  ];
-  const p = await apriPagina('popup', {
-    risposte: { ...RISPOSTE, pullRequests: { items: PR, checked: 4 } }
-  });
-  await p.attendi();
-
-  assert.equal(p.chiamate.filter((c) => c.type === 'pullRequests').length, 0,
-    'aprendo il popup non si tocca il pannello Sviluppo di mezzo progetto');
-
-  p.document.getElementById('tab-pr').click();
-  await p.attendi(2);
-  assert.equal(p.chiamate.filter((c) => c.type === 'pullRequests').length, 1,
-    'si legge quando apri la vista');
-
-  // Il primo gruppo è la domanda con cui apri questa vista.
-  const gruppi = tutti(p.document, '.pr-group-title').map((n) => testo(n));
-  assert.deepEqual(gruppi, ['Waiting for you (1)', 'Yours (1)', 'Others (1)'],
-    'e le già unite non stanno in nessun gruppo: non aspettano nessuno');
-
-  const prima = p.document.querySelector('.pr-group .pr-row');
-  assert.equal(testo(prima.querySelector('.chiave')), 'ABC-1');
-  assert.equal(prima.querySelector('.chiave').href, `https://${HOST}/browse/ABC-1`,
-    'la chiave porta al ticket');
-  assert.equal(testo(prima.querySelector('.pr-title')), 'Aggiusta il tunnel');
-  assert.equal(prima.querySelector('.pr-title').href, 'https://git/pr/1',
-    'il titolo porta alla PR, che è dove stanno i tasti per unirla');
-
-  // Riaprendo la scheda non si rilegge: la vista costa, e non è cambiata.
-  p.document.getElementById('tab-hours').click();
-  p.document.getElementById('tab-pr').click();
-  await p.attendi(2);
-  assert.equal(p.chiamate.filter((c) => c.type === 'pullRequests').length, 1);
-
-  // Ma «Aggiorna» sulla vista PR rilegge quella, non il piano.
-  p.document.getElementById('analyze').click();
-  await p.attendi(2);
-  assert.equal(p.chiamate.filter((c) => c.type === 'pullRequests').length, 2);
-  p.chiudi();
-}
-
-// --- e quando non ce n'è nessuna, lo dice --------------------------------
-{
-  const p = await apriPagina('popup', {
-    risposte: { ...RISPOSTE, pullRequests: { items: [], checked: 12 } }
-  });
-  await p.attendi();
-  p.document.getElementById('tab-pr').click();
-  await p.attendi(2);
-
-  assert.equal(tutti(p.document, '.pr-row').length, 0);
-  assert.equal(p.document.getElementById('pr-empty').hidden, false);
   p.chiudi();
 }
 

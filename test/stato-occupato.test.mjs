@@ -125,7 +125,7 @@ for (const foglio of ['src/popup.css', 'src/options.css']) {
 }
 
 // e gli elementi che si nascondono devono esistere davvero
-for (const id of ['log-view', 'timeline', 'legend', 'plan', 'row-tools', 'cancel-send']) {
+for (const id of ['tickets-view', 'timeline', 'legend', 'plan', 'row-tools', 'cancel-send']) {
   assert.ok(new RegExp(`id="${id}"[^>]*hidden`).test(html), `#${id} non nasce nascosto`);
 }
 

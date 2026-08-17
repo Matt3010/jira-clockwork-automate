@@ -29,9 +29,6 @@ const blocco = (nome) => {
 {
   const onDateChanged = blocco('onDateChanged');
   assert.match(onDateChanged, /scheduleAnalyze\(/, 'il piano passa dal ritardo');
-  assert.match(onDateChanged, /scheduleLoadLog\(/, 'e anche il registro');
-  assert.doesNotMatch(onDateChanged, /[^e]\bloadLog\(\)/,
-    'il registro non va chiamato di colpo: era il bug — una richiesta per clic');
   assert.doesNotMatch(onDateChanged, /[^e]\banalyze\(/,
     'e nemmeno il piano');
 }
@@ -39,23 +36,18 @@ const blocco = (nome) => {
 // --- ogni ritardo accorpa: il timer precedente va annullato ---------------
 // Vale anche per la ricerca: un tasto premuto è l'equivalente di un clic su
 // ‹, e una ricerca per lettera digitata sarebbe la stessa raffica.
-for (const nome of ['scheduleAnalyze', 'scheduleLoadLog', 'scheduleSearch']) {
+for (const nome of ['scheduleAnalyze', 'scheduleSearch']) {
   const corpo = blocco(nome);
   assert.match(corpo, /clearTimeout\(/,
     `${nome} non annulla il timer di prima: i clic si accodano invece di accorparsi`);
   assert.match(corpo, /setTimeout\(/, `${nome} deve rimandare, non partire subito`);
 }
 
-// Il contrassegno sale quando si programma la lettura, non quando parte: una
-// richiesta già in volo va invalidata al clic, non 250 ms dopo.
-assert.match(blocco('scheduleLoadLog'), /logToken\+\+|\+\+logToken/,
-  'programmare una lettura nuova deve invalidare subito quella in corso');
-
 // --- e chi legge scarta le risposte superate ------------------------------
-// Vale per tutte e quattro le letture, non solo per quelle legate al giorno:
+// Vale per tutte e tre le letture, non solo per quelle legate al giorno:
 // due Aggiorna ravvicinati bastano a far tornare le risposte fuori ordine.
 for (const [nome, token] of [
-  ['analyze', 'analyzeToken'], ['loadLog', 'logToken'],
+  ['analyze', 'analyzeToken'],
   ['runSearch', 'searchToken'], ['loadTickets', 'ticketsToken']
 ]) {
   const corpo = blocco(nome);
@@ -70,7 +62,6 @@ for (const [nome, token] of [
 // l'etichetta di un'altra: il giorno o il termine nel frattempo è cambiato.
 for (const [nome, campo] of [
   ['analyze', 'forDate = state.isoDate'],
-  ['loadLog', 'forDate = state.isoDate'],
   ['runSearch', 'query = state.searchQuery']
 ]) {
   const corpo = blocco(nome);
@@ -83,7 +74,7 @@ for (const [nome, campo] of [
 // --- il controllo va fatto anche sull'errore ------------------------------
 // Un errore di una richiesta superata cancellerebbe a schermo il risultato
 // buono, e mostrerebbe un messaggio che non riguarda quello che stai vedendo.
-for (const nome of ['analyze', 'loadLog', 'runSearch']) {
+for (const nome of ['analyze', 'runSearch']) {
   const corpo = blocco(nome);
   const dopoCatch = corpo.slice(corpo.indexOf('} catch'));
   assert.match(dopoCatch, /token !== \w+Token/,

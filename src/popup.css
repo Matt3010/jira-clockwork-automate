@@ -541,8 +541,7 @@ tr.disabled .remove.wipe { opacity: 1; }
   font-weight: 600;
 }
 
-/* Registro delle attività */
-.log-view { overflow-y: auto; flex: 1; padding: 0 12px 12px; }
+/* Le teste delle liste: il conto a sinistra, i comandi a destra. */
 .log-head {
   display: flex;
   align-items: center;
@@ -551,29 +550,6 @@ tr.disabled .remove.wipe { opacity: 1; }
   padding: 12px 0 8px;
 }
 .log-count { color: var(--muted); font-size: 12px; }
-.log { list-style: none; margin: 0; padding: 0; }
-.log li {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  padding: 5px 0;
-  border-top: 1px solid var(--border);
-  font-size: 12px;
-}
-.log li:first-child { border-top: none; }
-.log .quando {
-  flex: none;
-  width: 42px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.log .chiave { flex: none; font-weight: 600; }
-.log .cosa { flex: 1; min-width: 0; color: var(--muted); }
-.log .cosa strong { color: var(--text); font-weight: 500; }
-/* Chi ha fatto la modifica, quando non sei tu. Piu' smorto del verbo: e' il
-   contorno, ma deve restare leggibile — serve proprio a non attribuirsi il
-   lavoro di un altro. */
-.log .cosa .da-altri { color: var(--muted); font-style: italic; }
 
 /* Chi altro ha messo mano alla task, sotto la riga a cui appartiene. Smorta
    come il resto del contorno: non e' lavoro da registrare, e' un fatto da
@@ -589,29 +565,6 @@ tr.disabled .remove.wipe { opacity: 1; }
 .altri .chi { font-style: normal; font-weight: 500; color: var(--text); }
 .altri a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .altri a:hover { color: var(--accent); }
-
-/* Pull request. Tre gruppi, e il primo è la domanda con cui apri la vista:
-   cosa aspetta te. Sola lettura — unire e rifiutare stanno su Bitbucket, e da
-   qui ci si arriva col link. */
-.pr-group { margin-bottom: 12px; }
-.pr-group-title {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  color: var(--muted);
-  margin-bottom: 6px;
-}
-.pr-row {
-  padding: 8px;
-  margin-bottom: 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-.pr-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.pr-line .chiave { font-weight: 600; color: var(--text); text-decoration: none; flex: none; }
-.pr-title { color: var(--text); }
-.pr-meta { margin-top: 4px; font-size: 11px; color: var(--muted); }
 
 /* Ticket aperti. Due livelli: lo stato dice a che punto sei, la data dice da
    quanto quel ticket è lì. Il secondo livello è rientrato, così si vede a

@@ -11,7 +11,7 @@ import {
 import { icon, setIcon } from './lib/icons.js';
 import { send } from './lib/comandi.js';
 import { t, applyI18n } from './lib/i18n.js';
-import { describeEvent, eventTime, logAsText } from './lib/registro.js';
+import { eventTime } from './lib/registro.js';
 
 const el = {
   date: document.getElementById('date'),
@@ -39,19 +39,8 @@ const el = {
   cancelSend: document.getElementById('cancel-send'),
   datalist: document.getElementById('recent-issues'),
   tabHours: document.getElementById('tab-hours'),
-  tabLog: document.getElementById('tab-log'),
-  tabPr: document.getElementById('tab-pr'),
   tabTickets: document.getElementById('tab-tickets'),
-  prView: document.getElementById('pr-view'),
-  pr: document.getElementById('pr'),
-  prCount: document.getElementById('pr-count'),
-  prEmpty: document.getElementById('pr-empty'),
   dayPicker: document.getElementById('day-picker'),
-  logView: document.getElementById('log-view'),
-  log: document.getElementById('log'),
-  logEmpty: document.getElementById('log-empty'),
-  logCount: document.getElementById('log-count'),
-  logCopy: document.getElementById('log-copy'),
   ticketsView: document.getElementById('tickets-view'),
   tickets: document.getElementById('tickets'),
   ticketsEmpty: document.getElementById('tickets-empty'),
@@ -75,12 +64,8 @@ const state = {
   // Righe con l'elenco dei worklog già su Jira aperto.
   expanded: new Set(),
   analyzedAt: 0,
-  // Vista corrente e registro attività: il registro si carica solo quando lo
-  // apri, e la giornata per cui vale serve a sapere se è da rileggere.
+  // Vista corrente: le ore o i ticket aperti.
   tab: 'hours',
-  logEvents: [],
-  logDate: null,
-  logAt: 0,
   config: null,
   recentIssues: [],
   // I ticket aperti non dipendono dal giorno: si leggono una volta e restano.
@@ -88,9 +73,6 @@ const state = {
   ticketsTotal: 0,
   ticketsLoaded: false,
   ticketsAt: 0,
-  prItems: [],
-  prLoaded: false,
-  prAt: 0,
   // Le transizioni già lette, per non richiederle a ogni apertura del menu.
   transitionsByKey: new Map(),
   // Ricerca: quando è attiva prende il posto dell'elenco, e i risultati non
@@ -1535,14 +1517,12 @@ async function submit() {
 setDay(state.isoDate);
 el.copyDate.value = previousWorkday(state.isoDate);
 /**
- * Cambiare giorno tocca entrambe le viste: il piano si rilegge comunque, o
- * tornando su «Ore» si troverebbe quello di un altro giorno; il registro solo
- * se lo stai guardando, e altrimenti al prossimo passaggio.
+ * Cambiare giorno rilegge comunque il piano: anche se stai guardando i ticket,
+ * o tornando su «Ore» si troverebbe quello di un altro giorno.
  */
 function onDateChanged(delay) {
   el.copyDate.value = previousWorkday(state.isoDate);
   scheduleAnalyze(delay);
-  if (state.tab === 'log') scheduleLoadLog(delay);
 }
 
 el.date.addEventListener('change', () => {
@@ -1585,89 +1565,6 @@ el.addRow.addEventListener('click', () => {
   // Il campo della riga nuova prende il fuoco: si è appena chiesto di scriverci.
   el.rows.querySelector('tr:last-child .issue-input')?.focus();
 });
-
-// ------------------------------------------------------- registro attività
-
-function renderLog() {
-  const eventi = state.logEvents;
-  el.log.replaceChildren(...eventi.map((evento) => {
-    const li = document.createElement('li');
-
-    const quando = document.createElement('span');
-    quando.className = 'quando';
-    quando.textContent = eventTime(evento.at);
-
-    const chiave = document.createElement('span');
-    chiave.className = 'chiave';
-    chiave.textContent = evento.key;
-
-    const cosa = document.createElement('span');
-    cosa.className = 'cosa';
-    const { verbo, dettaglio } = describeEvent(evento);
-    const forte = document.createElement('strong');
-    forte.textContent = verbo;
-    cosa.append(forte);
-    // Stessa ragione della riga da incollare: senza il nome, la modifica di un
-    // collega si legge come tua.
-    if (evento.by) {
-      const chi = document.createElement('span');
-      chi.className = 'da-altri';
-      chi.textContent = ` ${t('logBy', evento.by)}`;
-      cosa.append(chi);
-    }
-    if (dettaglio) cosa.append(` · ${dettaglio}`);
-
-    li.append(quando, chiave, cosa);
-    return li;
-  }));
-
-  el.logEmpty.hidden = eventi.length > 0;
-  el.logCopy.hidden = eventi.length === 0;
-  el.logCount.textContent = eventi.length
-    ? t(eventi.length === 1 ? 'logCountOne' : 'logCount', eventi.length)
-    : '';
-  syncLabel();
-}
-
-// Stessa protezione del piano, e per lo stesso motivo: tenendo premuto ‹ o ›
-// si attraversano cinque giorni in un secondo. Il timer fa partire una sola
-// lettura, il token impedisce a una risposta di un giorno superato di
-// atterrare comunque — arrivano fuori ordine, e vincerebbe l'ultima.
-let prToken = 0;
-let logToken = 0;
-let logTimer = null;
-
-function scheduleLoadLog(delay = 250) {
-  clearTimeout(logTimer);
-  // Il token sale subito, non allo scadere: una richiesta già in volo per il
-  // giorno di prima va invalidata adesso, non fra 250 ms.
-  logToken++;
-  logTimer = setTimeout(loadLog, delay);
-}
-
-async function loadLog() {
-  clearTimeout(logTimer);
-  const token = ++logToken;
-  const forDate = state.isoDate;
-
-  el.logCount.textContent = t('emptyAnalysing');
-  el.log.replaceChildren();
-  el.logEmpty.hidden = true;
-  el.logCopy.hidden = true;
-  try {
-    const { events } = await comando('activity', { isoDate: forDate });
-    if (token !== logToken) return;
-    state.logEvents = events;
-    state.logDate = forDate;
-    state.logAt = Date.now();
-    renderLog();
-  } catch (error) {
-    if (token !== logToken) return;
-    state.logEvents = [];
-    renderLog();
-    reportAuthError(error, loadLog);
-  }
-}
 
 // ------------------------------------------------------------ ticket aperti
 
@@ -1849,93 +1746,8 @@ async function applyTickets(groups, total, moved = '', { riapri = false } = {}) 
   if (moved) followMoved(moved, riapri);
 }
 
-/**
- * Le pull request dei progetti, lette quando apri la vista.
- *
- * Sola lettura: unire, rifiutare e approvare sono scritture sull'API di
- * Bitbucket, e Jira non fa da tramite. Ogni riga porta il link alla PR, dove
- * quei tasti stanno.
- */
-async function loadPr() {
-  const token = ++prToken;
-  el.prCount.textContent = t('emptyAnalysing');
-  el.pr.replaceChildren();
-  el.prEmpty.hidden = true;
-  try {
-    const { items } = await comando('pullRequests');
-    if (token !== prToken) return;
-    state.prItems = items || [];
-    state.prLoaded = true;
-    state.prAt = Date.now();
-    renderPr();
-  } catch (error) {
-    if (token !== prToken) return;
-    state.prItems = [];
-    renderPr();
-    reportAuthError(error, loadPr);
-  }
-}
-
-/** Prima quelle che aspettano te: e' la domanda con cui apri questa vista. */
-function prGroups() {
-  const aperte = state.prItems.filter((pr) => pr.status !== 'MERGED' && pr.status !== 'DECLINED');
-  const recenti = (a, b) => (b.at || 0) - (a.at || 0);
-  return [
-    { key: 'prWaitingYou', items: aperte.filter((pr) => pr.waitingForYou).sort(recenti) },
-    { key: 'prYours', items: aperte.filter((pr) => !pr.waitingForYou && pr.mine).sort(recenti) },
-    { key: 'prOthers', items: aperte.filter((pr) => !pr.waitingForYou && !pr.mine).sort(recenti) }
-  ].filter((gruppo) => gruppo.items.length);
-}
-
-function renderPr() {
-  const gruppi = prGroups();
-  const totale = gruppi.reduce((somma, g) => somma + g.items.length, 0);
-
-  el.pr.replaceChildren(...gruppi.map((gruppo) => {
-    const sezione = document.createElement('div');
-    sezione.className = 'pr-group';
-
-    const titolo = document.createElement('div');
-    titolo.className = 'pr-group-title';
-    titolo.textContent = t(gruppo.key, String(gruppo.items.length));
-    sezione.append(titolo, ...gruppo.items.map(renderPrRow));
-    return sezione;
-  }));
-
-  el.prEmpty.hidden = totale > 0;
-  el.prCount.textContent = totale
-    ? t(totale === 1 ? 'prCountOne' : 'prCount', totale)
-    : '';
-  syncLabel();
-}
-
-function renderPrRow(pr) {
-  const riga = document.createElement('div');
-  riga.className = 'pr-row';
-
-  const testa = document.createElement('div');
-  testa.className = 'pr-line';
-  // La chiave porta al ticket, il titolo alla PR: sono due posti diversi e
-  // servono a due momenti diversi.
-  const chiave = link(pr.issueKey, issueUrl(pr.issueKey), t('titleOpenInJira', pr.issueKey));
-  chiave.className = 'chiave';
-  const titolo = link(pr.title || `#${pr.number}`, pr.url, t('titleOpenPr'));
-  titolo.className = 'pr-title';
-  testa.append(chiave, ' ', titolo);
-  if (pr.approvals) testa.append(badge(t('prApprovals', String(pr.approvals)), 'ok'));
-
-  const sotto = document.createElement('div');
-  sotto.className = 'pr-meta';
-  const parti = [pr.issueSummary, pr.author && t('prBy', pr.author)].filter(Boolean);
-  if (pr.at) parti.push(eventTime(pr.at));
-  sotto.textContent = parti.join(' · ');
-
-  riga.append(testa, sotto);
-  return riga;
-}
-
-// Stessa protezione del piano e del registro: si digita una lettera alla
-// volta, e senza ritardo sarebbe una ricerca per tasto premuto.
+// Stessa protezione del piano: si digita una lettera alla volta, e senza
+// ritardo sarebbe una ricerca per tasto premuto.
 let searchToken = 0;
 let searchTimer = null;
 
@@ -2076,30 +1888,19 @@ async function moveTicket(issue, transizione, menu) {
 function showTab(nome) {
   state.tab = nome;
   const ore = nome === 'hours';
-  const registro = nome === 'log';
   const ticket = nome === 'tickets';
-  const pr = nome === 'pr';
 
   el.tabHours.setAttribute('aria-selected', String(ore));
-  el.tabLog.setAttribute('aria-selected', String(registro));
   el.tabTickets.setAttribute('aria-selected', String(ticket));
-  el.tabPr.setAttribute('aria-selected', String(pr));
 
   el.main.hidden = !ore;
   el.footer.hidden = !ore;
-  el.logView.hidden = !registro;
   el.ticketsView.hidden = !ticket;
-  el.prView.hidden = !pr;
-  // Ticket aperti e pull request sono quelli di adesso: il giorno scelto non
-  // c'entra, e lasciare il selettore lì accanto farebbe pensare il contrario.
-  el.dayPicker.hidden = ticket || pr;
+  // I ticket aperti sono quelli di adesso: il giorno scelto non c'entra, e
+  // lasciare il selettore lì accanto farebbe pensare il contrario.
+  el.dayPicker.hidden = ticket;
 
-  // Il registro si legge quando lo apri, e si rilegge se hai cambiato giorno.
-  if (registro && state.logDate !== state.isoDate) loadLog();
   if (ticket && !state.ticketsLoaded) loadTickets();
-  // Le pull request costano una richiesta per ticket aperto: si leggono solo
-  // quando apri la vista, mai a ogni analisi.
-  if (pr && !state.prLoaded) loadPr();
   mostraAvvisi();
   // Ogni vista ha la sua freschezza: cambiando scheda cambia il riferimento.
   syncLabel();
@@ -2122,8 +1923,6 @@ const TICK_MS = 15000;
 /** Quando è stato letto quello che si sta guardando adesso. */
 function freshnessAt() {
   if (state.tab === 'tickets') return state.ticketsAt;
-  if (state.tab === 'pr') return state.prAt;
-  if (state.tab === 'log') return state.logAt;
   return state.analyzedAt;
 }
 
@@ -2169,7 +1968,6 @@ function pollIfIdle() {
   if (Date.now() - freshnessAt() < POLL_MS) return;
 
   if (state.tab === 'tickets') loadTickets();
-  else if (state.tab === 'log') loadLog();
   // Il piano si rilegge nella versione leggera: una richiesta invece delle
   // decine di un'analisi completa, che rifarebbe attività e commit — roba che
   // non cambia da sola.
@@ -2240,8 +2038,6 @@ async function copyFromDay() {
 el.copyDo.addEventListener('click', copyFromDay);
 
 el.tabHours.addEventListener('click', () => showTab('hours'));
-el.tabLog.addEventListener('click', () => showTab('log'));
-el.tabPr.addEventListener('click', () => showTab('pr'));
 el.tabTickets.addEventListener('click', () => showTab('tickets'));
 
 el.ticketsSearch.addEventListener('input', () => {
@@ -2258,16 +2054,6 @@ el.ticketsSearch.addEventListener('keydown', (event) => {
   clearSearch();
 });
 
-el.logCopy.addEventListener('click', async () => {
-  try {
-    await navigator.clipboard.writeText(logAsText(state.logEvents));
-    const righe = state.logEvents.length;
-    message(t(righe === 1 ? 'msgLogCopiedOne' : 'msgLogCopied', righe), 'ok');
-  } catch (error) {
-    message(t('msgLogCopyFailed', error.message), 'err');
-  }
-});
-
 el.toggleAll.addEventListener('change', () => {
   for (const row of state.rows) {
     row.enabled = el.toggleAll.checked;
@@ -2280,8 +2066,6 @@ el.toggleAll.addEventListener('change', () => {
 // Il tasto in alto ricarica quello che stai guardando, non sempre le ore.
 el.analyze.addEventListener('click', () => {
   if (state.tab === 'tickets') return loadTickets();
-  if (state.tab === 'pr') return loadPr();
-  if (state.tab === 'log') return loadLog();
   analyze();
 });
 el.submit.addEventListener('click', () => {

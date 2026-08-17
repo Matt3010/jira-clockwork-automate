@@ -26,14 +26,14 @@ const blocco = (nome) => {
 {
   const corpo = blocco('freshnessAt');
   for (const [vista, campo] of [
-    ['tickets', 'state.ticketsAt'], ['log', 'state.logAt'], ['ore', 'state.analyzedAt']
+    ['tickets', 'state.ticketsAt'], ['ore', 'state.analyzedAt']
   ]) {
     assert.ok(corpo.includes(campo), `la vista ${vista} non ha un momento di lettura suo`);
   }
 
-  // E i tre campi devono essere davvero scritti quando la lettura riesce,
+  // E i due campi devono essere davvero scritti quando la lettura riesce,
   // non solo dichiarati.
-  for (const campo of ['ticketsAt', 'logAt', 'analyzedAt']) {
+  for (const campo of ['ticketsAt', 'analyzedAt']) {
     assert.match(popup, new RegExp(`state\\.${campo} = Date\\.now\\(\\)`),
       `state.${campo} non viene mai aggiornato: l etichetta resterebbe ferma`);
   }
@@ -57,7 +57,7 @@ const blocco = (nome) => {
     'il battito deve riscrivere l etichetta anche quando non rilegge');
 
   // E dopo ogni disegno, per non aspettare il battito successivo.
-  for (const nome of ['render', 'renderLog', 'renderTickets', 'showTab']) {
+  for (const nome of ['render', 'renderTickets', 'showTab']) {
     assert.match(blocco(nome), /syncLabel\(\)/, `${nome} non aggiorna l etichetta`);
   }
 

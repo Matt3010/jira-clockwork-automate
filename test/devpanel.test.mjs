@@ -141,13 +141,13 @@ assert.equal(con.byIssue.size, 1, 'dichiarando l email alternativa il commit vie
   const root = join(dirname(fileURLToPath(import.meta.url)), '..');
   const bg = readFileSync(join(root, 'src/background.js'), 'utf8');
 
-  // Una sola strada per leggere i commit: il piano e il registro devono
-  // chiamare la stessa funzione. Ce n'erano due copie, e alla prima modifica —
-  // l'impostazione sui merge — sono andate corrette tutte e due a mano.
+  // Una sola strada per leggere i commit: la sequenza sta in una funzione
+  // sola. Ce n'erano due copie, e alla prima modifica — l'impostazione sui
+  // merge — sono andate corrette tutte e due a mano.
   assert.equal((bg.match(/collectDevPanelCommits\(/g) || []).length, 1,
     'la sequenza che legge i commit va scritta in un posto solo');
-  assert.equal((bg.match(/await gatherCommits\(/g) || []).length, 2,
-    'e sia il piano sia il registro devono passare di lì');
+  assert.match(bg, /await gatherCommits\(/,
+    'e il piano deve passare di lì');
 
   // Leggere i commit non è più una scelta: era una casella che nessuno aveva
   // motivo di spegnere, e spenta lasciava l'estensione senza la sua fonte

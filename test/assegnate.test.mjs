@@ -7,7 +7,6 @@
 
 import assert from 'node:assert/strict';
 import { buildPlan } from '../src/lib/planner.js';
-import { logLine } from '../src/lib/registro.js';
 import { DEFAULT_CONFIG } from '../src/lib/storage.js';
 
 const config = { ...DEFAULT_CONFIG, dayStart: '09:00', dayEnd: '18:00' };
@@ -118,25 +117,6 @@ const piano = (jiraActivity, gitByIssue = new Map()) => buildPlan({
   const riga = piano(attivita, commit).rows.find((r) => r.issueKey === 'ABC-1');
   assert.equal(riga.enabled, true, 'il codice scritto è la prova che ci hai lavorato');
   assert.deepEqual(riga.sources, ['git']);
-}
-
-// --- nel registro la modifica altrui porta il nome di chi l'ha fatta -------
-// Il registro finisce incollato nel daily, dove chi legge dà per scontato che
-// parli di te: senza il nome, il lavoro di un collega diventa tuo per
-// distrazione.
-{
-  const riga = logLine({
-    at: Date.parse(quando(17)), key: 'ABC-1', tipo: 'status',
-    from: 'To Do', to: 'In Progress', by: 'Dario Decarlo'
-  });
-  // Senza `chrome` la traduzione resta la chiave: si verifica che la riga
-  // porti il pezzo "da chi", il testo lo verifica la suite delle traduzioni.
-  assert.match(riga, /\(logBy\)/, 'senza il nome se lo intesta chi incolla');
-
-  const tua = logLine({
-    at: Date.parse(quando(11)), key: 'ABC-2', tipo: 'status', from: 'To Do', to: 'In Progress'
-  });
-  assert.doesNotMatch(tua, /\(/, 'sulle tue non si aggiunge niente: sono già tue');
 }
 
 // --- chi altro ci ha messo mano, riga per riga -----------------------------
