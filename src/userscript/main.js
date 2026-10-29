@@ -5,11 +5,11 @@
 // il pannello sta nella pagina Jira che lo contiene, e da li' parla con le API
 // Jira con il login gia' fatto.
 //
-// Per ora due schede: la verifica sui giorni passati — ricostruisce ogni
-// giorno come se fosse vuoto e lo confronta con i worklog che hai registrato
-// davvero — e le impostazioni. Niente viene scritto su Jira.
+// Tre schede: Giorno — il piano della giornata, da correggere e inviare —,
+// Verifica — ricostruisce i giorni passati come se fossero vuoti e li
+// confronta con i worklog registrati davvero — e Impostazioni.
 
-import { JiraClient } from '../lib/jira.js';
+import { JiraClient, loggedMinutesForDay } from '../lib/jira.js';
 import { formatMinutes, todayIso } from '../lib/dates.js';
 import { PageChannel } from './channel.js';
 import { collectDay, planFromDay, resolveMe } from './analysis.js';
@@ -18,6 +18,12 @@ import {
   applySettingsForm, exportSettingsFile, importSettingsFile, loadSettings, saveSettings
 } from './settings.js';
 import { breakRow, meetingRow, readSettingsForm, renderSettings } from './settings-view.js';
+import {
+  addManualRow, applyLogged, confirmedGuesses, loadPlan, newDayState, notePending, rememberMeetings,
+  removeRow, setRowIssue, setRowMinutes, shiftIsoDate, submitMessages, submitRows, summary, toggleRow
+} from './day.js';
+import { hoursValue, noteRows, renderDay, renderFooter, timeLabel } from './day-view.js';
+import { t } from './i18n.js';
 
 const MY_WORK = /\/jira\/apps\/[^/]+\/[^/]+\/my-work/;
 
@@ -50,8 +56,20 @@ let panel;
 let config = loadSettings();
 let running = false;
 let report = [];
-let tab = 'verify';
+let tab = 'day';
 let count = 5;
+
+// Scheda Giorno.
+const jira = new JiraClient(new PageChannel());
+let me = null;
+let day = newDayState(todayIso());
+let dayBusy = false;
+let daySending = false;
+let dayConfirming = false;
+let dayError = '';
+let dayStale = true;
+let dayToken = 0;
+let dayTimer = 0;
 
 // ------------------------------------------------------------------ verifica
 
@@ -169,7 +187,15 @@ function verifyBody() {
     </section>`;
 }
 
-const TABS = [['verify', 'Verifica'], ['settings', 'Impostazioni']];
+const TABS = [['day', 'Giorno'], ['verify', 'Verifica'], ['settings', 'Impostazioni']];
+
+function bodyOf(scheda) {
+  if (scheda === 'settings') return renderSettings(config);
+  if (scheda === 'day') {
+    return renderDay(day, { busy: dayBusy, sending: daySending, confirming: dayConfirming, error: dayError });
+  }
+  return verifyBody();
+}
 
 function render() {
   if (!panel) return;
@@ -183,7 +209,8 @@ function render() {
     </header>
     <nav class="tabs">${TABS.map(([id, label]) =>
       `<button data-act="tab" data-tab="${id}" class="${tab === id ? 'on' : ''}">${label}</button>`).join('')}</nav>
-    <div class="body">${tab === 'settings' ? renderSettings(config) : verifyBody()}</div>`;
+    <div class="body">${bodyOf(tab)}</div>
+    ${tab === 'day' ? `<footer class="dayfoot">${dayFooter()}</footer>` : ''}`;
   // Lo scroll si tiene solo ridisegnando la stessa scheda: cambiandola si
   // riparte dall'alto.
   if (stessaScheda) panel.querySelector('.body').scrollTop = scroll;
@@ -206,6 +233,8 @@ function saveFromForm() {
   }
   config = next;
   saveSettings(config);
+  // Il piano del giorno era fatto con le impostazioni di prima.
+  dayStale = true;
   render();
   settingsMessage('Salvato.', 'good');
 }
@@ -240,6 +269,194 @@ function addRow(kind) {
     ? breakRow({ id, label: 'Pausa', start: '13:00', end: '14:00' })
     : meetingRow({ id, label: 'Riunione', days: [1, 2, 3, 4, 5], time: '09:30', minutes: 30 });
   panel.querySelector(kind === 'break' ? '.list.breaks' : '.list.meetings').insertAdjacentHTML('beforeend', html);
+}
+
+// ------------------------------------------------------------------ giorno
+
+async function whoAmI() {
+  if (!me) me = await resolveMe(jira);
+  return me;
+}
+
+const dayFooter = () => renderFooter(day, { busy: dayBusy, sending: daySending, confirming: dayConfirming });
+
+function renderDayFooter() {
+  const foot = root?.querySelector('.dayfoot');
+  if (foot) foot.innerHTML = dayFooter();
+}
+
+/** L'analisi del giorno guardato. Se intanto si cambia giorno, vince l'ultima. */
+async function analyzeDay() {
+  clearTimeout(dayTimer);
+  const token = ++dayToken;
+  const isoDate = day.isoDate;
+  dayBusy = true;
+  dayError = '';
+  dayConfirming = false;
+  dayStale = false;
+  if (tab === 'day') render();
+  try {
+    const who = await whoAmI();
+    const attesa = day.pending.isoDate === isoDate ? Object.keys(day.pending.perIssue) : [];
+    const raccolto = await collectDay(jira, { isoDate, config, me: who, extraLoggedKeys: attesa });
+    if (token !== dayToken) return;
+    const nuovo = newDayState(isoDate);
+    nuovo.pending = day.pending;
+    loadPlan(nuovo, { plan: planFromDay(raccolto, config), day: raccolto, config });
+    if (rememberMeetings(config, confirmedGuesses(nuovo))) saveSettings(config);
+    day = nuovo;
+  } catch (error) {
+    if (token !== dayToken) return;
+    dayError = error.message || String(error);
+  } finally {
+    if (token === dayToken) {
+      dayBusy = false;
+      if (tab === 'day') render();
+    }
+  }
+}
+
+/** Cambiare giorno rilegge il piano; i salti ravvicinati si accorpano. */
+function setDay(isoDate) {
+  if (!isoDate || isoDate === day.isoDate) return;
+  const pending = day.pending;
+  day = newDayState(isoDate);
+  day.pending = pending;
+  dayBusy = true;
+  render();
+  clearTimeout(dayTimer);
+  dayTimer = setTimeout(analyzeDay, 300);
+}
+
+const rowOf = (el) => day.rows.find((row) => row.id === el.closest('.prow')?.dataset.id);
+
+/** Aggiorna ore e orari senza ridisegnare: chi sta scrivendo non perde il fuoco. */
+function syncDayValues() {
+  dayConfirming = false;
+  for (const row of day.rows) {
+    const card = [...root.querySelectorAll('.prow')].find((el) => el.dataset.id === row.id);
+    if (!card) continue;
+    const hours = card.querySelector('.hours');
+    if (hours && root.activeElement !== hours) hours.value = hoursValue(row);
+    hours?.classList.toggle('locked', Boolean(row.locked));
+    const time = card.querySelector('.time');
+    if (time) time.textContent = timeLabel(row);
+  }
+  renderDayFooter();
+}
+
+/** Clockwork disegna il calendario una volta sola: dopo un invio va ricaricato. */
+function reloadClockwork() {
+  const frames = [...document.querySelectorAll('iframe')]
+    .filter((f) => /atlassian-dev\.net|clockwork/i.test(f.src))
+    .sort((a, b) => b.offsetWidth * b.offsetHeight - a.offsetWidth * a.offsetHeight);
+  if (!frames.length) return false;
+  frames[0].src = frames[0].src;
+  return true;
+}
+
+// Clockwork non legge Jira al volo: i worklog gli arrivano per sincronizzazione,
+// qualche decina di secondi dopo. Ricaricato subito, il calendario mostrava
+// solo una parte di quello appena scritto — e sembrava che l'invio non avesse
+// fatto niente. Si ricarica a scaglioni, finche' non e' plausibile che abbia
+// tutto.
+const RICARICHE_MS = [5000, 20000, 45000];
+let ricariche = [];
+
+function reloadClockworkSoon() {
+  ricariche.forEach(clearTimeout);
+  if (!document.querySelector('iframe')) return false;
+  ricariche = RICARICHE_MS.map((ms) => setTimeout(reloadClockwork, ms));
+  return true;
+}
+
+async function sendDay() {
+  const s = summary(day);
+  if (s.needsConfirm && !dayConfirming) {
+    dayConfirming = true;
+    renderDayFooter();
+    return;
+  }
+  daySending = true;
+  dayConfirming = false;
+  renderDayFooter();
+  const isoDate = day.isoDate;
+  try {
+    const results = await submitRows(jira, { isoDate, rows: day.rows, config });
+    day.messages = submitMessages(results);
+    const riunioni = day.rows
+      .filter((row) => row.kind === 'meeting' && row.enabled && row.memoryKey && row.issueKey)
+      .map((row) => [row.memoryKey, row.issueKey]);
+    if (rememberMeetings(config, riunioni)) saveSettings(config);
+
+    const scritte = results.filter((r) => r.ok).map((r) => r.issueKey);
+    if (scritte.length) {
+      notePending(day, results);
+      const who = await whoAmI();
+      const chiavi = [...new Set([...day.rows.map((row) => row.issueKey), ...scritte].filter(Boolean))];
+      try {
+        applyLogged(day, await loggedMinutesForDay(jira, { isoDate, accountId: who.accountId, extraKeys: chiavi }), scritte);
+      } catch (error) {
+        day.messages.push({ level: 'action', text: t('msgPlanNotUpdated', error.message) });
+      }
+      if (reloadClockworkSoon()) {
+        day.messages.push({ level: 'info', text: 'Clockwork li mostra fra qualche secondo: il calendario si ricarica da solo nel prossimo minuto.' });
+      } else {
+        day.messages.push({ level: 'info', text: t('msgReloadNone') });
+      }
+    }
+  } catch (error) {
+    day.messages.push({ level: 'err', text: error.message || String(error) });
+  } finally {
+    daySending = false;
+    render();
+  }
+}
+
+function onDayClick(act, el) {
+  if (act === 'prev-day') setDay(shiftIsoDate(day.isoDate, -1));
+  else if (act === 'next-day') setDay(shiftIsoDate(day.isoDate, 1));
+  else if (act === 'today') setDay(todayIso());
+  else if (act === 'analyze') analyzeDay();
+  else if (act === 'add-row') {
+    addManualRow(day);
+    render();
+    [...root.querySelectorAll('.prow .issue')].pop()?.focus();
+  } else if (act === 'remove-plan-row') {
+    removeRow(day, el.closest('.prow').dataset.id);
+    render();
+  } else if (act === 'send') sendDay();
+  else if (act === 'cancel-send') {
+    dayConfirming = false;
+    renderDayFooter();
+  } else return false;
+  return true;
+}
+
+function onDayChange(act, el) {
+  const row = rowOf(el);
+  if (act === 'date') setDay(el.value);
+  else if (act === 'toggle' && row) {
+    toggleRow(day, row, el.checked);
+    render();
+  } else if (act === 'issue' && row) {
+    const { remember, clash } = setRowIssue(day, row, el.value);
+    if (remember && rememberMeetings(config, [remember])) saveSettings(config);
+    if (clash) day.messages.push({ level: 'info', text: t('msgClash', row.issueKey) });
+    render();
+  } else if (act === 'hours' && row) {
+    setRowMinutes(day, row, Number(el.value || 0) * 60);
+    syncDayValues();
+  }
+}
+
+function onInput(event) {
+  const el = event.target;
+  if (el.dataset.act !== 'comment') return;
+  const row = rowOf(el);
+  if (!row) return;
+  row.comment = el.value;
+  el.rows = noteRows(el.value);
 }
 
 // ------------------------------------------------------------------ montaggio
@@ -328,6 +545,44 @@ const CSS = `
   .day-box { display: flex; flex-direction: column; align-items: center; font-size: 10px; cursor: pointer; }
   .footer { position: sticky; bottom: 0; padding: 12px 0; display: flex; gap: 8px; align-items: center;
     background: var(--ds-surface-overlay, #fff); border-top: 1px solid var(--ds-border, #dfe1e6); }
+  .dayview { padding: 12px 0 24px; display: flex; flex-direction: column; gap: 10px; }
+  .daybar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .sp { flex: 1; }
+  .small { font-size: 11px; }
+  .dayview input, .dayview textarea {
+    font: inherit; color: inherit; background: var(--ds-background-input, transparent);
+    border: 1px solid var(--ds-border-input, #8590a2); border-radius: 4px; padding: 4px 6px; }
+  .msgs { display: flex; flex-direction: column; gap: 6px; }
+  .msgs:empty { display: none; }
+  .msg { padding: 6px 10px; border-radius: 4px; font-size: 12px; border-left: 3px solid; }
+  .msg.err { border-color: var(--ds-border-danger, #e2483d); background: var(--ds-background-danger, #ffeceb); }
+  .msg.action { border-color: var(--ds-border-warning, #e56910); background: var(--ds-background-warning, #fff7d6); }
+  .msg.ok { border-color: var(--ds-border-success, #22a06b); background: var(--ds-background-success, #dcfff1); }
+  .msg.info { border-color: var(--ds-border-information, #1d7afc); background: var(--ds-background-information, #e9f2ff); }
+  .plan { display: flex; flex-direction: column; gap: 8px; }
+  .empty { text-align: center; padding: 24px 0; }
+  .prow { border: 1px solid var(--ds-border, #dfe1e6); border-radius: 6px; padding: 8px;
+    display: flex; flex-direction: column; gap: 4px; }
+  .prow.meeting { border-left: 3px solid var(--ds-border-accent-yellow, #b38600); }
+  .prow.off { opacity: .55; }
+  .ptop { display: flex; align-items: center; gap: 6px; }
+  .ptop .issue { flex: 1; min-width: 0; font-weight: 600; text-transform: uppercase; }
+  .ptop .hours { width: 64px; text-align: right; }
+  .ptop .hours.locked { border-color: var(--ds-border-selected, #0c66e4); border-width: 2px; }
+  .psum { font-size: 12px; }
+  .pdetail, .ptime { font-size: 12px; }
+  .comment { width: 100%; resize: vertical; font-size: 12px; }
+  .badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-left: 3px; font-weight: 600;
+    background: var(--ds-background-neutral, #091e420f); }
+  .badge.jira { background: var(--ds-background-information, #e9f2ff); color: var(--ds-text-information, #0055cc); }
+  .badge.git { background: var(--ds-background-discovery, #f3f0ff); color: var(--ds-text-discovery, #5e4db2); }
+  .badge.warn { background: var(--ds-background-warning, #fff7d6); color: var(--ds-text-warning, #a54800); }
+  .dayfoot { padding: 10px 16px; border-top: 1px solid var(--ds-border, #dfe1e6); display: flex;
+    flex-direction: column; gap: 8px; background: var(--ds-surface-overlay, #fff); }
+  .total { font-size: 12px; }
+  .total b { font-size: 14px; margin-right: 4px; }
+  .total.over { color: var(--ds-text-danger, #ae2e24); }
+  button.danger { background: var(--ds-background-danger-bold, #c9372c); color: var(--ds-text-inverse, #fff); }
 `;
 
 function onClick(event) {
@@ -337,6 +592,9 @@ function onClick(event) {
   else if (act === 'tab') {
     tab = el.dataset.tab;
     render();
+    if (tab === 'day' && dayStale && !dayBusy) analyzeDay();
+  } else if (onDayClick(act, el)) {
+    // gestito dalla scheda Giorno
   } else if (act === 'verify') {
     count = Math.max(1, Math.min(30, Number(panel.querySelector('.count').value) || 5));
     verify(count);
@@ -351,11 +609,15 @@ function onClick(event) {
 }
 
 async function onChange(event) {
-  if (event.target.dataset.act !== 'import') return;
+  if (event.target.dataset.act !== 'import') {
+    onDayChange(event.target.dataset.act, event.target);
+    return;
+  }
   const file = event.target.files?.[0];
   if (!file) return;
   try {
     config = importSettingsFile(await file.text());
+    dayStale = true;
     render();
     settingsMessage('Configurazione importata.', 'good');
   } catch (error) {
@@ -372,10 +634,13 @@ function mount() {
   panel = root.querySelector('.panel');
   root.querySelector('.tab').addEventListener('click', () => {
     panel.hidden = !panel.hidden;
-    if (!panel.hidden) render();
+    if (panel.hidden) return;
+    render();
+    if (tab === 'day' && dayStale && !dayBusy) analyzeDay();
   });
   panel.addEventListener('click', onClick);
   panel.addEventListener('change', onChange);
+  panel.addEventListener('input', onInput);
   document.body.appendChild(host);
 }
 

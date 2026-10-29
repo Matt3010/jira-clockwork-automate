@@ -134,8 +134,11 @@ async function recentIssuesFor(jira, { projects, isoDate }) {
  * Tutto quello che si sa di una giornata: attivita' Jira, commit, worklog gia'
  * registrati, issue recenti. Solo letture.
  */
-export async function collectDay(jira, { isoDate, config, me }) {
+export async function collectDay(jira, { isoDate, config, me, extraLoggedKeys = [] }) {
   const projects = config.jira.projects || [];
+  // Gli avvisi dell'analisi, come chiavi: li traduce chi disegna.
+  const notes = [];
+  if (!projects.length) notes.push({ level: 'action', key: 'noteNoProjects', params: [] });
 
   const jiraActivity = await collectJiraActivity(jira, {
     isoDate,
@@ -145,6 +148,7 @@ export async function collectDay(jira, { isoDate, config, me }) {
     scanComments: config.jira.scanComments
   });
   mergeCreatedIssues(jiraActivity, await collectCreatedIssues(jira, { isoDate, projects }));
+  if (jiraActivity.truncated) notes.push({ level: 'info', key: 'noteActivityTruncated', params: [] });
 
   const candidates = await devCandidates(jira, { jiraActivity, config, isoDate });
   const dev = await collectDevPanelCommits(jira, {
@@ -153,6 +157,13 @@ export async function collectDay(jira, { isoDate, config, me }) {
     identities: [me.displayName, me.emailAddress, ...(config.identity?.extraAuthors || [])],
     countMerges: config.jira.countMerges !== false
   });
+  if (!dev.appType && candidates.length) {
+    notes.push({
+      level: 'info',
+      key: candidates.length === 1 ? 'noteNoCommitsOne' : 'noteNoCommits',
+      params: [candidates.length]
+    });
+  }
 
   const summaries = {};
   const estimates = {};
@@ -162,14 +173,19 @@ export async function collectDay(jira, { isoDate, config, me }) {
     estimates[candidate.key] = candidate.estimateMinutes || 0;
   }
 
+  // Le chiavi del giorno si leggono dirette, non solo dall'indice worklog di
+  // Jira: subito dopo un invio l'indice e' indietro di qualche secondo, e le
+  // righe appena scritte tornerebbero accese — pronte per il doppione.
   const logged = await loggedMinutesForDay(jira, {
     isoDate,
     accountId: me.accountId,
-    extraKeys: [...new Set([...jiraActivity.keys(), ...dev.byIssue.keys()])]
+    extraKeys: [...new Set([...jiraActivity.keys(), ...dev.byIssue.keys(), ...extraLoggedKeys])]
   });
+  if (!logged.reliable) notes.push({ level: 'action', key: 'noteWorklogsUnreadable', params: [] });
 
   return {
     isoDate,
+    notes,
     jiraActivity,
     gitByIssue: dev.byIssue,
     foreignGitByIssue: dev.othersByIssue,

@@ -44,7 +44,8 @@ const SUITES = [
   'firefox.test.mjs',
   'traduzioni.test.mjs',
   'coerenza.test.mjs',
-  'userscript-verifica.test.mjs'
+  'userscript-verifica.test.mjs',
+  'userscript-giorno.test.mjs'
 ];
 
 let failed = 0;
