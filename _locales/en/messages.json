@@ -80,6 +80,9 @@
   "splitActivity": {
     "message": "In proportion to commits and Jira changes"
   },
+  "splitEstimate": {
+    "message": "In proportion to the original estimate"
+  },
   "hintSplit": {
     "message": "In proportion, a task with six commits takes more than one with a single status change. A row with no traces still gets a share."
   },
@@ -543,6 +546,9 @@
   "titleRemoveRow": {
     "message": "Remove from the plan (does not touch Jira)"
   },
+  "titleDragRow": {
+    "message": "Drag to reorder, or use ↑ ↓"
+  },
   "worklogsOne": {
     "message": "Worklogs already on Jira for $ISSUE$:",
     "placeholders": {
@@ -563,7 +569,7 @@
     }
   },
   "worklogsUnlistable": {
-    "message": "Cannot list the individual worklogs for $ISSUE$ ($AMOUNT$ in total). Reload the extension, or delete them all:",
+    "message": "$ISSUE$ has $AMOUNT$ logged, but Jira isn't listing the individual worklogs yet. Refresh in a few seconds to delete them one by one:",
     "placeholders": {
       "issue": {
         "content": "$1"
@@ -580,14 +586,6 @@
     "message": "Delete all $COUNT$",
     "placeholders": {
       "count": {
-        "content": "$1"
-      }
-    }
-  },
-  "btnDeleteAllAmount": {
-    "message": "Delete all $AMOUNT$",
-    "placeholders": {
-      "amount": {
         "content": "$1"
       }
     }
@@ -896,14 +894,6 @@
   },
   "noteNoCommitsOne": {
     "message": "No linked commit found on the one issue checked: either the Development panel is not connected, or the ticket was not among the candidates."
-  },
-  "noteDevPanelUnreadable": {
-    "message": "Development panel not readable ($ERROR$). Continuing with Jira activity only.",
-    "placeholders": {
-      "error": {
-        "content": "$1"
-      }
-    }
   },
   "noteActivityTruncated": {
     "message": "The day search hit its limit: some issues may be missing. Narrow the projects in the options for a complete day."

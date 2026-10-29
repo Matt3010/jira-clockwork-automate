@@ -2,7 +2,6 @@
 // che si dividono le ore residue.
 
 import {
-  addMinutes,
   formatMinutes,
   isoWeekLabel,
   isoWeekday,
@@ -157,19 +156,16 @@ const ESTRANEO = new Set(['foreign', 'foreignComment']);
  */
 function countActivity(jiraEvents, gitCommits) {
   const eventi = jiraEvents || [];
-  const comments = eventi.filter((e) => e.kind === 'comment').length;
-  // La creazione si conta a parte: dire "1 modifica" di un ticket che hai
-  // aperto tu e' sbagliato, e nasconde il fatto che scriverlo e' stato
-  // lavoro suo.
-  const created = eventi.filter((e) => e.kind === 'created').length;
-  // Contarle fra le modifiche direbbe "2 modifiche Jira" di una giornata in
-  // cui non hai toccato niente, e peserebbe nella divisione delle ore.
-  const foreign = eventi.filter((e) => ESTRANEO.has(e.kind)).length;
+  const conta = (kind) => eventi.filter((e) => e.kind === kind).length;
+  // Solo quello che hai fatto tu. La creazione si conta a parte: dire "1
+  // modifica" di un ticket che hai aperto e' sbagliato, e nasconde che
+  // scriverlo e' stato lavoro. Le mosse dei colleghi non sono qui: stanno in
+  // `others`, o direbbero "2 modifiche Jira" di una giornata in cui non hai
+  // toccato niente.
   return {
-    changes: eventi.length - comments - created - foreign,
-    created,
-    comments,
-    foreign,
+    changes: conta('changelog'),
+    created: conta('created'),
+    comments: conta('comment'),
     commits: (gitCommits || []).length
   };
 }
@@ -276,6 +272,7 @@ export function buildPlan({
   gitByIssue,
   foreignGitByIssue = new Map(),
   summaries = {},
+  estimates = {},
   recentIssues = [],
   loggedEntries = [],
   loggedByIssue = {},
@@ -326,13 +323,29 @@ export function buildPlan({
   // l'attivita' Jira sul ticket delle cerimonie e' la riunione stessa.
   const meetingKeys = new Set(meetingRows.map((row) => row.issueKey).filter(Boolean));
 
+  // Il piano e' l'elenco di cio' su cui puoi registrare ore: la tua attivita'
+  // in Jira, i tuoi commit, o le ore che ci sono gia'. Un ticket che quel
+  // giorno ha mosso solo un collega — tuo perche' ne sei assegnatario o
+  // richiedente — non e' lavoro tuo, e qui non ci va: finiva in una riga spenta
+  // che diceva «questa non l'hai fatta», rumore che il registro delle attivita'
+  // (adesso rimosso) teneva a parte. Le mosse altrui restano, ma solo accanto
+  // alle righe che esistono per un motivo tuo (`others`), non piu' da sole.
+  const haLavoroTuo = (key) => {
+    if (gitByIssue.has(key)) return true;
+    if (loggedByIssue[key]) return true;
+    return (jiraActivity.get(key)?.events || [])
+      .some((evento) => evento.kind === 'changelog'
+        || evento.kind === 'comment'
+        || evento.kind === 'created');
+  };
+
   // Anche le issue su cui le ore ci sono gia': le hai messe a mano da
   // Clockwork, o da qui in un invio precedente. Senza, una giornata segnata
   // altrove risultava vuota qui — e la riga che manca e' proprio quella che
   // spiega dove sono finite le ore.
   const taskKeys = [...new Set([
     ...jiraActivity.keys(), ...gitByIssue.keys(), ...Object.keys(loggedByIssue)
-  ])].filter((key) => !meetingKeys.has(key));
+  ])].filter((key) => !meetingKeys.has(key) && haLavoroTuo(key));
 
   const taskRows = taskKeys.map((key) => {
     const jira = jiraActivity.get(key);
@@ -347,11 +360,9 @@ export function buildPlan({
     // porta solo la mossa di un collega non lo merita, nemmeno quando hai
     // commit che la riguardano.
     const tuoSuJira = Boolean(activity.changes || activity.created || activity.comments);
-    const soloAltrui = Boolean(activity.foreign) && !tuoSuJira && !commits.length;
     const sources = [];
     if (tuoSuJira) sources.push('jira');
     if (commits.length) sources.push('git');
-    if (soloAltrui) sources.push('foreign');
     const nota = defaultComment(jira, commits);
     return {
       id: `task:${key}`,
@@ -363,26 +374,24 @@ export function buildPlan({
       time: '',
       sources,
       activity,
+      // La stima originale della issue, in minuti: la fetta che questa task
+      // dovrebbe prendersi quando dividi le ore sulla stima. Zero = nessuna
+      // stima, e allora quella task ricade sulla divisione in parti uguali.
+      estimateMinutes: jira?.estimateMinutes ?? estimates[key] ?? 0,
       // Chi altro ci ha messo mano oggi, su ogni riga: e' la domanda
       // "in quali delle mie task hanno lavorato altri", e la risposta sta
       // accanto alla task, non in un avviso in cima.
       others: othersOn(jira?.events, altrui),
       // Peso per l'ordinamento: piu' fonti e piu' eventi vuol dire piu'
-      // probabilmente il lavoro principale della giornata. Una issue mossa
-      // solo da altri pesa zero: finisce in fondo e non prende mai il resto
-      // della divisione.
-      weight: soloAltrui ? 0 : sources.length * 100 +
+      // probabilmente il lavoro principale della giornata.
+      weight: sources.length * 100 +
         activity.changes + activity.created + activity.comments + activity.commits,
       comment: nota.text || '',
       commentKey: nota.key || null,
-      // E parte spenta. Farsi assegnare un ticket alle 17:00 non e' averci
-      // lavorato: se ci hai lavorato lo accendi tu, ma le ore della giornata
-      // non devono finirci sopra da sole.
-      enabled: !soloAltrui,
-      // Il motivo per cui e' spenta, scritto: `autoDisabled` da solo non lo
-      // distingue da "spenta perche' le ore c'erano gia'", e quel motivo li'
-      // scade — questo no.
-      notYours: soloAltrui,
+      enabled: true,
+      // La riga c'e' solo per le ore gia' registrate: quel giorno non ci hai
+      // fatto niente, ne' in Jira ne' nei commit.
+      onlyLogged: !tuoSuJira && !commits.length,
       existingMinutes: 0
     };
   });
@@ -400,11 +409,10 @@ export function buildPlan({
     // te": se le ore spariscono da Jira, la prima va riaccesa, la seconda no.
     if (row.existingMinutes) {
       row.enabled = false;
-      // Ma non su una riga che e' spenta perche' non ci hai lavorato tu:
-      // marcarla `autoDisabled` seppellirebbe quel motivo sotto questo, e alla
-      // sparizione del worklog la rilettura la riaccenderebbe — mettendola a
-      // prendersi le ore di una giornata in cui non l'hai toccata.
-      if (!row.notYours) row.autoDisabled = true;
+      // Ma non su una riga che esiste solo per quelle ore: alla sparizione del
+      // worklog la rilettura la riaccenderebbe, e si prenderebbe le ore di una
+      // giornata in cui non l'hai toccata.
+      if (!row.onlyLogged) row.autoDisabled = true;
     }
   }
 
@@ -494,6 +502,21 @@ function effortOf(row) {
   return Math.max(1, changes + created + comments + commits);
 }
 
+/**
+ * I pesi della divisione sulla stima.
+ *
+ * Una task senza stima vale quanto la media di quelle stimate. Col peso a uno
+ * contro le 240 di una stimata finiva a zero minuti — sparita dalla giornata,
+ * con l'avviso «troppe task» — proprio sulla riga che non sai quanto pesi.
+ * Se nessuna ha una stima i pesi sono tutti uguali: parti uguali.
+ */
+function estimateWeights(rows) {
+  const stimate = rows.map((row) => row.estimateMinutes || 0);
+  const note = stimate.filter((minuti) => minuti > 0);
+  const media = note.length ? note.reduce((somma, m) => somma + m, 0) / note.length : 1;
+  return stimate.map((minuti) => (minuti > 0 ? minuti : media));
+}
+
 export function allocate(rows, config, budgetMinutes, warnings = []) {
   const increment = config.work.roundingMinutes || 15;
 
@@ -544,9 +567,14 @@ export function allocate(rows, config, budgetMinutes, warnings = []) {
   // preso lo stesso tempo di una con un cambio di stato. Il minimo di uno
   // tiene dentro le righe senza tracce — aggiunte a mano, o lavorate senza
   // lasciare niente in Jira — che altrimenti prenderebbero zero.
+  //
+  // In proporzione alla stima, se lo hai scelto: la giornata si spartisce come
+  // le task erano state pesate a preventivo.
   const slices = config.work.split === 'activity'
     ? distributeByWeight(remaining, free.map(effortOf), increment)
-    : distributeMinutes(remaining, free.length, increment);
+    : config.work.split === 'estimate'
+      ? distributeByWeight(remaining, estimateWeights(free), increment)
+      : distributeMinutes(remaining, free.length, increment);
   free.forEach((row, index) => { row.minutes = slices[index]; });
 
   if (free.length && slices.some((fetta) => fetta === 0)) {

@@ -15,6 +15,9 @@ const PATHS = {
     'M14 11v6'
   ],
   settings: ['M20 7h-9', 'M14 17H5'],
+  // Sei puntini: la maniglia con cui si trascina una riga. Niente tracciati,
+  // solo cerchi — stanno tutti in SHAPES.
+  grip: [],
   chevronLeft: ['m15 18-6-6 6-6'],
   chevronRight: ['m9 18 6-6-6-6'],
   calendar: ['M8 2v4', 'M16 2v4', 'M3 10h18'],
@@ -28,6 +31,14 @@ const PATHS = {
 
 // Cerchi e rettangoli che alcune icone hanno oltre ai tracciati.
 const SHAPES = {
+  grip: [
+    { tag: 'circle', attrs: { cx: '9', cy: '6', r: '1' } },
+    { tag: 'circle', attrs: { cx: '9', cy: '12', r: '1' } },
+    { tag: 'circle', attrs: { cx: '9', cy: '18', r: '1' } },
+    { tag: 'circle', attrs: { cx: '15', cy: '6', r: '1' } },
+    { tag: 'circle', attrs: { cx: '15', cy: '12', r: '1' } },
+    { tag: 'circle', attrs: { cx: '15', cy: '18', r: '1' } }
+  ],
   settings: [
     { tag: 'circle', attrs: { cx: '17', cy: '17', r: '3' } },
     { tag: 'circle', attrs: { cx: '7', cy: '7', r: '3' } }
@@ -42,10 +53,10 @@ const NS = 'http://www.w3.org/2000/svg';
 
 /**
  * @param {keyof PATHS} name
- * @param {{size?: number, title?: string}} [options]
+ * @param {{size?: number}} [options]
  * @returns {SVGElement}
  */
-export function icon(name, { size = 16, title } = {}) {
+export function icon(name, { size = 16 } = {}) {
   const svg = document.createElementNS(NS, 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
   svg.setAttribute('width', String(size));
@@ -55,15 +66,9 @@ export function icon(name, { size = 16, title } = {}) {
   svg.setAttribute('stroke-width', '2');
   svg.setAttribute('stroke-linecap', 'round');
   svg.setAttribute('stroke-linejoin', 'round');
-  svg.setAttribute('aria-hidden', title ? 'false' : 'true');
+  // Decorativa: il nome lo porta il pulsante che la contiene (title/aria-label).
+  svg.setAttribute('aria-hidden', 'true');
   svg.classList.add('icon');
-
-  if (title) {
-    svg.setAttribute('role', 'img');
-    const label = document.createElementNS(NS, 'title');
-    label.textContent = title;
-    svg.appendChild(label);
-  }
 
   for (const shape of SHAPES[name] || []) {
     const node = document.createElementNS(NS, shape.tag);

@@ -16,6 +16,9 @@ const ALTRO = { name: 'Collega Qualsiasi', emailAddress: 'collega@esempio.it' };
 const VECCHIO = { name: 'utente', emailAddress: 'vecchia@vecchiodominio.it' };
 
 let calls = [];
+// I commit degli altri, tutti insieme, e i loro autori senza doppioni.
+const altrui = (d) => [...d.othersByIssue.values()].flat();
+const autori = (d) => [...new Set(altrui(d).map((c) => c.author))];
 const fakeClient = (byIssueId, { wantType = 'bitbucket' } = {}) => ({
   async getDevelopment(issueId, appType) {
     calls.push({ issueId, appType });
@@ -49,9 +52,8 @@ assert.equal(dev.byIssue.get('ABC-2075')[0].repo, 'repo-api');
 // L'indirizzo del commit arriva dal pannello: senza, da «1 commit» non si può
 // portare nessuno da nessuna parte.
 assert.equal(dev.byIssue.get('ABC-2075')[0].url, 'https://git/ABC-2075%20fix%20tunnel');
-assert.equal(dev.skippedOther, 1, 'il commit del collega viene contato e segnalato');
+assert.equal(altrui(dev).length, 1, 'il commit del collega viene contato e segnalato');
 assert.equal(dev.appType, 'bitbucket');
-assert.equal(dev.checked, 3);
 assert.equal(calls.length, 3, 'una chiamata per issue candidata, nessuna in piu');
 assert.ok(dev.byIssue.has('ABC-1996'),
   'un commit su un ticket non toccato oggi in Jira viene trovato grazie alle candidate extra');
@@ -61,7 +63,7 @@ const soloVecchio = { '10001': payload('r', [commit('ABC-2075 x', oggi(12), VECC
 calls = [];
 const senza = await collectDevPanelCommits(fakeClient(soloVecchio), { candidates, isoDate: '2026-08-10', identities });
 assert.equal(senza.byIssue.size, 0);
-assert.equal(senza.skippedOther, 1, 'lo segnala invece di perderlo in silenzio');
+assert.equal(altrui(senza).length, 1, 'lo segnala invece di perderlo in silenzio');
 
 calls = [];
 const con = await collectDevPanelCommits(fakeClient(soloVecchio), {
@@ -82,7 +84,7 @@ assert.equal(con.byIssue.size, 1, 'dichiarando l email alternativa il commit vie
     { candidates, isoDate: '2026-08-10', identities }
   );
   assert.equal(dev.byIssue.size, 1, 'il commit è tuo e va contato');
-  assert.equal(dev.skippedOther, 0);
+  assert.equal(altrui(dev).length, 0);
 
   // Anche dichiarando solo l'email, o solo il nome.
   for (const identita of [['nome.cognome@esempio.it'], ['Nome Cognome']]) {
@@ -106,8 +108,8 @@ assert.equal(con.byIssue.size, 1, 'dichiarando l email alternativa il commit vie
     ])
   }), { candidates, isoDate: '2026-08-10', identities });
 
-  assert.equal(dev.skippedOther, 2);
-  assert.deepEqual(dev.skippedAuthors.sort(), ['Collega Qualsiasi', 'utente'],
+  assert.equal(altrui(dev).length, 2);
+  assert.deepEqual(autori(dev).sort(), ['Collega Qualsiasi', 'utente'],
     'i nomi servono a chiudere l avviso da soli');
 
   // Lo stesso autore due volte resta un nome solo.
@@ -117,13 +119,13 @@ assert.equal(con.byIssue.size, 1, 'dichiarando l email alternativa il commit vie
       commit('ABC-2075 due', oggi(16), ALTRO)
     ])
   }), { candidates, isoDate: '2026-08-10', identities });
-  assert.deepEqual(ripetuto.skippedAuthors, ['Collega Qualsiasi']);
+  assert.deepEqual(autori(ripetuto), ['Collega Qualsiasi']);
 
   // E nell'avviso ci va il nome, non la firma con l'email appesa.
   const conFirma = await collectDevPanelCommits(fakeClient({
     '10001': payload('r', [commit('ABC-2075 x', oggi(15), { name: 'Collega Qualsiasi <altro@esempio.it>', emailAddress: '' })])
   }), { candidates, isoDate: '2026-08-10', identities });
-  assert.deepEqual(conFirma.skippedAuthors, ['Collega Qualsiasi']);
+  assert.deepEqual(autori(conFirma), ['Collega Qualsiasi']);
 
   // E anche i commit dei colleghi si portano dietro il loro indirizzo.
   assert.equal(dev.othersByIssue.get('ABC-2075')[0].url, 'https://git/ABC-2075%20del%20collega');
@@ -146,7 +148,8 @@ assert.equal(con.byIssue.size, 1, 'dichiarando l email alternativa il commit vie
   // merge — sono andate corrette tutte e due a mano.
   assert.equal((bg.match(/collectDevPanelCommits\(/g) || []).length, 1,
     'la sequenza che legge i commit va scritta in un posto solo');
-  assert.match(bg, /await gatherCommits\(/,
+  const analisi = bg.slice(bg.indexOf('async function analyze('));
+  assert.match(analisi, /await collectDevPanelCommits\(/,
     'e il piano deve passare di lì');
 
   // Leggere i commit non è più una scelta: era una casella che nessuno aveva
@@ -166,7 +169,7 @@ assert.equal(con.byIssue.size, 1, 'dichiarando l email alternativa il commit vie
     'vanno raccolti prima del piano, o le righe nascono senza'
   );
 
-  const punto = bg.indexOf('skipped?.skippedOther');
+  const punto = bg.indexOf('if (foreignGitByIssue.size)');
   const blocco = bg.slice(punto, punto + 800);
   assert.ok(punto > bg.indexOf('buildPlan({'),
     'l avviso si decide dopo il piano: prima non si sa quali commit hanno una riga');
@@ -207,8 +210,8 @@ assert.equal(con.byIssue.size, 1, 'dichiarando l email alternativa il commit vie
 
   // Un merge scartato non è «di un altro autore»: sono due motivi diversi, e
   // confonderli farebbe comparire un avviso che manda a configurare le firme.
-  assert.equal(senza.skippedOther, 0);
-  assert.deepEqual(senza.skippedAuthors, []);
+  assert.equal(altrui(senza).length, 0);
+  assert.deepEqual(autori(senza), []);
 
   // E il pannello risulta comunque risposto: con solo merge dentro, contarli
   // come "niente trovato" farebbe ripiegare sul vecchio applicationType per
@@ -258,12 +261,32 @@ const parziale = await collectDevPanelCommits({
 }, { candidates, isoDate: '2026-08-10', identities });
 assert.equal(parziale.byIssue.size, 1, 'un 403 su una issue non blocca le altre');
 
+// --- repo su GitHub: non si ferma a bitbucket/stash ---
+// Tante squadre stanno su GitHub o GitLab: col solo bitbucket il pannello
+// rispondeva vuoto e una giornata piena di commit sembrava senza lavoro.
+calls = [];
+const suGithub = await collectDevPanelCommits(
+  fakeClient({ '10001': payload('r', [commit('ABC-2075 su github', oggi(11), IO)]) }, { wantType: 'github' }),
+  { candidates, isoDate: '2026-08-10', identities }
+);
+assert.equal(suGithub.appType, 'github', 'riconosce l integrazione GitHub');
+assert.equal(suGithub.byIssue.get('ABC-2075').length, 1, 'e trova il commit');
+
+// --- repo su GitLab: idem ---
+calls = [];
+const suGitlab = await collectDevPanelCommits(
+  fakeClient({ '10001': payload('r', [commit('ABC-2075 su gitlab', oggi(11), IO)]) }, { wantType: 'gitlab' }),
+  { candidates, isoDate: '2026-08-10', identities }
+);
+assert.equal(suGitlab.appType, 'gitlab');
+assert.equal(suGitlab.byIssue.get('ABC-2075').length, 1);
+
 // --- nessun commit da nessuna parte: appType resta null e lo si puo segnalare ---
 calls = [];
 const vuoto = await collectDevPanelCommits(fakeClient({}), { candidates, isoDate: '2026-08-10', identities });
 assert.equal(vuoto.appType, null);
 assert.equal(vuoto.byIssue.size, 0);
-assert.equal(calls.length, 6, 'provati entrambi gli applicationType prima di arrendersi');
+assert.equal(calls.length, 12, 'provati tutti e quattro gli applicationType (3 candidate x 4) prima di arrendersi');
 
 // --- i commit diventano la nota del worklog, tutti, uno per riga ---------
 // È la traccia migliore di cosa hai fatto: tenerne tre su sette vorrebbe dire

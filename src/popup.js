@@ -1,6 +1,7 @@
 import { breakRanges, redoneKeys, reflow } from './lib/planner.js';
 import {
   addMinutes,
+  eventTime,
   formatMinutes,
   localDateTime,
   minutesToTime,
@@ -11,7 +12,6 @@ import {
 import { icon, setIcon } from './lib/icons.js';
 import { send } from './lib/comandi.js';
 import { t, applyI18n } from './lib/i18n.js';
-import { eventTime } from './lib/registro.js';
 
 const el = {
   date: document.getElementById('date'),
@@ -61,6 +61,10 @@ const state = {
   duplicateRows: [],
   busy: false,
   loggedEntries: [],
+  // Le ore appena scritte che Jira non ha ancora riletto, per issue: valgono
+  // come minimo a ogni rilettura finché Jira non le riporta da solo. Legate al
+  // giorno: su un altro giorno non dicono niente.
+  inAttesa: { isoDate: '', perIssue: {} },
   // Righe con l'elenco dei worklog già su Jira aperto.
   expanded: new Set(),
   analyzedAt: 0,
@@ -71,7 +75,6 @@ const state = {
   // I ticket aperti non dipendono dal giorno: si leggono una volta e restano.
   ticketGroups: [],
   ticketsTotal: 0,
-  ticketsLoaded: false,
   ticketsAt: 0,
   // Le transizioni già lette, per non richiederle a ogni apertura del menu.
   transitionsByKey: new Map(),
@@ -92,27 +95,14 @@ const LEVELS = {
 };
 
 /**
- * Accetta sia una stringa sia { text, level }. La tolleranza serve a non
- * mostrare mai "undefined": basta un service worker non ricaricato, che serve
- * ancora il formato vecchio, per ritrovarsi messaggi vuoti in faccia.
+ * Planner e background mandano chiave + parametri: la frase si compone qui,
+ * nella lingua giusta.
  */
-function normalizeMessage(input, fallbackLevel) {
-  if (typeof input === 'string') return { text: input, level: fallbackLevel || 'info' };
-  if (!input) return null;
-  const level = input.level || fallbackLevel || 'info';
-  // Planner e background mandano chiave + parametri: la frase la compone qui,
-  // nella lingua giusta. `text` resta accettato per i messaggi già pronti.
-  if (input.key) return { text: t(input.key, ...(input.params || [])), level };
-  if (typeof input.text === 'string') return { text: input.text, level };
-  return null;
+function normalizeMessage(input) {
+  if (!input?.key) return null;
+  return { text: t(input.key, ...(input.params || [])), level: input.level || 'info' };
 }
 
-/**
- * Pulsante con icona + testo. L'etichetta sta in un elemento suo perché possa
- * essere troncata invece di mandare a capo il pulsante: con una conferma lunga
- * il testo si spezzava e il pulsante si deformava. Il testo intero resta nel
- * title, così non si perde niente.
- */
 // Quante righe mostrare della nota. Si contano quelle scritte, senza misurare
 // niente: misurare vorrebbe dire leggere il layout a ogni battuta, e la nota
 // cresce di una riga per commit, non a caso. Il tetto e' perche' venti commit
@@ -124,6 +114,12 @@ function adattaAltezza(area) {
   area.rows = Math.min(Math.max(righe, 1), RIGHE_NOTA_MAX);
 }
 
+/**
+ * Pulsante con icona + testo. L'etichetta sta in un elemento suo perché possa
+ * essere troncata invece di mandare a capo il pulsante: con una conferma lunga
+ * il testo si spezzava e il pulsante si deformava. Il testo intero resta nel
+ * title, così non si perde niente.
+ */
 function setButton(button, name, text) {
   const label = document.createElement('span');
   label.className = 'label';
@@ -163,8 +159,8 @@ function message(text, kind = 'info', action = null, { channel = '' } = {}) {
   node.dataset.rank = String(rank);
   node.dataset.text = text;
   // Un avviso appartiene alla vista che lo ha prodotto: «ticket riunione
-  // proposto» parla del piano, e sotto l'elenco delle pull request non vuol
-  // dire niente. Il contenitore e' uno solo, quindi ognuno si ricorda da dove
+  // proposto» parla del piano, e sotto l'elenco dei ticket non vuol dire
+  // niente. Il contenitore e' uno solo, quindi ognuno si ricorda da dove
   // viene e chi cambia scheda nasconde gli altri.
   node.dataset.tab = state.tab;
   if (channel) node.dataset.channel = channel;
@@ -542,16 +538,11 @@ function periodOf(chi) {
 }
 
 /**
- * A quale colore appartiene un ticket.
+ * Tinta e riempimento di un ticket. Nove combinazioni, tutte diverse.
  *
  * L'assegnazione parte dalle chiavi in ordine alfabetico, non dall'ordine in
  * tabella né da quali righe sono accese: spegnere una riga o riordinare il
- * piano non deve ricolorare le altre. Oltre la terza attività si ripiega su un
- * neutro — tre è il numero che regge il controllo su tutte le coppie, e
- * inventare una quarta tinta la renderebbe indistinguibile da una delle altre.
- */
-/**
- * Tinta e riempimento di un ticket. Nove combinazioni, tutte diverse.
+ * piano non deve ricolorare le altre.
  *
  * Le tinte restano tre perche' tre e' quanto ne regge il confronto: sotto
  * protanopia il viola *e'* blu — il validatore dice 2.7 di distanza
@@ -582,6 +573,77 @@ function badge(text, kind) {
   span.className = `badge ${kind}`;
   span.textContent = text;
   return span;
+}
+
+// -------------------------------------------------------- riordinare le righe
+
+/*
+ * L'ordine delle righe non e' solo l'ordine in cui si leggono: le task
+ * prendono gli orari nella sequenza in cui stanno in tabella (`layoutTimes`).
+ * Spostarne una sposta quindi anche il blocco che verra' scritto su Jira — e
+ * finche' non si poteva, l'unico modo di mettere il lavoro nell'ora giusta era
+ * scrivere le ore a mano riga per riga finche' i conti tornavano.
+ *
+ * Le riunioni restano al loro orario anche spostate: sono appuntamenti, non
+ * blocchi da incastrare. Trascinarle serve comunque a decidere quali task
+ * finiscono prima e quali dopo di loro.
+ */
+
+/** L'id della riga che si sta trascinando, o null. */
+let dragId = null;
+
+/**
+ * Rimette le righe nell'ordine dato. Ritorna false se l'ordine e' quello di
+ * adesso: chi chiama non deve ridisegnare per niente — con la tastiera e'
+ * anche il segnale che sei arrivato in fondo.
+ */
+function applyOrder(ids) {
+  const perId = new Map(state.rows.map((row) => [row.id, row]));
+  const nuovo = ids.map((id) => perId.get(id)).filter(Boolean);
+  // Una riga persa per strada vorrebbe dire buttarla dal piano: meglio non
+  // muovere niente.
+  if (nuovo.length !== state.rows.length) return false;
+  if (nuovo.every((row, i) => row === state.rows[i])) return false;
+
+  state.rows = nuovo;
+  redistribute();
+  render();
+  return true;
+}
+
+/** Sposta una riga di un posto in su (-1) o in giu' (+1). */
+function nudgeRow(id, verso) {
+  const ids = state.rows.map((row) => row.id);
+  const da = ids.indexOf(id);
+  const a = da + verso;
+  if (da < 0 || a < 0 || a >= ids.length) return false;
+  [ids[da], ids[a]] = [ids[a], ids[da]];
+  return applyOrder(ids);
+}
+
+/** Sposta `id` sopra (o sotto) la riga su cui e' stato lasciato. */
+function dropRow(id, targetId, sotto) {
+  if (!id || id === targetId) return false;
+  const ids = state.rows.map((row) => row.id).filter((altro) => altro !== id);
+  const dove = ids.indexOf(targetId);
+  if (dove < 0) return false;
+  ids.splice(sotto ? dove + 1 : dove, 0, id);
+  return applyOrder(ids);
+}
+
+/** Il segno di dove finirebbe la riga, mentre la tieni sopra un'altra. */
+function markDrop(tr, sotto) {
+  for (const altro of el.rows.querySelectorAll('tr.drop-target')) {
+    altro.classList.remove('drop-target', 'sotto');
+  }
+  if (!tr) return;
+  tr.classList.add('drop-target');
+  tr.classList.toggle('sotto', sotto);
+}
+
+/** Il fuoco segue la riga spostata, o la freccia dopo sposterebbe un'altra. */
+function focusGrip(id) {
+  el.rows.querySelector(`tr[data-id="${CSS.escape(id)}"] .grip`)?.focus();
 }
 
 function renderRow(row) {
@@ -773,6 +835,61 @@ function renderRow(row) {
   });
   tdActions.appendChild(remove);
 
+  // Riordinare: si trascina dalla maniglia, o si usano le frecce quando ce
+  // l'hai sotto il fuoco — un popup si gira anche solo da tastiera.
+  const grip = document.createElement('button');
+  grip.className = 'grip';
+  setIcon(grip, 'grip');
+  grip.title = t('titleDragRow');
+  grip.setAttribute('aria-label', t('titleDragRow'));
+  // `draggable` si accende solo premendo qui: su tutta la riga impedirebbe di
+  // selezionare il testo dei campi, che e' quello che ci si fa dentro.
+  grip.addEventListener('mousedown', () => { tr.draggable = true; });
+  grip.addEventListener('mouseup', () => { tr.draggable = false; });
+  grip.addEventListener('keydown', (event) => {
+    const verso = event.key === 'ArrowUp' ? -1 : (event.key === 'ArrowDown' ? 1 : 0);
+    if (!verso) return;
+    // O la freccia scorrerebbe la lista invece di spostare la riga.
+    event.preventDefault();
+    if (nudgeRow(row.id, verso)) focusGrip(row.id);
+  });
+  // Prima delle altre azioni: si prende la riga da sinistra, e il cestino
+  // resta dov era anche quando compare.
+  tdActions.prepend(grip);
+
+  tr.addEventListener('dragstart', (event) => {
+    dragId = row.id;
+    tr.classList.add('dragging');
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      // Firefox non fa partire il trascinamento senza un dato a bordo.
+      event.dataTransfer.setData('text/plain', row.id);
+    }
+  });
+  tr.addEventListener('dragover', (event) => {
+    if (!dragId || dragId === row.id) return;
+    // Senza questo il browser rifiuta il rilascio, e il drop non arriva mai.
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    const meta = tr.getBoundingClientRect();
+    markDrop(tr, event.clientY > meta.top + meta.height / 2);
+  });
+  tr.addEventListener('drop', (event) => {
+    event.preventDefault();
+    const meta = tr.getBoundingClientRect();
+    const sotto = event.clientY > meta.top + meta.height / 2;
+    const preso = dragId || event.dataTransfer?.getData('text/plain');
+    markDrop(null);
+    dragId = null;
+    if (dropRow(preso, row.id, sotto)) focusGrip(preso);
+  });
+  tr.addEventListener('dragend', () => {
+    dragId = null;
+    tr.draggable = false;
+    tr.classList.remove('dragging');
+    markDrop(null);
+  });
+
   tr.append(tdCheck, tdIssue, tdWhat, tdHours, tdTime, tdActions);
   return tr;
 }
@@ -832,6 +949,9 @@ async function removeWorklogs(row, worklogIds, button) {
       );
     }
     state.expanded.delete(row.id);
+    // Dopo una cancellazione il minimo di quello appena scritto non vale più:
+    // terrebbe a schermo ore che non ci sono.
+    delete state.inAttesa.perIssue[row.issueKey];
     await afterWrite([row.issueKey]);
   } catch (error) {
     reportAuthError(error, () => {});
@@ -855,15 +975,21 @@ function renderWorklogRow(row) {
   titolo.className = 'worklogs-title';
 
   if (!entries.length) {
-    // Il badge dice che ci sono ore, ma i singoli worklog non sono arrivati:
-    // succede col service worker non ricaricato, che non manda ancora gli id.
+    // Il badge dice che ci sono ore, ma i singoli worklog non sono ancora
+    // arrivati: capita subito dopo un invio, quando le ore vengono da quello
+    // che abbiamo appena scritto e Jira non le elenca ancora. Niente "cancella
+    // tutto" alla cieca — toccherebbe anche ore messe prima: si rilegge, e
+    // appena ci sono gli id ognuno ha il suo cestino.
     titolo.textContent = t('worklogsUnlistable', row.issueKey, formatMinutes(row.existingMinutes));
     td.appendChild(titolo);
-    const tutti = document.createElement('button');
-    tutti.className = 'ghost inline danger-text';
-    tutti.textContent = t('btnDeleteAllAmount', formatMinutes(row.existingMinutes));
-    tutti.addEventListener('click', () => removeWorklogs(row, null, tutti));
-    td.appendChild(tutti);
+    const rileggi = document.createElement('button');
+    rileggi.className = 'ghost inline';
+    rileggi.textContent = t('btnRefresh');
+    rileggi.addEventListener('click', () => {
+      rileggi.disabled = true;
+      refreshLogged({ force: [row.issueKey], silent: false });
+    });
+    td.appendChild(rileggi);
     tr.append(document.createElement('td'), document.createElement('td'), td);
     return tr;
   }
@@ -1349,19 +1475,38 @@ function scheduleAnalyze(delay = 250) {
  * attività, commit e issue recenti — roba che non cambia da sola.
  */
 async function refreshLogged({ force = [], silent = true } = {}) {
-  if (!state.config || !state.rows.length) return analyze();
+  // Senza un piano non c'e' niente da rileggere: decidere se serve un'analisi
+  // completa e' di chi chiama, non di una rilettura leggera.
+  if (!state.config || !state.rows.length) return undefined;
   const token = ++analyzeToken;
   const forzate = new Set(force);
 
+  // Le chiavi viaggiano con la richiesta: la ricerca per worklog di Jira
+  // arriva con qualche secondo di ritardo, e senza queste una riga appena
+  // scritta tornava indietro come se non fosse successo niente.
+  const issueKeys = [...new Set(
+    [...state.rows.map((row) => row.issueKey), ...force].filter(Boolean)
+  )];
+
   try {
-    const dati = await comando('refreshLogged', { isoDate: state.isoDate });
+    const dati = await comando('refreshLogged', { isoDate: state.isoDate, issueKeys });
     if (token !== analyzeToken) return undefined;
 
-    state.alreadyLoggedMinutes = dati.alreadyLoggedMinutes;
     state.loggedEntries = dati.loggedEntries;
 
+    // Le ore appena scritte che Jira non ha ancora riletto: si aggiungono al
+    // totale della giornata finché l'indice non le riporta da solo, o il monte
+    // ore mostrerebbe uno spazio che in realtà è già occupato. Vale per ogni
+    // rilettura — anche il poll o un «Aggiorna» pochi secondi dopo — e si
+    // scorda da solo quando Jira le riporta.
+    const attesa = state.inAttesa.isoDate === state.isoDate ? state.inAttesa.perIssue : {};
+    let ritardo = 0;
     for (const row of state.rows) {
-      row.existingMinutes = dati.loggedByIssue[row.issueKey] || 0;
+      const letto = dati.loggedByIssue[row.issueKey] || 0;
+      const minimo = attesa[row.issueKey] || 0;
+      if (minimo && letto >= minimo) delete attesa[row.issueKey];
+      row.existingMinutes = Math.max(letto, minimo);
+      if (row.existingMinutes > letto) ritardo += row.existingMinutes - letto;
 
       // Su una issue appena scritta o ripulita la scelta di prima non vale più:
       // lasciarla accesa dopo un invio significherebbe offrirti il doppione.
@@ -1376,6 +1521,7 @@ async function refreshLogged({ force = [], silent = true } = {}) {
         row.autoDisabled = false;
       }
     }
+    state.alreadyLoggedMinutes = dati.alreadyLoggedMinutes + ritardo;
 
     state.analyzedAt = Date.now();
     redistribute();
@@ -1500,13 +1646,30 @@ async function submit() {
     }
     failed.forEach((r) => message(t('msgSendFailed', r.issueKey, r.error), 'err'));
 
-    // Le righe andate a buon fine escono subito dal piano, cosi' un secondo
-    // invio non puo' duplicarle mentre la tabella si aggiorna.
     // Le righe restano nel piano: rilette da Jira mostrano il badge "già Xh" e
     // si spengono da sole, così resta visibile cosa hai appena scritto — e il
     // cestino per disfarlo. Prima sparivano, e per rivederle serviva
     // un'analisi completa.
-    if (ok.length) await afterWrite(ok.map((r) => r.issueKey));
+    //
+    // Quello che abbiamo appena scritto lo sappiamo: viaggia come minimo
+    // garantito. La rilettura di Jira dei worklog è ogni tanto in ritardo di
+    // qualche secondo — torna la giornata di prima, e il badge "già Xh" non
+    // compariva, la riga restava accesa, e sembrava non fosse successo niente.
+    // Il minimo è quello che c'era già più quello appena scritto: su una riga
+    // rifatta le ore di prima restano dove sono.
+    if (ok.length) {
+      if (state.inAttesa.isoDate !== state.isoDate) {
+        state.inAttesa = { isoDate: state.isoDate, perIssue: {} };
+      }
+      const attesa = state.inAttesa.perIssue;
+      for (const r of ok) {
+        const prima = attesa[r.issueKey]
+          ?? state.rows.find((row) => row.issueKey === r.issueKey)?.existingMinutes
+          ?? 0;
+        attesa[r.issueKey] = prima + (r.minutes || 0);
+      }
+      await afterWrite(ok.map((r) => r.issueKey));
+    }
   } catch (error) {
     reportAuthError(error, submit);
   } finally {
@@ -1732,7 +1895,6 @@ async function loadTickets() {
 async function applyTickets(groups, total, moved = '', { riapri = false } = {}) {
   state.ticketGroups = groups || [];
   state.ticketsTotal = total || 0;
-  state.ticketsLoaded = true;
   state.ticketsAt = Date.now();
   // Dopo uno spostamento le transizioni disponibili sono altre: la cache di
   // prima descriveva un punto del workflow in cui non siamo più.
@@ -1900,7 +2062,10 @@ function showTab(nome) {
   // lasciare il selettore lì accanto farebbe pensare il contrario.
   el.dayPicker.hidden = ticket;
 
-  if (ticket && !state.ticketsLoaded) loadTickets();
+  // I ticket si leggono la prima volta che ci arrivi, e di nuovo se quello
+  // che c'e' e' piu' vecchio di una rilettura: e' un tuo clic, quindi niente
+  // guardie — sotto un'analisi delle ore in corso andrebbero letti comunque.
+  if (ticket && Date.now() - state.ticketsAt >= POLL_MS) loadTickets();
   mostraAvvisi();
   // Ogni vista ha la sua freschezza: cambiando scheda cambia il riferimento.
   syncLabel();
@@ -1948,14 +2113,15 @@ function syncLabel() {
 }
 
 /**
- * Rilegge da sola la vista che stai guardando, ma solo quando non dà fastidio.
+ * Rilegge la vista che stai guardando se quello che mostra ha più di
+ * `maxAge`, ma solo quando non dà fastidio. Unica strada per il battito e per
+ * il ritorno sul pannello: prima erano due, e il ritorno non aveva le guardie
+ * — rileggeva mentre scrivevi, e a piano vuoto faceva ripartire un'analisi.
  *
  * Le guardie non sono prudenza generica: ognuna copre un modo concreto di
  * rovinare il lavoro a chi sta usando il popup in quel momento.
  */
-function pollIfIdle() {
-  syncLabel();
-
+function refreshIfStale(maxAge) {
   // A pannello chiuso o finestra nascosta non c'è niente da tenere fresco.
   if (document.visibilityState !== 'visible') return;
   // Un'analisi in corso decide lei quando i dati cambiano.
@@ -1965,13 +2131,19 @@ function pollIfIdle() {
   if (attivo === 'INPUT' || attivo === 'TEXTAREA') return;
   // Un menu di spostamento aperto è un'azione a metà.
   if (el.tickets.querySelector('.moves:not([hidden])')) return;
-  if (Date.now() - freshnessAt() < POLL_MS) return;
+  if (Date.now() - freshnessAt() < maxAge) return;
 
   if (state.tab === 'tickets') loadTickets();
   // Il piano si rilegge nella versione leggera: una richiesta invece delle
   // decine di un'analisi completa, che rifarebbe attività e commit — roba che
   // non cambia da sola.
   else if (state.rows.length) refreshLogged();
+}
+
+/** Il battito: riscrive l'etichetta sempre, rilegge solo quando serve. */
+function pollIfIdle() {
+  syncLabel();
+  refreshIfStale(POLL_MS);
 }
 
 setInterval(pollIfIdle, TICK_MS);
@@ -2082,23 +2254,12 @@ el.submit.addEventListener('click', () => {
 el.cancelSend.addEventListener('click', updateTotal);
 el.openOptions.addEventListener('click', () => chrome.runtime.openOptionsPage());
 
-// All'apertura del popup si parte da oggi, senza dover premere niente.
 window.addEventListener('resize', () => renderTimeline());
 
-// Il piano è una fotografia del momento in cui è stato letto: se nel frattempo
-// sposti o cancelli un worklog da Clockwork, tornando qui va riletto. Il
-// margine evita di rianalizzare a ogni sfarfallio di focus.
-window.addEventListener('focus', () => {
-  // Anche i ticket invecchiano mentre sei via, e più in fretta del piano: li
-  // sposti da Jira, torni qui, e la scheda mostrerebbe lo stato di prima.
-  // Se sei su un'altra scheda non si rilegge subito: ci pensa `showTab`
-  // quando ci arrivi, invece di spendere una richiesta per una vista chiusa.
-  state.ticketsLoaded = false;
-  if (state.tab === 'tickets' && Date.now() - state.ticketsAt >= 3000) loadTickets();
-
-  if (Date.now() - state.analyzedAt < 3000) return;
-  refreshLogged();
-});
+// Quello che vedi è una fotografia del momento in cui è stato letto: se nel
+// frattempo sposti un worklog da Clockwork o un ticket da Jira, tornando qui va
+// riletto. Il margine evita di rileggere a ogni sfarfallio di focus.
+window.addEventListener('focus', () => refreshIfStale(3000));
 
 setIcon(el.prevDay, 'chevronLeft');
 setIcon(el.nextDay, 'chevronRight');
@@ -2116,4 +2277,5 @@ if (new URLSearchParams(location.search).get('panel')) {
 applyI18n();
 
 refreshSite();
+// All'apertura si parte da oggi, senza dover premere niente.
 analyze();

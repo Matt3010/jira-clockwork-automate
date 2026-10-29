@@ -178,4 +178,66 @@ const quando = (h) => new Date(2026, 7, 10, h, 0).toISOString();
   assert.equal(riga.minutes, 0, 'quindi non si prende niente della giornata');
 }
 
+// --- in proporzione alla stima originale ----------------------------------
+// La giornata si spartisce come le task erano state pesate a preventivo.
+{
+  const rows = [
+    { kind: 'task', enabled: true, issueKey: 'ABC-1', estimateMinutes: 360 },
+    { kind: 'task', enabled: true, issueKey: 'ABC-2', estimateMinutes: 120 }
+  ];
+  allocate(rows, conSplit('estimate'), 480);
+  assert.deepEqual(rows.map((r) => r.minutes), [360, 120], 'tre a uno come le stime');
+  assert.equal(rows.reduce((s, r) => s + r.minutes, 0), 480, 'e la somma torna esatta');
+}
+
+// --- una task senza stima vale la media delle stimate ---------------------
+// Col peso a uno contro 240 finiva a zero minuti, con l'avviso «troppe task».
+{
+  const rows = [
+    { kind: 'task', enabled: true, issueKey: 'ABC-1', estimateMinutes: 360 },
+    { kind: 'task', enabled: true, issueKey: 'ABC-2', estimateMinutes: 120 },
+    { kind: 'task', enabled: true, issueKey: 'ABC-3' }
+  ];
+  const warnings = [];
+  allocate(rows, conSplit('estimate'), 720, warnings);
+  // Pesi 360, 120 e 240 (la media): 720 minuti si dividono 3 : 1 : 2.
+  assert.deepEqual(rows.map((r) => r.minutes), [360, 120, 240]);
+  assert.deepEqual(warnings, [], 'nessuna riga resta a secco');
+}
+
+// --- se nessuna task ha una stima si ricade sulle parti uguali ------------
+{
+  const rows = [
+    { kind: 'task', enabled: true, issueKey: 'ABC-1' },
+    { kind: 'task', enabled: true, issueKey: 'ABC-2' }
+  ];
+  allocate(rows, conSplit('estimate'), 480);
+  assert.deepEqual(rows.map((r) => r.minutes), [240, 240], 'senza stime, parti uguali');
+}
+
+// --- la stima arriva fino al piano ----------------------------------------
+// buildPlan deve portare `estimateMinutes` dall'attività di Jira alla riga, o
+// la divisione sulla stima non avrebbe da cui pescare.
+{
+  const jiraActivity = new Map([
+    ['ABC-1', { key: 'ABC-1', summary: 'Grossa', estimateMinutes: 360, events: [
+      { kind: 'changelog', at: quando(10), by: '', items: [{ field: 'status', from: 'To Do', to: 'In Progress' }] }
+    ] }],
+    ['ABC-2', { key: 'ABC-2', summary: 'Piccola', estimateMinutes: 120, events: [
+      { kind: 'changelog', at: quando(11), by: '', items: [{ field: 'status', from: 'To Do', to: 'In Progress' }] }
+    ] }]
+  ]);
+  const plan = buildPlan({
+    isoDate: '2026-08-10',
+    config: { ...conSplit('estimate'), meetings: [] },
+    jiraActivity,
+    gitByIssue: new Map(),
+    recentIssues: [],
+    loggedEntries: [],
+    alreadyLoggedMinutes: 0
+  });
+  assert.deepEqual(plan.rows.map((r) => r.estimateMinutes), [360, 120], 'la stima arriva alla riga');
+  assert.deepEqual(plan.rows.map((r) => r.minutes), [360, 120], 'e la giornata si spartisce su quella');
+}
+
 console.log('divisione ore: tutti i controlli passati.');

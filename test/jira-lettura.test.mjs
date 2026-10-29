@@ -37,7 +37,7 @@ function fakeClient(risposte) {
   const client = fakeClient({
     issues: [
       {
-        id: '1', key: 'ABC-1', fields: { summary: 'Mia' },
+        id: '1', key: 'ABC-1', fields: { summary: 'Mia', timeoriginalestimate: 10800 },
         changelog: {
           total: 2,
           histories: [
@@ -71,17 +71,11 @@ function fakeClient(risposte) {
     'solo le issue che hai toccato tu, oggi');
   assert.equal(attivita.get('ABC-1').id, '1', 'l id serve al pannello Sviluppo');
   assert.equal(attivita.get('ABC-1').summary, 'Mia');
+  // La stima originale (secondi da Jira) arriva in minuti: serve a dividere le
+  // ore sulla stima, se lo hai impostato.
+  assert.equal(attivita.get('ABC-1').estimateMinutes, 180, '3h di stima → 180 minuti');
   assert.equal(attivita.get('ABC-1').events.length, 1, 'la modifica del collega non conta');
-  // Il dettaglio del cambiamento viene conservato, non ridotto a un conteggio:
-  // al piano basta contare, al registro delle attività serve sapere cosa è
-  // cambiato e da cosa a cosa.
-  assert.deepEqual(attivita.get('ABC-1').events[0].items, [{ field: 'status', from: '', to: '' }]);
-  // `toString` e' anche un metodo che ogni oggetto eredita: senza un controllo
-  // di tipo, un item senza quel campo restituisce la funzione al posto del testo.
-  for (const chiave of ['from', 'to']) {
-    assert.equal(typeof attivita.get('ABC-1').events[0].items[0][chiave], 'string',
-      `${chiave} deve essere testo, non quello che l oggetto eredita`);
-  }
+  assert.equal(attivita.get('ABC-1').events[0].kind, 'changelog');
 
   assert.match(client.chiamate.search[0].jql, /project in \(ABC\)/, 'la ricerca è ristretta ai progetti');
   assert.match(client.chiamate.search[0].jql, /updated >= "2026-08-10 00:00"/);
@@ -167,12 +161,11 @@ function fakeClient(risposte) {
   assert.deepEqual([...attivita.keys()].sort(), ['ABC-1', 'ABC-2'],
     'le tue per assegnazione o per richiesta, non mezzo progetto');
 
-  // `foreign` le tiene distinte dalle tue: da qui in poi decidono se la riga
-  // parte accesa e se il registro ci mette sopra un nome.
+  // `foreign` le tiene distinte dalle tue: il nome di chi le ha fatte finisce
+  // accanto alla riga, non attribuito a te.
   const assegnata = attivita.get('ABC-1').events[0];
   assert.equal(assegnata.kind, 'foreign', 'non è lavoro tuo e non deve sembrarlo');
   assert.equal(assegnata.by, 'Dario Decarlo', 'con il nome di chi l ha fatto');
-  assert.deepEqual(assegnata.items, [{ field: 'assignee', from: '', to: 'Matteo Scanferla' }]);
   assert.equal(attivita.get('ABC-2').events[0].kind, 'foreign');
 
   // La contabilità resta esclusa anche quando la muove un altro: quelle righe
@@ -237,7 +230,6 @@ function fakeClient(risposte) {
   });
 
   assert.equal(attivita.get('ABC-1').events.length, 1, 'quella di ieri resta fuori');
-  assert.deepEqual(attivita.get('ABC-1').events[0].items.map((i) => i.field), ['priority']);
 }
 
 // ======================================================== assegnata *a te*, non solo riassegnata
@@ -383,10 +375,8 @@ function fakeClient(risposte) {
 
   assert.deepEqual([...attivita.keys()], ['ABC-2'],
     'una issue toccata solo dalla contabilità non è attività: sparisce');
-  assert.deepEqual(
-    attivita.get('ABC-2').events[0].items.map((i) => i.field), ['status'],
-    'e dove c è del lavoro vero, la contabilità viene tolta da sotto'
-  );
+  assert.equal(attivita.get('ABC-2').events.length, 1,
+    'e dove c è del lavoro vero, la modifica conta una volta');
 }
 
 // ======================================================== commenti
@@ -446,6 +436,41 @@ function fakeClient(risposte) {
   assert.match(client.chiamate.search[0].jql, /worklogDate = "2026-08-10"/);
   assert.ok(client.chiamate.worklogs.every((c) => typeof c.startedAfter === 'number'),
     'i worklog si chiedono a partire dall inizio giornata');
+}
+
+// =============================== l'indice arriva dopo: le chiavi note si leggono
+// La ricerca per worklog passa dall'indice di Jira, che si aggiorna qualche
+// secondo dopo la scrittura. Era il difetto vero: subito dopo l'invio il piano
+// si rileggeva, la issue appena scritta non era ancora indicizzata, e a schermo
+// tornava la giornata di prima — nessun badge «già Xh», righe ancora accese,
+// come se l'invio non fosse mai avvenuto.
+{
+  const client = fakeClient({
+    // L'indice conosce solo la issue di ieri: quella appena scritta no.
+    issues: [{ key: 'XYZ-9', fields: { summary: 'Riunione' } }],
+    worklogs: {
+      'XYZ-9': [
+        { id: '201', author: { accountId: IO }, started: quando(9, 30), timeSpentSeconds: 30 * 60 }
+      ],
+      'ABC-1': [
+        { id: '301', author: { accountId: IO }, started: quando(10), timeSpentSeconds: 120 * 60 }
+      ]
+    }
+  });
+
+  const logged = await loggedMinutesForDay(client, {
+    isoDate: '2026-08-10', accountId: IO, extraKeys: ['ABC-1', 'XYZ-9', '']
+  });
+
+  assert.equal(logged.byIssue['ABC-1'], 120, 'la issue appena scritta va letta lo stesso');
+  assert.equal(logged.total, 150, 'e le sue ore entrano nel monte della giornata');
+  assert.equal(client.chiamate.worklogs.filter((c) => c.key === 'XYZ-9').length, 1,
+    'una chiave che la ricerca ha già dato non si legge due volte');
+
+  const appena = logged.entries.find((e) => e.key === 'ABC-1');
+  assert.equal(appena.id, '301', 'col suo id, o non si potrebbe disfare');
+  assert.deepEqual(logged.issues.map((i) => i.key), ['XYZ-9'],
+    'fra i suggerimenti restano quelle con un titolo: le chiavi note ce l ha già chi le ha passate');
 }
 
 // ======================================================== ricerca non disponibile

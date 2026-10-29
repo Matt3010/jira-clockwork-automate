@@ -15,7 +15,7 @@ import { apriPagina, testo, tutti } from './pagina.mjs';
 import { buildPlan } from '../src/lib/planner.js';
 // L'ora la compone lo stesso pezzo che la disegna: scritta a mano nel test
 // dipenderebbe dal fuso della macchina che lo esegue.
-import { eventTime } from '../src/lib/registro.js';
+import { eventTime } from '../src/lib/dates.js';
 // Il finto browser sgancia i timer che installa sul globale: per aspettare
 // davvero i tentativi distanziati serve un timer che non passi di lì.
 import { setTimeout as respira } from 'node:timers/promises';
@@ -145,11 +145,12 @@ const cambia = (nodo, valore) => {
   p.chiudi();
 }
 
-// --- una issue tua mossa da un altro: si vede, ed è spenta ---------------
-// Il caso vero: un collega ti assegna un ticket alle 17:00. Prima non compariva
-// da nessuna parte — la modifica portava il suo nome, non il tuo. Ora c'è, ma
-// spenta: farsela assegnare non è averci lavorato, e le ore della giornata non
-// devono finirci sopra da sole.
+// --- una issue tua mossa solo da un altro: non entra nel piano -----------
+// Un collega ti assegna un ticket alle 17:00, o ne cambia lo stato: è tuo
+// perché ne sei assegnatario o richiedente, ma quel giorno non ci hai messo
+// mano. Il piano è l'elenco di cosa registrare, e una riga «questa non l'hai
+// fatta» era solo rumore — il posto per «cosa hanno fatto gli altri» era il
+// registro delle attività, che non c'è più.
 {
   const assegnata = new Map([
     ...attivita,
@@ -180,43 +181,13 @@ const cambia = (nodo, valore) => {
   await p.attendi();
 
   const riga = righe(p.document).find((tr) => campo(tr, '.issue-input')?.value === 'ABC-9');
-  assert.ok(riga, 'la riga deve esserci: il ticket è tuo');
-  assert.equal(campo(riga, 'input[type="checkbox"]').checked, false, 'e deve partire spenta');
-  assert.equal(campo(riga, '.hours').value, '0', 'senza portarsi via minuti');
-  // Senza una frase, una riga spenta e senza attività sembra comparsa dal
-  // nulla. La dice la riga dei colleghi, che li elenca tutti: una frase sola
-  // nominava solo il primo, e con due persone la seconda spariva.
-  // Con l'ora accanto: assegnata alle 9 o alle 17 sono due cose diverse.
-  const quandoAssegnata = eventTime(Date.parse('2026-08-10T17:00:00.000Z'));
-  assert.equal(testo(campo(riga, '.altri')), `Dario Decarlo: assigned it to you at ${quandoAssegnata}`);
-  assert.equal(campo(riga, '.detail'), null,
-    'e non ce n è una seconda a dire la stessa cosa: aprirebbe un vuoto nella card');
+  assert.equal(riga, undefined, 'mossa solo da un collega: il ticket non entra nel piano');
 
-  // Le ore restano tutte sulle righe su cui hai lavorato davvero.
+  // Restano solo le righe su cui hai lavorato davvero, e sono accese.
   const conTicket = righe(p.document)
     .filter((tr) => campo(tr, '.issue-input').value && campo(tr, 'input[type="checkbox"]').checked)
     .map((tr) => campo(tr, '.issue-input').value);
-  assert.deepEqual(conTicket, ['ABC-1', 'ABC-2'], 'le altre due restano accese');
-
-  p.document.querySelector('#submit').click();
-  await p.attendi(2);
-  const inviata = p.ultima('submit').rows.find((r) => r.issueKey === 'ABC-9');
-  assert.equal(inviata.minutes, 0, 'e non si registra niente su un ticket che ti hanno solo assegnato');
-
-  // Ma il caso normale è che la task te la faccia il PM e poi ci lavori: da
-  // spenta a registrabile deve essere un click, con le ore che si spostano da
-  // sole. Se costasse di più, tanto varrebbe non mostrarla.
-  const spunta = campo(riga, '.col-check input');
-  spunta.checked = true;
-  spunta.dispatchEvent(new p.dom.window.Event('change', { bubbles: true }));
-  await p.attendi(1);
-
-  const acceso = righe(p.document).find((tr) => campo(tr, '.issue-input').value === 'ABC-9');
-  assert.ok(Number(campo(acceso, '.hours').value) > 0, 'accesa, prende la sua parte di giornata');
-  assert.equal(
-    righe(p.document).reduce((somma, tr) => somma + Number(campo(tr, '.hours').value), 0), 8,
-    'e le otto ore restano otto: le sue arrivano dalle altre, non dal nulla'
-  );
+  assert.deepEqual(conTicket, ['ABC-1', 'ABC-2'], 'le due su cui hai lavorato restano accese');
   p.chiudi();
 }
 
@@ -460,6 +431,61 @@ const cambia = (nodo, valore) => {
   p.chiudi();
 }
 
+// --- riordinare le righe, che vuol dire riordinare la giornata -----------
+// Le task prendono gli orari nella sequenza in cui stanno in tabella: senza un
+// modo di spostarle, l'unico rimedio per mettere il lavoro nell'ora giusta era
+// scrivere le ore a mano riga per riga finché i conti tornavano.
+{
+  const p = await apriPagina('popup', { risposte: RISPOSTE });
+  await p.attendi();
+
+  const riga = (key) => righe(p.document).find((tr) => campo(tr, '.issue-input')?.value === key);
+  const orario = (key) => testo(riga(key).querySelector('.time'));
+  const ordine = () => righe(p.document)
+    .map((tr) => campo(tr, '.issue-input')?.value)
+    .filter(Boolean);
+
+  assert.deepEqual(ordine(), ['ABC-1', 'ABC-2'], 'si parte dall ordine del piano');
+  assert.match(orario('ABC-1'), /^09:00/, 'e la prima task apre la giornata');
+
+  // Da tastiera: la maniglia sotto il fuoco, e le frecce spostano.
+  const giu = new p.dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true });
+  riga('ABC-1').querySelector('.grip').dispatchEvent(giu);
+  await p.attendi(1);
+
+  assert.deepEqual(ordine(), ['ABC-2', 'ABC-1'], 'la freccia sposta la riga di un posto');
+  assert.match(orario('ABC-2'), /^09:00/, 'e gli orari seguono l ordine nuovo');
+  assert.match(orario('ABC-1'), /^14:00/, 'la task spostata prende il blocco di dopo');
+  assert.equal(p.document.activeElement?.classList.contains('grip'), true,
+    'il fuoco segue la riga, o la freccia dopo sposterebbe un altra');
+
+  // In cima non si va oltre: niente da spostare, niente da ridisegnare.
+  const su = () => new p.dom.window.KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true });
+  riga('ABC-2').querySelector('.grip').dispatchEvent(su());
+  await p.attendi(1);
+  assert.deepEqual(ordine(), ['ABC-2', 'ABC-1'], 'la prima riga resta la prima');
+
+  // Col trascinamento: si arma solo dalla maniglia, o dentro i campi non si
+  // potrebbe più selezionare il testo.
+  const tr = riga('ABC-1');
+  assert.notEqual(tr.draggable, true, 'la riga non nasce trascinabile');
+  tr.querySelector('.grip').dispatchEvent(new p.dom.window.MouseEvent('mousedown', { bubbles: true }));
+  assert.equal(tr.draggable, true, 'premendo la maniglia sì');
+
+  tr.dispatchEvent(new p.dom.window.MouseEvent('dragstart', { bubbles: true }));
+  // Rilasciata sopra la metà alta di ABC-2, ci va davanti.
+  const bersaglio = riga('ABC-2');
+  bersaglio.dispatchEvent(new p.dom.window.MouseEvent('dragover', { bubbles: true, clientY: 0 }));
+  assert.ok(bersaglio.classList.contains('drop-target'), 'si vede dove finirebbe prima di lasciarla');
+  bersaglio.dispatchEvent(new p.dom.window.MouseEvent('drop', { bubbles: true, clientY: 0 }));
+  await p.attendi(1);
+
+  assert.deepEqual(ordine(), ['ABC-1', 'ABC-2'], 'il rilascio rimette la riga davanti');
+  assert.equal(tutti(p.document, 'tr.drop-target').length, 0, 'e il segno del rilascio sparisce');
+  assert.match(orario('ABC-1'), /^09:00/, 'con gli orari di nuovo al posto giusto');
+  p.chiudi();
+}
+
 // --- l'invio manda quello che si legge -----------------------------------
 {
   const p = await apriPagina('popup', { risposte: RISPOSTE });
@@ -484,6 +510,101 @@ const cambia = (nodo, valore) => {
   // a scartarle, e mandarle con delle ore addosso sarebbe un invio a caso.
   assert.ok(inviato.rows.filter((r) => !r.issueKey).every((r) => r.minutes === 0),
     'una riga senza ticket non deve portare minuti con se');
+  p.chiudi();
+}
+
+// --- dopo l'invio lo schermo dice quello che c'è su Jira ------------------
+// La rilettura passava per la sola ricerca per worklog, che su Jira arriva
+// dall'indice con qualche secondo di ritardo: le righe appena scritte non
+// c'erano ancora, e tornava la giornata di prima — nessun badge, righe ancora
+// accese, come se l'invio non fosse mai avvenuto. Le chiavi del piano viaggiano
+// con la richiesta proprio per non dipendere da quel ritardo.
+{
+  const p = await apriPagina('popup', {
+    risposte: {
+      ...RISPOSTE,
+      submit: { results: [{ ok: true, issueKey: 'ABC-1', parts: 1 }, { ok: true, issueKey: 'ABC-2', parts: 1 }] },
+      refreshLogged: (payload) => ({
+        // Il fondo risponde solo per le chiavi che gli sono state passate:
+        // è l'indice di Jira che ancora non le conosce.
+        loggedByIssue: Object.fromEntries((payload.issueKeys || []).map((k) => [k, 240])),
+        loggedEntries: [],
+        alreadyLoggedMinutes: (payload.issueKeys || []).length * 240
+      }),
+      reloadSite: { reloaded: true }
+    }
+  });
+  await p.attendi();
+
+  p.document.querySelector('#submit').click();
+  await p.attendi(4);
+
+  const chiesto = p.ultima('refreshLogged');
+  assert.ok(chiesto.issueKeys?.includes('ABC-1') && chiesto.issueKeys?.includes('ABC-2'),
+    'la rilettura si porta dietro le chiavi appena scritte');
+
+  const dopo = righe(p.document).filter((tr) => campo(tr, '.issue-input')?.value);
+  assert.ok(dopo.length, 'le righe restano a schermo: si deve poter disfare');
+  for (const tr of dopo) {
+    assert.equal(campo(tr, 'input[type="checkbox"]').checked, false,
+      'una riga già registrata si spegne da sola, o il prossimo invio la duplica');
+    assert.match(testo(tr), /4h/, 'e dice quante ore ci sono già sopra');
+  }
+  p.chiudi();
+}
+
+// --- e se anche la rilettura diretta è in ritardo, vale quello che hai scritto
+// Le chiavi passate di solito bastano, ma ogni tanto persino la lettura per
+// issue torna la giornata di prima. Quello che abbiamo appena scritto lo
+// sappiamo: viaggia come minimo garantito, così il badge "già Xh" compare
+// subito e la riga si spegne, invece di sembrare che l'invio non sia avvenuto.
+{
+  const p = await apriPagina('popup', {
+    risposte: {
+      ...RISPOSTE,
+      submit: { results: [
+        { ok: true, issueKey: 'ABC-1', minutes: 240, parts: 1 },
+        { ok: true, issueKey: 'ABC-2', minutes: 240, parts: 1 }
+      ] },
+      // L'indice è in ritardo su tutto: non riporta nulla, nemmeno per le chiavi
+      // passate. Senza il minimo, lo schermo resterebbe fermo a prima dell'invio.
+      refreshLogged: { loggedByIssue: {}, loggedEntries: [], alreadyLoggedMinutes: 0 },
+      reloadSite: { reloaded: true }
+    }
+  });
+  await p.attendi();
+
+  p.document.querySelector('#submit').click();
+  await p.attendi(4);
+
+  const dopo = righe(p.document).filter((tr) => campo(tr, '.issue-input')?.value);
+  assert.ok(dopo.length, 'le righe restano a schermo');
+  for (const tr of dopo) {
+    assert.equal(campo(tr, 'input[type="checkbox"]').checked, false,
+      'spenta col minimo appena scritto, o il prossimo invio la duplica');
+    assert.match(testo(tr), /4h/, 'e dice le ore appena scritte, non zero');
+  }
+
+  // Il cestino apre l'elenco, ma Jira non elenca ancora i worklog: niente
+  // "cancella tutto" alla cieca — avrebbe toccato anche ore messe prima.
+  const prima = dopo.find((tr) => campo(tr, '.issue-input').value === 'ABC-1');
+  campo(prima, '.wipe').click();
+  await p.attendi(1);
+  const pannello = p.document.querySelector('tr.worklogs');
+  assert.ok(pannello, 'l elenco si apre');
+  assert.equal(pannello.querySelector('.danger-text'), null, 'nessun pulsante per cancellare tutto');
+  const rileggi = [...pannello.querySelectorAll('button')].find((b) => testo(b) === 'Refresh');
+  assert.ok(rileggi, 'al suo posto: rileggi');
+
+  // E rileggere mentre Jira è ancora in ritardo non deve perdere il minimo:
+  // la riga tornerebbe accesa e il prossimo invio la duplicherebbe.
+  const letture = p.chiamate.filter((c) => c.type === 'refreshLogged').length;
+  rileggi.click();
+  await p.attendi(2);
+  assert.ok(p.chiamate.filter((c) => c.type === 'refreshLogged').length > letture, 'la rilettura parte');
+  const ancora = righe(p.document).find((tr) => campo(tr, '.issue-input')?.value === 'ABC-1');
+  assert.equal(campo(ancora, 'input[type="checkbox"]').checked, false, 'resta spenta');
+  assert.match(testo(ancora), /4h/, 'e con le sue ore');
   p.chiudi();
 }
 

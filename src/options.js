@@ -267,7 +267,9 @@ async function save() {
       startTime: $('work-start').value || '09:00',
       // Un valore che non conosciamo vale come "parti uguali": e' il modo di
       // dividere che non sorprende nessuno.
-      split: $('work-split').value === 'activity' ? 'activity' : 'equal',
+      split: ['activity', 'estimate'].includes($('work-split').value)
+        ? $('work-split').value
+        : 'equal',
       showBadge: $('show-badge').checked,
       sendComments: $('send-comments').checked,
       breaks

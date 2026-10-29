@@ -54,8 +54,9 @@ export const DEFAULT_CONFIG = {
   work: {
     dailyHours: 8,
     roundingMinutes: 15,
-    // Come si dividono le ore fra le task: in parti uguali, oppure in
-    // proporzione a quanto risulta fatto su ognuna (commit e modifiche Jira).
+    // Come si dividono le ore fra le task: in parti uguali, in proporzione a
+    // quanto risulta fatto su ognuna (commit e modifiche Jira), o in
+    // proporzione alla stima originale ('equal' | 'activity' | 'estimate').
     // Default alle parti uguali: e' quello che faceva prima, e non e' una
     // scelta peggiore — una task con un commit solo puo' esserti costata
     // l'intera mattina.

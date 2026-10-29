@@ -1,7 +1,7 @@
 // I ticket che hai ancora aperti, messi in ordine leggibile.
 //
-// Sta fuori dal popup per lo stesso motivo di registro.js: raggruppare e
-// ordinare non ha bisogno del DOM, e dentro il popup non sarebbe verificabile.
+// Sta fuori dal popup perche' raggruppare e ordinare non ha bisogno del DOM, e
+// dentro il popup non sarebbe verificabile.
 
 import { toIsoDate } from './dates.js';
 

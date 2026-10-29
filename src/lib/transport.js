@@ -24,8 +24,7 @@ function pageFetch(url, init) {
       response.text().then((text) => ({
         status: response.status,
         text,
-        contentType: response.headers.get('content-type') || '',
-        finalUrl: response.url
+        contentType: response.headers.get('content-type') || ''
       }))
     )
     .catch((error) => ({ status: 0, text: String((error && error.message) || error), contentType: '' }));
@@ -176,10 +175,6 @@ export class Channel {
       throw await this._errore('TAB_GONE', `${this.label}: the session tab no longer responds.`);
     }
     return result;
-  }
-
-  describe() {
-    return { via: 'session', host: this.host, resolved: this.tabId !== null };
   }
 }
 

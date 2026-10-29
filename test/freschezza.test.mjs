@@ -83,7 +83,7 @@ const blocco = (nome) => {
 // Ognuna di queste è un modo concreto di togliere il lavoro di mano a chi sta
 // usando il popup in quel momento, non prudenza generica.
 {
-  const corpo = blocco('pollIfIdle');
+  const corpo = blocco('refreshIfStale');
   assert.match(corpo, /visibilityState !== 'visible'/,
     'a finestra nascosta non c è niente da tenere fresco, e sono richieste buttate');
   assert.match(corpo, /state\.busy/, 'durante un analisi decide lei quando i dati cambiano');
@@ -97,6 +97,15 @@ const blocco = (nome) => {
   assert.match(corpo, /refreshLogged\(\)/, 'il piano va riletto nella versione leggera');
   assert.doesNotMatch(corpo, /\banalyze\(/,
     'un analisi completa al minuto sono decine di richieste per un dato che non cambia');
+
+  // Battito e ritorno sul pannello passano dalla stessa strada, con le stesse
+  // guardie: il ritorno ne aveva una sua senza, e rileggeva mentre scrivevi.
+  assert.match(blocco('pollIfIdle'), /refreshIfStale\(POLL_MS\)/, 'il battito non passa dalle guardie');
+  assert.match(popup, /addEventListener\('focus', \(\) => refreshIfStale\(/,
+    'il ritorno sul pannello non passa dalle guardie');
+  // E la rilettura leggera non ripiega più su un'analisi completa.
+  assert.doesNotMatch(blocco('refreshLogged'), /\banalyze\(/,
+    'una rilettura leggera che diventa un analisi completa la fa ripartire da capo');
 }
 
 console.log('freschezza: tutti i controlli passati.');

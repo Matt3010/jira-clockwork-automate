@@ -21,7 +21,8 @@
   /* Colori delle attività nell'anteprima. Terna validata su TUTTE le coppie in
      entrambi i temi (blu · acqua · rosso): due blocchi qualsiasi possono finire
      adiacenti, quindi non basta distinguerli a due a due nell'ordine. Oltre la
-     terza attività si ripiega su un neutro invece di inventare tinte nuove. */
+     terza attività si cambia riempimento (rigato, vuoto), non tinta. Il neutro
+     resta per i blocchi senza una serie. */
   --series-1: #2a78d6;
   --series-2: #1baf7a;
   --series-3: #e34948;
@@ -79,7 +80,7 @@
 /* L'attributo `hidden` vale `display: none` solo finché nessuno dichiara un
    display sull'elemento. Qui lo fanno `button`, `main`, `.bar`, `.legend` e le
    altre: senza questa regola `hidden` non nasconde niente, e restano in vista
-   il pannello delle ore sotto il registro e il pulsante "Annulla". */
+   il pannello dei ticket sotto quello delle ore e il pulsante "Annulla". */
 [hidden] { display: none !important; }
 
 /* Due contesti, stessa pagina. Il popup non ha una finestra sua: la larghezza
@@ -136,16 +137,13 @@ button {
   background: var(--bg);
   color: var(--text);
   cursor: pointer;
-}
-button:hover:not(:disabled) { border-color: var(--accent); }
-button:disabled { opacity: .5; cursor: default; }
-
-button {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   white-space: nowrap;
 }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
 
 /* L'etichetta si tronca, il pulsante non si deforma. */
 button .label { overflow: hidden; text-overflow: ellipsis; }
@@ -418,9 +416,8 @@ td { padding: 0; border: none; }
   gap: var(--passo-card);
 }
 .col-hours { grid-area: hours; }
-.col-time { grid-area: time; }
+.col-time { grid-area: time; color: var(--muted); font-size: 12px; }
 .col-actions { grid-area: actions; display: flex; gap: 2px; }
-.col-time { color: var(--muted); font-size: 12px; }
 /* Dentro il blocchetto i campi devono staccarsi dal fondo, che non è più
    quello della pagina. */
 .col-issue input, .col-hours input, .comment { background: var(--bg); }
@@ -468,7 +465,10 @@ tr.section-start { margin-top: 8px; }
 .hours.locked { border-color: var(--accent); }
 .time { color: var(--muted); display: block; }
 
-.col-actions { width: 58px; }
+/* Larghezza ferma: il cestino compare solo dove ci sono gia' delle ore, e
+   senza una misura fissa la comparsa sposterebbe il campo delle ore. Tre
+   pulsanti ci stanno affiancati. */
+.col-actions { width: 80px; }
 
 .remove {
   border: none;
@@ -480,6 +480,28 @@ tr.section-start { margin-top: 8px; }
 }
 .remove:hover { color: var(--err); background: var(--surface); }
 .remove.wipe.open { color: var(--err); background: var(--surface); }
+
+/* La maniglia per riordinare. Smorta come le altre azioni finche' non ci si
+   passa sopra: e' un comando che serve ogni tanto, non un titolo. Il cursore
+   dice cosa fa prima ancora di provarci. */
+.grip {
+  border: none;
+  background: none;
+  color: var(--muted);
+  padding: 3px;
+  line-height: 0;
+  border-radius: 3px;
+  cursor: grab;
+}
+.grip:hover { color: var(--text); background: var(--surface); }
+.grip:active { cursor: grabbing; }
+
+/* La riga in viaggio resta visibile ma si fa da parte, e quella sotto il
+   puntatore mostra da che lato finirebbe: senza il segno si rilascia a
+   indovinare. */
+tr.dragging { opacity: .4; }
+tr.drop-target { box-shadow: inset 0 2px 0 var(--accent); }
+tr.drop-target.sotto { box-shadow: inset 0 -2px 0 var(--accent); }
 
 /* Elenco dei worklog già su Jira, aperto sotto la riga. */
 /* L'elenco dei worklog già registrati appartiene alla riga sopra: si appoggia
@@ -506,14 +528,6 @@ tr.worklogs td { border-top: none; padding-top: 0; }
 .worklog-item span { font-variant-numeric: tabular-nums; }
 button.danger-text { color: var(--err); border-color: var(--err); margin-top: 6px; }
 
-.remove.armed {
-  color: var(--err);
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1.2;
-  border: 1px solid var(--err);
-  padding: 2px 5px;
-}
 tr.disabled .remove.wipe { opacity: 1; }
 
 /* Linguette: due viste dello stesso giorno. La data sta sopra, perché serve a
@@ -797,13 +811,13 @@ tr.disabled .remove.wipe { opacity: 1; }
 .msg.info .glyph { opacity: .8; }
 
 /* Richiede un intervento. */
-.msg.action, .msg.warn {
+.msg.action {
   background: var(--warn-bg);
   border-color: var(--border);
   border-left-color: var(--warn);
   color: var(--text);
 }
-.msg.action .glyph, .msg.warn .glyph { color: var(--warn); }
+.msg.action .glyph { color: var(--warn); }
 
 .msg.err {
   background: var(--err-bg);

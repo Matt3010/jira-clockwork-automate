@@ -80,6 +80,9 @@
   "splitActivity": {
     "message": "In proporzione a commit e modifiche Jira"
   },
+  "splitEstimate": {
+    "message": "In proporzione alla stima originale"
+  },
   "hintSplit": {
     "message": "In proporzione, una task con sei commit prende più di una con un solo cambio di stato. Una riga senza tracce prende comunque la sua parte."
   },
@@ -543,6 +546,9 @@
   "titleRemoveRow": {
     "message": "Togli dal piano (non tocca Jira)"
   },
+  "titleDragRow": {
+    "message": "Trascina per riordinare, o usa ↑ ↓"
+  },
   "worklogsOne": {
     "message": "Worklog già su Jira per $ISSUE$:",
     "placeholders": {
@@ -563,7 +569,7 @@
     }
   },
   "worklogsUnlistable": {
-    "message": "Non riesco a elencare i singoli worklog di $ISSUE$ ($AMOUNT$ in totale). Ricarica l'estensione, oppure cancellali tutti:",
+    "message": "$ISSUE$ ha $AMOUNT$ registrate, ma Jira non elenca ancora i singoli worklog. Rileggi tra qualche secondo per poterli cancellare uno per uno:",
     "placeholders": {
       "issue": {
         "content": "$1"
@@ -580,14 +586,6 @@
     "message": "Cancella tutti e $COUNT$",
     "placeholders": {
       "count": {
-        "content": "$1"
-      }
-    }
-  },
-  "btnDeleteAllAmount": {
-    "message": "Cancella tutte le $AMOUNT$",
-    "placeholders": {
-      "amount": {
         "content": "$1"
       }
     }
@@ -896,14 +894,6 @@
   },
   "noteNoCommitsOne": {
     "message": "Nessun commit collegato trovato sull'unica issue controllata: o il pannello Sviluppo non è collegato, o il ticket non era fra le candidate."
-  },
-  "noteDevPanelUnreadable": {
-    "message": "Pannello Sviluppo non leggibile ($ERROR$). Vado avanti con la sola attività Jira.",
-    "placeholders": {
-      "error": {
-        "content": "$1"
-      }
-    }
   },
   "noteActivityTruncated": {
     "message": "La ricerca del giorno ha raggiunto il limite: qualche issue può essere rimasta fuori. Restringi i progetti nelle impostazioni per una giornata completa."

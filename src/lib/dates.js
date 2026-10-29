@@ -74,6 +74,20 @@ export function timeToMinutes(time) {
   return hh * 60 + mm;
 }
 
+/**
+ * L'ora di un istante (millisecondi o ISO) in minuti dalla mezzanotte locale:
+ * quella in cui hai lavorato, non quella del fuso in cui Jira la scrive.
+ */
+export function eventMinutes(at) {
+  const quando = new Date(at);
+  return quando.getHours() * 60 + quando.getMinutes();
+}
+
+/** L'ora di un istante come "09:41". */
+export function eventTime(at) {
+  return minutesToTime(eventMinutes(at));
+}
+
 /** 570 -> '09:30' */
 export function minutesToTime(minutes) {
   const clamped = Math.max(0, Math.min(minutes, 23 * 60 + 59));

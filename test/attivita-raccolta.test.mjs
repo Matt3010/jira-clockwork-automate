@@ -1,6 +1,6 @@
 // Le issue che hai creato tu. Non stanno nel changelog — creare non è
 // modificare — quindi senza questa ricerca "ho aperto un ticket" resterebbe
-// fuori dal registro.
+// fuori dal piano.
 
 import assert from 'node:assert/strict';
 import { collectCreatedIssues, mergeCreatedIssues } from '../src/lib/jira.js';
@@ -30,7 +30,7 @@ function fakeClient(risposta) {
 
   assert.deepEqual(create.map((i) => i.key), ['ABC-1', 'ABC-2']);
   assert.equal(create[0].summary, 'Prima');
-  assert.equal(create[0].at, '2026-08-11T09:00:00.000+0200', 'l orario serve a collocarla nel registro');
+  assert.equal(create[0].at, '2026-08-11T09:00:00.000+0200', 'con l orario della creazione');
 
   const { jql } = client.chiamate[0];
   assert.match(jql, /creator = currentUser\(\)/, 'solo quelle aperte da te');
@@ -47,7 +47,7 @@ function fakeClient(risposta) {
   assert.ok(client.chiamate[0].jql.startsWith('creator ='), 'nessun filtro progetto appeso davanti');
 }
 
-// --- se `creator` non è interrogabile, il registro perde le creazioni ------
+// --- se `creator` non è interrogabile, il piano perde le creazioni ---------
 //     ma non si ferma: il resto degli eventi resta valido.
 {
   const client = fakeClient(new Error('Field creator not searchable'));
@@ -64,7 +64,7 @@ function fakeClient(risposta) {
 }
 
 // ======================================================== e finiscono nel piano
-// Non solo nel registro: se hai aperto un ticket quel giorno, scriverlo è
+// Se hai aperto un ticket quel giorno, scriverlo è
 // stato lavoro tuo, e il piano deve saperlo. Senza, una issue creata e non
 // più toccata non esiste; una creata e poi committata sembra solo git.
 {
@@ -150,10 +150,10 @@ function fakeClient(risposta) {
   // vede.
   assert.match(analyze, /jiraActivity\.truncated/,
     'il taglio della ricerca non arriva a schermo');
-  // Le candidate le sceglie `gatherCommits`, che è dove è finita la sequenza:
-  // quello che conta è che l'unione venga prima di quella chiamata.
+  // Le candidate le sceglie `devCandidates`: quello che conta è che l'unione
+  // venga prima di quella chiamata.
   assert.ok(
-    analyze.indexOf('mergeCreatedIssues(') < analyze.indexOf('gatherCommits('),
+    analyze.indexOf('mergeCreatedIssues(') < analyze.indexOf('devCandidates('),
     'le issue create vanno unite prima di cercare i commit, o restano fuori dalle candidate'
   );
 }

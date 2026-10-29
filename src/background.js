@@ -11,6 +11,7 @@ import { loadConfig, saveConfig, saveMeetingMemory } from './lib/storage.js';
 import {
   JiraClient,
   collectJiraActivity,
+  estimateMinutes,
   collectDevPanelCommits,
   collectCreatedIssues,
   mergeCreatedIssues,
@@ -21,7 +22,9 @@ import {
 import { groupOpenIssues, usefulTransitions } from './lib/ticket.js';
 import { Channel, TransportError, detectAtlassianHosts, hostOf, tabsOnHost } from './lib/transport.js';
 import { buildPlan } from './lib/planner.js';
-import { formatMinutes, jiraStarted, shortMinutes, todayIso } from './lib/dates.js';
+import {
+  dayBounds, formatMinutes, isSameLocalDay, jiraStarted, shortMinutes, todayIso
+} from './lib/dates.js';
 import { t } from './lib/i18n.js';
 
 const HANDLERS = {
@@ -154,14 +157,6 @@ async function jiraChannel(config) {
   });
 }
 
-/** Arricchisce l'errore col contesto che serve al popup per proporre un rimedio. */
-async function withSiteContext(error, host) {
-  if (error instanceof TransportError) {
-    error.detail = { host, openHosts: (await detectAtlassianHosts()).map((h) => h.host) };
-  }
-  throw error;
-}
-
 /** Unisce piu' elenchi di issue tenendo il primo che si presenta per chiave. */
 function mergeIssues(...lists) {
   const byKey = new Map();
@@ -208,8 +203,7 @@ async function siteStatus() {
   return {
     host,
     configured: Boolean(hostOf(config.jira.baseUrl)),
-    tabsOnSite: tabs.length,
-    openHosts: (await detectAtlassianHosts()).map((h) => h.host)
+    tabsOnSite: tabs.length
   };
 }
 
@@ -255,7 +249,7 @@ async function testJira() {
   const config = await loadConfig();
   const channel = await jiraChannel(config);
   const client = new JiraClient(channel);
-  const me = await client.myself().catch((error) => withSiteContext(error, channel.host));
+  const me = await client.myself();
   await saveConfig({
     cache: {
       accountId: me.accountId,
@@ -274,12 +268,16 @@ async function testJira() {
  * completa costa una ricerca piu' una chiamata per issue candidata al pannello
  * Sviluppo — decine di richieste per aggiornare un badge.
  */
-async function refreshLogged({ isoDate }) {
+async function refreshLogged({ isoDate, issueKeys = [] }) {
   const config = await loadConfig();
   const channel = await jiraChannel(config);
   const jira = new JiraClient(channel);
-  const me = await resolveMe(jira, config).catch((error) => withSiteContext(error, channel.host));
-  const logged = await loggedMinutesForDay(jira, { isoDate, accountId: me.accountId });
+  const me = await resolveMe(jira, config);
+  // Le issue del piano si leggono anche se l'indice non le ha ancora: subito
+  // dopo un invio sono proprio quelle che devono cambiare a schermo.
+  const logged = await loggedMinutesForDay(jira, {
+    isoDate, accountId: me.accountId, extraKeys: issueKeys
+  });
 
   // Se il giorno guardato e' oggi, il badge si aggiorna con questi stessi
   // numeri: nessuna richiesta in piu'. Serve quando le ore le hai messe da
@@ -291,8 +289,7 @@ async function refreshLogged({ isoDate }) {
   return {
     alreadyLoggedMinutes: logged.total,
     loggedByIssue: logged.byIssue,
-    loggedEntries: logged.entries,
-    reliable: logged.reliable
+    loggedEntries: logged.entries
   };
 }
 
@@ -327,7 +324,7 @@ function missingToday(config, loggedMinutes) {
   return Math.max(0, Math.round((config.work.dailyHours || 8) * 60) - loggedMinutes);
 }
 
-async function refreshBadge() {
+async function refreshBadge({ extraKeys = [] } = {}) {
   const config = await loadConfig();
   if (!config.work.showBadge) {
     await paintBadge(null);
@@ -338,7 +335,12 @@ async function refreshBadge() {
     const channel = await jiraChannel(config);
     const jira = new JiraClient(channel);
     const me = await resolveMe(jira, config);
-    const logged = await loggedMinutesForDay(jira, { isoDate: todayIso(), accountId: me.accountId });
+    // Le chiavi appena scritte si leggono dirette, non dall'indice worklog: e'
+    // in ritardo di qualche secondo, e il badge resterebbe fermo sul numero di
+    // prima proprio subito dopo l'invio, quando conta di piu'.
+    const logged = await loggedMinutesForDay(jira, {
+      isoDate: todayIso(), accountId: me.accountId, extraKeys
+    });
     const missing = missingToday(config, logged.total);
     await paintBadge(missing);
     return { missing, shown: true };
@@ -361,8 +363,7 @@ async function openIssues() {
   const config = await loadConfig();
   const channel = await jiraChannel(config);
   const jira = new JiraClient(channel);
-  const issues = await collectOpenIssues(jira, { projects: config.jira.projects || [] })
-    .catch((error) => withSiteContext(error, channel.host));
+  const issues = await collectOpenIssues(jira, { projects: config.jira.projects || [] });
 
   return { groups: groupOpenIssues(issues), total: issues.length };
 }
@@ -378,8 +379,7 @@ async function findIssues({ query }) {
   const config = await loadConfig();
   const channel = await jiraChannel(config);
   const jira = new JiraClient(channel);
-  const issues = await searchIssues(jira, { query, projects: config.jira.projects || [] })
-    .catch((error) => withSiteContext(error, channel.host));
+  const issues = await searchIssues(jira, { query, projects: config.jira.projects || [] });
 
   return { query, issues };
 }
@@ -401,8 +401,7 @@ async function issueTransitions({ issueKey, status }) {
   const config = await loadConfig();
   const channel = await jiraChannel(config);
   const jira = new JiraClient(channel);
-  const transitions = await jira.getTransitions(issueKey)
-    .catch((error) => withSiteContext(error, channel.host));
+  const transitions = await jira.getTransitions(issueKey);
 
   return { issueKey, transitions: usefulTransitions(transitions, status) };
 }
@@ -422,8 +421,7 @@ async function moveIssue({ issueKey, transitionId }) {
   const channel = await jiraChannel(config);
   const jira = new JiraClient(channel);
 
-  await jira.transitionIssue(issueKey, transitionId)
-    .catch((error) => withSiteContext(error, channel.host));
+  await jira.transitionIssue(issueKey, transitionId);
 
   const reached = await jira.getIssue(issueKey, ['status'])
     .then((issue) => issue?.fields?.status?.name || '')
@@ -444,7 +442,7 @@ async function copyFrom({ fromDate }) {
   const config = await loadConfig();
   const channel = await jiraChannel(config);
   const jira = new JiraClient(channel);
-  const me = await resolveMe(jira, config).catch((error) => withSiteContext(error, channel.host));
+  const me = await resolveMe(jira, config);
 
   const logged = await loggedMinutesForDay(jira, { isoDate: fromDate, accountId: me.accountId });
 
@@ -465,22 +463,35 @@ async function copyFrom({ fromDate }) {
 /**
  * Cancella i worklog che hai registrato quel giorno su una issue. Serve a
  * disfare un invio: senza, l'unico modo era andarci a mano da Jira.
- * Tocca solo i tuoi worklog e solo quella data.
+ * Tocca solo i tuoi worklog, solo quella data, e solo quelli indicati per id.
+ *
+ * Senza id non si cancella niente. C'era un "tutti quelli del giorno", usato
+ * quando il popup non riusciva a elencarli: ma succede proprio subito dopo un
+ * invio, e il pulsante mostrava le ore appena scritte mentre cancellava anche
+ * quelle messe prima — da Clockwork, o da un invio di ieri sera.
  */
-async function deleteLogged({ isoDate, issueKey, worklogIds = null }) {
+async function deleteLogged({ isoDate, issueKey, worklogIds = [] }) {
   if (!issueKey) throw new Error(t('errMissingIssue'));
+  const wanted = new Set((worklogIds || []).map(String));
+  if (!wanted.size) return { deleted: 0, minutes: 0, total: 0, error: null };
+
   const config = await loadConfig();
   const channel = await jiraChannel(config);
   const jira = new JiraClient(channel);
-  const me = await resolveMe(jira, config).catch((error) => withSiteContext(error, channel.host));
+  const me = await resolveMe(jira, config);
 
-  const logged = await loggedMinutesForDay(jira, { isoDate, accountId: me.accountId });
-  // `worklogIds` assente = tutti quelli del giorno su quella issue. Con un
-  // doppione capita di volerne togliere uno solo, quindi si puo' scegliere.
-  const wanted = worklogIds ? new Set(worklogIds.map(String)) : null;
-  const miei = logged.entries.filter(
-    (entry) => entry.key === issueKey && entry.id && (!wanted || wanted.has(String(entry.id)))
-  );
+  // I worklog di questa issue si leggono diretti: la ricerca per worklog passa
+  // dall'indice di Jira, in ritardo di qualche secondo subito dopo un invio —
+  // proprio quando si vuole disfarlo.
+  const { start } = dayBounds(isoDate);
+  const miei = (await jira.getWorklogs(issueKey, start - 1)).filter((worklog) =>
+    worklog.author?.accountId === me.accountId
+    && isSameLocalDay(worklog.started, isoDate)
+    && wanted.has(String(worklog.id))
+  ).map((worklog) => ({
+    id: worklog.id,
+    minutes: Math.round((worklog.timeSpentSeconds || 0) / 60)
+  }));
   if (!miei.length) return { deleted: 0, minutes: 0, total: 0, error: null };
 
   // Se una cancellazione fallisce a meta', le precedenti sono gia' andate: si
@@ -512,29 +523,9 @@ async function rememberMeetingIssue({ memoryKey, issueKey }) {
 /**
  * Issue su cui cercare i commit. Non bastano quelle toccate oggi in Jira:
  * capita di committare su un ticket senza aprirlo. Si aggiungono quindi le
- * issue assegnate a te e aggiornate di recente.
+ * issue assegnate a te e aggiornate di recente — con titolo e stima, che per
+ * quelle viste solo dai commit non arrivano da nessun'altra parte.
  */
-/**
- * I commit della giornata dal pannello Sviluppo, con le sue candidate e la tua
- * identita' gia' messe insieme. Serve al piano e al registro allo stesso modo:
- * due copie di questa sequenza divergerebbero alla prima modifica.
- *
- * Ritorna `null` se il pannello non e' leggibile — chi chiama decide se
- * segnalarlo o tirare dritto.
- */
-async function gatherCommits(jira, { jiraActivity, config, isoDate, me }) {
-  try {
-    const candidates = await devCandidates(jira, { jiraActivity, config });
-    const identities = [me.displayName, me.emailAddress, ...(config.identity.extraAuthors || [])];
-    const dev = await collectDevPanelCommits(jira, {
-      candidates, isoDate, identities, countMerges: config.jira.countMerges !== false
-    });
-    return { ...dev, candidates };
-  } catch (error) {
-    return { error };
-  }
-}
-
 async function devCandidates(jira, { jiraActivity, config }) {
   const byKey = new Map();
   for (const entry of jiraActivity.values()) {
@@ -546,9 +537,17 @@ async function devCandidates(jira, { jiraActivity, config }) {
     const jql = `${projectClause(config.jira.projects)}assignee = currentUser() ` +
       'AND updated >= -21d ORDER BY updated DESC';
     try {
-      const issues = await jira.search(jql, { fields: ['summary'], maxResults: limit });
+      const issues = await jira.search(jql, {
+        fields: ['summary', 'timeoriginalestimate'], maxResults: limit
+      });
       for (const issue of issues) {
-        if (!byKey.has(issue.key)) byKey.set(issue.key, { id: issue.id, key: issue.key });
+        if (byKey.has(issue.key)) continue;
+        byKey.set(issue.key, {
+          id: issue.id,
+          key: issue.key,
+          summary: issue.fields?.summary || '',
+          estimateMinutes: estimateMinutes(issue.fields)
+        });
       }
     } catch {
       // Senza le candidate extra restano quelle toccate oggi: meno copertura,
@@ -565,7 +564,7 @@ async function analyze({ isoDate }) {
   const projects = config.jira.projects || [];
   const notes = [];
 
-  const me = await resolveMe(jira, config).catch((error) => withSiteContext(error, channel.host));
+  const me = await resolveMe(jira, config);
   const accountId = me.accountId;
 
   if (!projects.length) {
@@ -594,46 +593,46 @@ async function analyze({ isoDate }) {
   if (jiraActivity.truncated) notes.push({ level: 'info', key: 'noteActivityTruncated', params: [] });
 
   // I commit arrivano dal pannello "Sviluppo" delle issue: sono dentro Jira,
-  // quindi non serve nessun'altra scheda aperta.
-  const gitByIssue = new Map();
-  const foreignGitByIssue = new Map();
-  // Serve piu' in basso, dopo il piano: solo li' si sa se un commit altrui ha
-  // trovato una riga a cui attaccarsi.
-  let skipped = null;
-  // Stessa sequenza del registro, e la stessa funzione: qui ce n'era una
-  // seconda copia, e alla prima modifica — l'impostazione sui merge — sono
-  // andate corrette tutte e due a mano.
-  const dev = await gatherCommits(jira, { jiraActivity, config, isoDate, me });
-  if (dev?.error) {
-    notes.push({ level: 'info', key: 'noteDevPanelUnreadable', params: [dev.error.message] });
-  } else if (dev) {
-    for (const [key, commits] of dev.byIssue) gitByIssue.set(key, commits);
-    for (const [key, commits] of dev.othersByIssue) foreignGitByIssue.set(key, commits);
-    skipped = dev;
-    if (!dev.appType && dev.candidates.length) {
-      notes.push({
-        level: 'info',
-        key: dev.candidates.length === 1 ? 'noteNoCommitsOne' : 'noteNoCommits',
-        params: [dev.candidates.length]
-      });
-    }
+  // quindi non serve nessun'altra scheda aperta. Il pannello non fa fallire
+  // l'analisi: le candidate e le singole issue che non rispondono si saltano.
+  const candidates = await devCandidates(jira, { jiraActivity, config });
+  const dev = await collectDevPanelCommits(jira, {
+    candidates,
+    isoDate,
+    identities: [me.displayName, me.emailAddress, ...(config.identity.extraAuthors || [])],
+    countMerges: config.jira.countMerges !== false
+  });
+  const gitByIssue = dev.byIssue;
+  const foreignGitByIssue = dev.othersByIssue;
+  if (!dev.appType && candidates.length) {
+    notes.push({
+      level: 'info',
+      key: candidates.length === 1 ? 'noteNoCommitsOne' : 'noteNoCommits',
+      params: [candidates.length]
+    });
   }
 
-  // Le issue viste solo dai commit non hanno ancora un titolo.
+  // Titolo e stima delle issue viste solo dai commit: le ha portate la ricerca
+  // delle candidate, l'unica da cui possono arrivare.
   const summaries = {};
-  for (const key of gitByIssue.keys()) {
-    if (jiraActivity.has(key)) continue;
-    try {
-      const issue = await jira.getIssue(key, ['summary']);
-      summaries[key] = issue.fields?.summary || '';
-    } catch {
-      summaries[key] = '(titolo non leggibile)';
-    }
+  const estimates = {};
+  for (const candidate of candidates) {
+    if (jiraActivity.has(candidate.key) || !gitByIssue.has(candidate.key)) continue;
+    summaries[candidate.key] = candidate.summary || '';
+    estimates[candidate.key] = candidate.estimateMinutes || 0;
   }
 
   // Le issue recenti servono sia al menu dei ticket riunione sia a indovinare
   // quello delle cerimonie di questo sprint, quindi vanno lette prima del piano.
-  const logged = await loggedMinutesForDay(jira, { isoDate, accountId });
+  //
+  // Le issue della giornata si leggono anche se l'indice non le ha ancora: un
+  // «Aggiorna» subito dopo un invio ripescherebbe altrimenti la giornata di
+  // prima, e le righe appena scritte tornerebbero accese e senza badge.
+  const logged = await loggedMinutesForDay(jira, {
+    isoDate,
+    accountId,
+    extraKeys: [...new Set([...jiraActivity.keys(), ...gitByIssue.keys()])]
+  });
 
   // Le issue su cui hai gia' registrato ore oggi vanno in testa ai suggerimenti:
   // se una riunione e' gia' stata segnata da qualche parte, quel ticket e' la
@@ -647,6 +646,7 @@ async function analyze({ isoDate }) {
     gitByIssue,
     foreignGitByIssue,
     summaries,
+    estimates,
     recentIssues,
     loggedEntries: logged.entries,
     loggedByIssue: logged.byIssue,
@@ -657,8 +657,8 @@ async function analyze({ isoDate }) {
   // appartengono. L'avviso in cima resta solo per quelli che non hanno trovato
   // una riga dove posarsi — altrimenti direbbe tutti i giorni una cosa che si
   // legge gia' due centimetri piu' sotto.
-  if (skipped?.skippedOther) {
-    const senzaRiga = [...skipped.othersByIssue]
+  if (foreignGitByIssue.size) {
+    const senzaRiga = [...foreignGitByIssue]
       .filter(([key]) => !plan.rows.some((row) => row.issueKey === key))
       .flatMap(([, commits]) => commits);
     if (senzaRiga.length) {
@@ -724,7 +724,7 @@ async function submit({ isoDate, rows }) {
 
   // La scheda si valida prima di scrivere: se la sessione non e' buona lo
   // scopriamo adesso, non a meta' invio.
-  await channel.resolve().catch((error) => withSiteContext(error, channel.host));
+  await channel.resolve();
 
   const results = [];
   for (const row of rows) {
@@ -775,8 +775,10 @@ async function submit({ isoDate, rows }) {
   );
 
   // Il badge deve seguire subito: aspettare la sveglia dei 15 minuti lo
-  // lascerebbe fermo su un numero che non e' piu' vero.
-  await refreshBadge();
+  // lascerebbe fermo su un numero che non e' piu' vero. Le chiavi appena
+  // scritte gli arrivano dirette, cosi' non conta una giornata vecchia mentre
+  // l'indice worklog si aggiorna.
+  await refreshBadge({ extraKeys: results.filter((r) => r.ok).map((r) => r.issueKey) });
 
   return { results, host: channel.host };
 }

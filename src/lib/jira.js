@@ -4,7 +4,7 @@
 // scrivere su /issue/{key}/worklog e' sufficiente perche' le ore compaiano in
 // Clockwork. L'API pubblica di Clockwork e' read-only sui worklog.
 
-import { dayBounds, isSameLocalDay, jqlDayRange } from './dates.js';
+import { dayBounds, eventMinutes, isSameLocalDay, jqlDayRange } from './dates.js';
 
 export class JiraError extends Error {
   constructor(message, status, body) {
@@ -96,9 +96,9 @@ export class JiraClient {
    * supportato da Atlassian, ma evita di dover aprire anche Bitbucket.
    * Vuole l'id numerico, non la chiave.
    */
-  async getDevelopment(issueId, applicationType = 'bitbucket', dataType = 'repository') {
+  async getDevelopment(issueId, applicationType = 'bitbucket') {
     return this.request('/rest/dev-status/1.0/issue/detail', {
-      query: { issueId, applicationType, dataType }
+      query: { issueId, applicationType, dataType: 'repository' }
     });
   }
 
@@ -204,10 +204,9 @@ function describeError(body, status) {
  * della registrazione delle ore, e li genera anche questa estensione quando
  * scrive un worklog.
  *
- * Tenerli sarebbe sbagliato due volte: nel registro seppelliscono le cose vere
- * sotto righe come "modificato timespent", e nel piano gonfiano il peso della
- * issue — che decide chi prende il resto della divisione. Ed e' circolare:
- * registri ore, l'analisi dopo le legge come lavoro e te le ripropone.
+ * Tenerli gonfierebbe il peso della issue nel piano — che decide chi prende il
+ * resto della divisione. Ed e' circolare: registri ore, l'analisi dopo le
+ * legge come lavoro e te le ripropone.
  *
  * `rank` sta qui per un motivo diverso: cambia ogni volta che trascini una
  * scheda nella board, e non dice niente su cosa hai fatto.
@@ -216,6 +215,16 @@ const CONTABILITA = new Set([
   'worklogid', 'worklogtimespent', 'timespent', 'timeestimate',
   'timeoriginalestimate', 'remainingestimate', 'aggregatetimespent', 'rank'
 ]);
+
+/**
+ * La stima originale della issue, in minuti. Jira la manda in secondi come
+ * `timeoriginalestimate`; assente o azzerata torna 0, che a valle vuol dire
+ * "nessuna stima" e la task ricade sulla divisione in parti uguali.
+ */
+export function estimateMinutes(fields) {
+  const seconds = Number(fields?.timeoriginalestimate);
+  return Number.isFinite(seconds) && seconds > 0 ? Math.round(seconds / 60) : 0;
+}
 
 function projectClause(projects) {
   const list = (projects || []).map((p) => String(p).trim()).filter(Boolean);
@@ -273,7 +282,9 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
   const issues = await client.search(jql, {
     // `assignee` e `reporter` non si disegnano: dicono se la issue e' tua, e
     // quindi se le modifiche altrui vanno riportate o buttate.
-    fields: ['summary', 'status', 'issuetype', 'assignee', 'reporter'],
+    // `timeoriginalestimate` serve solo se dividi le ore sulla stima: e' la
+    // fetta che quella task doveva prendersi della giornata.
+    fields: ['summary', 'assignee', 'reporter', 'timeoriginalestimate'],
     expand: 'changelog',
     maxResults: MAX
   });
@@ -297,23 +308,20 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
     return Boolean(displayName) && item.toString === displayName;
   });
 
-  const record = (issue, kind, at, items = [], by = '', extra = {}) => {
+  const record = (issue, kind, at, by = '', extra = {}) => {
     const key = issue.key;
     if (!activity.has(key)) {
       activity.set(key, {
         key,
         id: issue.id,
         summary: issue.fields?.summary || '',
-        issueType: issue.fields?.issuetype?.name || '',
+        estimateMinutes: estimateMinutes(issue.fields),
         events: []
       });
     }
-    // `items` conserva il dettaglio del cambiamento — quale campo, da cosa a
-    // cosa. Al piano serve solo contarli, ma al registro delle attivita' serve
-    // poter dire "passata a In corso" invece di "una modifica".
     // `by` e' vuoto quando la modifica e' tua: il nome serve solo a non far
     // passare per tuo il lavoro di un altro.
-    activity.get(key).events.push({ kind, at, items, by, ...extra });
+    activity.get(key).events.push({ kind, at, by, ...extra });
   };
 
   for (const issue of issues) {
@@ -336,23 +344,14 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
       // mezzo progetto dentro la giornata di chi guarda.
       if (!tua && !mia) continue;
       if (!isSameLocalDay(history.created, isoDate)) continue;
-      // Attenzione a `toString`: Jira chiama cosi' il campo, ma e' anche un
-      // metodo che ogni oggetto eredita. Quando Jira non lo manda, `||` non
-      // scatta e ci si ritrova la funzione al posto del testo.
-      const testo = (valore) => (typeof valore === 'string' ? valore : '');
-      const items = (history.items || [])
-        .filter((item) => item.field && !CONTABILITA.has(String(item.field).toLowerCase()))
-        .map((item) => ({
-          field: item.field,
-          from: testo(item.fromString),
-          to: testo(item.toString)
-        }));
-      // Se restava solo contabilita', non e' successo niente da registrare: la
-      // issue non deve nemmeno entrare nell'elenco.
-      if (!items.length) continue;
-      if (tua) record(issue, 'changelog', history.created, items);
+      // Se c'e' solo contabilita', non e' successo niente: la issue non deve
+      // nemmeno entrare nell'elenco.
+      const reale = (history.items || [])
+        .some((item) => item.field && !CONTABILITA.has(String(item.field).toLowerCase()));
+      if (!reale) continue;
+      if (tua) record(issue, 'changelog', history.created);
       else {
-        record(issue, 'foreign', history.created, items, history.author?.displayName || '',
+        record(issue, 'foreign', history.created, history.author?.displayName || '',
           { assignsYou: assegnaATe(history.items) });
       }
     }
@@ -373,8 +372,8 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
         if (!isSameLocalDay(comment.created, isoDate)) continue;
         // Un commento di un collega sotto una issue tua e' una cosa che ti
         // riguarda, ma non e' lavoro tuo: kind diverso, come per il changelog.
-        if (tuo) record(issue, 'comment', comment.created, 'commento');
-        else record(issue, 'foreignComment', comment.created, 'commento', comment.author?.displayName || '');
+        if (tuo) record(issue, 'comment', comment.created);
+        else record(issue, 'foreignComment', comment.created, comment.author?.displayName || '');
       }
     }
   }
@@ -386,24 +385,27 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
  * Le issue che hai creato tu quel giorno.
  *
  * Non stanno nel changelog — la creazione non e' una modifica — quindi senza
- * questa ricerca "ho aperto un ticket" resterebbe fuori dal registro.
+ * questa ricerca "ho aperto un ticket" resterebbe fuori dal piano.
  */
 export async function collectCreatedIssues(client, { isoDate, projects }) {
   const { from, to } = jqlDayRange(isoDate);
   const jql = `${projectClause(projects)}creator = currentUser() ` +
     `AND created >= "${from}" AND created < "${to}" ORDER BY created ASC`;
   try {
-    const issues = await client.search(jql, { fields: ['summary', 'created'], maxResults: 50 });
+    const issues = await client.search(jql, {
+      fields: ['summary', 'created', 'timeoriginalestimate'], maxResults: 50
+    });
     return issues.map((issue) => ({
       // L'id serve al pannello Sviluppo: senza, una issue vista solo di qui
       // non potrebbe portarsi dietro i suoi commit.
       id: issue.id,
       key: issue.key,
       summary: issue.fields?.summary || '',
-      at: issue.fields?.created || null
+      at: issue.fields?.created || null,
+      estimateMinutes: estimateMinutes(issue.fields)
     }));
   } catch {
-    // Alcune istanze non espongono `creator` in JQL: il registro perde le
+    // Alcune istanze non espongono `creator` in JQL: il piano perde le
     // creazioni ma resta valido per tutto il resto.
     return [];
   }
@@ -425,14 +427,16 @@ export function mergeCreatedIssues(activity, created) {
 
     if (!activity.has(issue.key)) {
       activity.set(issue.key, {
-        id: issue.id, key: issue.key, summary: issue.summary || '', events: []
+        id: issue.id, key: issue.key, summary: issue.summary || '',
+        estimateMinutes: issue.estimateMinutes || 0, events: []
       });
     }
     const voce = activity.get(issue.key);
     // L'id puo' mancare se la issue e' arrivata prima dai commit.
     if (!voce.id && issue.id) voce.id = issue.id;
     if (!voce.summary && issue.summary) voce.summary = issue.summary;
-    voce.events.push({ kind: 'created', at: quando, items: [] });
+    if (!voce.estimateMinutes && issue.estimateMinutes) voce.estimateMinutes = issue.estimateMinutes;
+    voce.events.push({ kind: 'created', at: quando });
   }
   return activity;
 }
@@ -446,12 +450,8 @@ export function mergeCreatedIssues(activity, created) {
  * "Tuoi" comprende anche quelli che hai aperto tu e sono in mano a un altro:
  * il richiedente aspetta una risposta, ed e' lavoro suo tenerli d'occhio.
  */
-export async function collectOpenIssues(client, { projects, limit = 60, mine = true }) {
-  // `mine: false` serve alla vista delle pull request, che guarda il lavoro
-  // della squadra: una PR che aspetta la tua revisione sta quasi sempre su un
-  // ticket di qualcun altro, e restringendo ai tuoi non si vedrebbe mai.
-  const tuoi = mine ? '(assignee = currentUser() OR reporter = currentUser()) AND ' : '';
-  const jql = `${projectClause(projects)}${tuoi}`
+export async function collectOpenIssues(client, { projects, limit = 60 }) {
+  const jql = `${projectClause(projects)}(assignee = currentUser() OR reporter = currentUser()) AND `
     + 'statusCategory != Done ORDER BY updated DESC';
   const issues = await client.search(jql, {
     fields: ['summary', 'status', 'created', 'updated', 'issuetype'],
@@ -647,19 +647,15 @@ function extractCommits(payload) {
  * ma anche quelle assegnate a te di recente — cosi' un commit su un ticket che
  * oggi non hai aperto in Jira viene comunque trovato.
  *
- * @returns {{byIssue: Map, othersByIssue: Map, checked: number, skippedOther: number, skippedAuthors: string[], appType: string|null}}
+ * @returns {{byIssue: Map, othersByIssue: Map, appType: string|null}}
  */
 export async function collectDevPanelCommits(client, {
   candidates, isoDate, identities, countMerges = true, concurrency = 6
 }) {
   const byIssue = new Map();
-  // Chi sono, non solo quanti: un conto non ti fa distinguere il commit di un
-  // collega — dove non c'e' niente da fare — dal tuo firmato con un altro nome.
-  const skippedAuthors = new Set();
-  // E su quale issue: un commit di un collega su una task tua e' una cosa che
-  // vuoi vedere accanto a quella task, non contata in un avviso in cima.
+  // I commit dei colleghi, per issue: su una task tua sono una cosa che vuoi
+  // vedere accanto a quella task, non contata in un avviso in cima.
   const othersByIssue = new Map();
-  let skippedOther = 0;
   let appType = null;
 
   async function pass(type) {
@@ -681,9 +677,7 @@ export async function collectDevPanelCommits(client, {
         // saltarlo farebbe ripiegare sul vecchio applicationType per niente.
         if (!countMerges && isMerge(commit)) continue;
         if (!isMine(commit.author, identities)) {
-          skippedOther += 1;
           const chi = authorLabel(commit.author);
-          if (chi) skippedAuthors.add(chi);
           if (!othersByIssue.has(candidate.key)) othersByIssue.set(candidate.key, []);
           othersByIssue.get(candidate.key).push({
             repo: repository,
@@ -708,16 +702,16 @@ export async function collectDevPanelCommits(client, {
     return found;
   }
 
-  // Su Jira Cloud con Bitbucket Cloud il tipo giusto e' "bitbucket"; alcune
-  // istanze usano ancora il vecchio nome "stash". Si prova il secondo solo se
-  // il primo non ha trovato proprio nulla.
-  if (await pass('bitbucket') > 0) appType = 'bitbucket';
-  else if (await pass('stash') > 0) appType = 'stash';
+  // Il pannello Sviluppo vuole il nome dell'integrazione git collegata. Con
+  // Bitbucket Cloud e' "bitbucket" (vecchie istanze: "stash"), ma tante squadre
+  // stanno su GitHub o GitLab — e con il tipo sbagliato il pannello risponde
+  // vuoto, cosi' una giornata piena di commit sembrava senza lavoro. Si provano
+  // in fila e ci si ferma al primo che restituisce qualcosa.
+  for (const tipo of ['bitbucket', 'github', 'gitlab', 'stash']) {
+    if (await pass(tipo) > 0) { appType = tipo; break; }
+  }
 
-  return {
-    byIssue, othersByIssue, checked: candidates.length, skippedOther, appType,
-    skippedAuthors: [...skippedAuthors]
-  };
+  return { byIssue, othersByIssue, appType };
 }
 
 /**
@@ -726,8 +720,16 @@ export async function collectDevPanelCommits(client, {
  * Serve a due cose: segnalare i duplicati riga per riga, e soprattutto
  * scalare il monte ore. Senza questo, una giornata gia' quasi piena farebbe
  * distribuire altre 8 ore sopra a quelle esistenti.
+ *
+ * `extraKeys` sono le issue che chi chiama conosce gia'. La ricerca per
+ * worklog passa dall'indice di Jira, che si aggiorna qualche secondo dopo la
+ * scrittura: subito dopo un invio le issue appena scritte non ci sono ancora,
+ * e rileggendo si otteneva la giornata di prima — nessun badge "gia' Xh",
+ * nessuna riga spenta, lo schermo identico a com'era. I worklog di quelle
+ * chiavi si leggono percio' diretti, che e' una lettura per issue e non passa
+ * da nessun indice.
  */
-export async function loggedMinutesForDay(client, { isoDate, accountId }) {
+export async function loggedMinutesForDay(client, { isoDate, accountId, extraKeys = [] }) {
   const { start } = dayBounds(isoDate);
 
   let issues = [];
@@ -742,10 +744,20 @@ export async function loggedMinutesForDay(client, { isoDate, accountId }) {
     return { total: 0, byIssue: {}, issues: [], entries: [], reliable: false };
   }
 
+  const daLeggere = issues.map((issue) => ({ key: issue.key, summary: issue.fields?.summary || '' }));
+  const viste = new Set(daLeggere.map((issue) => issue.key));
+  for (const key of extraKeys || []) {
+    if (!key || viste.has(key)) continue;
+    viste.add(key);
+    // Senza titolo: qui interessa quante ore ci sono sopra, e il titolo chi
+    // ha passato la chiave ce l'ha gia'.
+    daLeggere.push({ key, summary: '' });
+  }
+
   const byIssue = {};
   const entries = [];
   let total = 0;
-  for (const issue of issues) {
+  for (const issue of daLeggere) {
     try {
       const worklogs = await client.getWorklogs(issue.key, start - 1);
       const mine = worklogs.filter(
@@ -764,8 +776,8 @@ export async function loggedMinutesForDay(client, { isoDate, accountId }) {
         entries.push({
           id: worklog.id,
           key: issue.key,
-          summary: issue.fields?.summary || '',
-          startMinutes: startedAt.getHours() * 60 + startedAt.getMinutes(),
+          summary: issue.summary,
+          startMinutes: eventMinutes(startedAt),
           minutes: Math.round((worklog.timeSpentSeconds || 0) / 60),
           // Serve a copiare una giornata portandosi dietro anche le note.
           comment: textFromAdf(worklog.comment)

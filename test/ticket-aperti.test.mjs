@@ -98,18 +98,6 @@ const issue = (key, status, category, created, extra = {}) => ({
   });
 }
 
-// --- la vista delle PR guarda i ticket di tutti ---------------------------
-// Una pull request che aspetta la tua revisione sta quasi sempre su un ticket
-// di qualcun altro: restringendo ai tuoi non si vedrebbe mai.
-{
-  const client = fakeClient([]);
-  await collectOpenIssues(client, { projects: ['ABC'], mine: false });
-  const { jql } = client.chiamate[0];
-  assert.doesNotMatch(jql, /currentUser/, 'senza il filtro su di te');
-  assert.match(jql, /statusCategory != Done/, 'ma sempre solo quelli ancora aperti');
-  assert.match(jql, /project in \(ABC\)/, 'e dentro i progetti configurati');
-}
-
 // --- senza progetti configurati la ricerca non ha il filtro ---------------
 {
   const client = fakeClient([]);
