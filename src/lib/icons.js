@@ -20,6 +20,9 @@ const PATHS = {
   grip: [],
   chevronLeft: ['m15 18-6-6 6-6'],
   chevronRight: ['m9 18 6-6-6-6'],
+  // Su e giu' per riordinare le righe, nel pannello dello userscript.
+  chevronUp: ['m18 15-6-6-6 6'],
+  chevronDown: ['m6 9 6 6 6-6'],
   calendar: ['M8 2v4', 'M16 2v4', 'M3 10h18'],
   alert: ['m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3', 'M12 9v4', 'M12 17h.01'],
   info: ['M12 16v-4', 'M12 8h.01'],

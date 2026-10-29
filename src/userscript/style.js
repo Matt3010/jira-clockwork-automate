@@ -114,6 +114,10 @@ const PANNELLO = `
     #messages { padding: 0 8px; }
   }
   .bar .title { font-weight: 600; }
+  /* Il popup tiene le azioni a 80px: qui ci sono anche su e giu'. */
+  .panel .col-actions { width: auto; }
+  .move-row:disabled { opacity: .3; }
+  .move-row:hover:not(:disabled) { color: var(--accent); }
   .site .dot { flex: none; }
 `;
 

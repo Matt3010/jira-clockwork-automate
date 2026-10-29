@@ -34,15 +34,18 @@ assert.ok(disegnate.size >= 10, 'la lettura dei nomi dal sorgente ha trovato qua
 // I nomi chiesti. Tre porte: `icon(...)` diretto, `setIcon(elemento, ...)` e
 // `setButton(elemento, ...)` nel popup; più i simboli degli avvisi, che sono
 // l'unico posto in cui il nome arriva da una tabella invece che dalla chiamata.
-const sorgenti = readdirSync(join(root, 'src'))
-  .filter((f) => f.endsWith('.js'))
-  .map((f) => `src/${f}`);
+// Anche lo userscript: usa le stesse icone, con `ico(...)` e `conIcona(...)`.
+const sorgenti = [
+  ...readdirSync(join(root, 'src')).filter((f) => f.endsWith('.js')).map((f) => `src/${f}`),
+  ...readdirSync(join(root, 'src/userscript')).filter((f) => f.endsWith('.js')).map((f) => `src/userscript/${f}`)
+];
 
 const chieste = new Map();
 for (const file of sorgenti) {
   const testo = leggi(file);
   const trovate = [
     ...testo.matchAll(/\bicon\('([a-zA-Z]+)'/g),
+    ...testo.matchAll(/\b(?:ico|conIcona)\('([a-zA-Z]+)'/g),
     ...testo.matchAll(/\b(?:setIcon|setButton)\([^,]+, '([a-zA-Z]+)'/g),
     ...testo.matchAll(/glyph: '([a-zA-Z]+)'/g)
   ];

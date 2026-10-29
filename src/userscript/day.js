@@ -178,6 +178,49 @@ export function toggleAll(state, on) {
   redistribute(state);
 }
 
+// ------------------------------------------------------------ riordinare
+
+/*
+ * L'ordine delle righe non e' solo quello in cui si leggono: le task prendono
+ * gli orari nella sequenza in cui stanno (`layoutTimes`). Spostarne una sposta
+ * anche il blocco che verra' scritto su Jira. Le riunioni restano al loro
+ * orario: sono appuntamenti, non blocchi da incastrare.
+ */
+
+/**
+ * Rimette le righe nell'ordine dato. Ritorna false se l'ordine e' quello di
+ * adesso, o se manca una riga: perderla vorrebbe dire buttarla dal piano.
+ */
+export function applyOrder(state, ids) {
+  const perId = new Map(state.rows.map((row) => [row.id, row]));
+  const nuovo = ids.map((id) => perId.get(id)).filter(Boolean);
+  if (nuovo.length !== state.rows.length) return false;
+  if (nuovo.every((row, i) => row === state.rows[i])) return false;
+  state.rows = nuovo;
+  redistribute(state);
+  return true;
+}
+
+/** Sposta una riga di un posto in su (-1) o in giu' (+1). */
+export function nudgeRow(state, id, verso) {
+  const ids = state.rows.map((row) => row.id);
+  const da = ids.indexOf(id);
+  const a = da + verso;
+  if (da < 0 || a < 0 || a >= ids.length) return false;
+  [ids[da], ids[a]] = [ids[a], ids[da]];
+  return applyOrder(state, ids);
+}
+
+/** Sposta `id` sopra (o sotto) la riga su cui e' stato lasciato. */
+export function dropRow(state, id, targetId, sotto) {
+  if (!id || id === targetId) return false;
+  const ids = state.rows.map((row) => row.id).filter((altro) => altro !== id);
+  const dove = ids.indexOf(targetId);
+  if (dove < 0) return false;
+  ids.splice(sotto ? dove + 1 : dove, 0, id);
+  return applyOrder(state, ids);
+}
+
 export function removeRow(state, id) {
   state.rows = state.rows.filter((row) => row.id !== id);
   redistribute(state);

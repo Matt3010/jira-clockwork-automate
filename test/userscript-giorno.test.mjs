@@ -313,4 +313,25 @@ function giorno({ registrate = {}, entries = [] } = {}) {
   assert.equal(findShown(state, 'ABC-5').summary, 'Cinque');
 }
 
+// --- riordinare: l'ordine decide gli orari ----------------------------------
+{
+  const { applyOrder, dropRow, nudgeRow } = await import('../src/userscript/day.js');
+  const state = giorno();
+  const [riunione, uno, due] = state.rows;
+  assert.equal(uno.issueKey, 'ABC-1');
+  assert.equal(uno.time, '09:00', 'la prima task parte all inizio della giornata');
+
+  assert.equal(nudgeRow(state, due.id, -1), true);
+  assert.deepEqual(state.rows.map((r) => r.id), [riunione.id, due.id, uno.id]);
+  assert.equal(due.time, '09:00', 'spostata in su, prende lei il primo blocco');
+  assert.equal(riunione.time, '09:30', 'la riunione resta al suo orario');
+
+  assert.equal(nudgeRow(state, riunione.id, -1), false, 'gia in cima');
+  assert.equal(dropRow(state, riunione.id, uno.id, true), true);
+  assert.deepEqual(state.rows.map((r) => r.id), [due.id, uno.id, riunione.id]);
+  assert.equal(dropRow(state, uno.id, uno.id, false), false, 'su se stessa non si sposta');
+  assert.equal(applyOrder(state, [due.id, uno.id]), false, 'una riga persa non si accetta');
+  assert.equal(state.rows.length, 3);
+}
+
 console.log('userscript giorno: tutti i controlli passati.');

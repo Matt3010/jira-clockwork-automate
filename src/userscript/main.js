@@ -21,7 +21,8 @@ import {
 } from './settings.js';
 import { breakRow, meetingRow, readSettingsForm, renderSettings } from './settings-view.js';
 import {
-  addManualRow, applyCopy, applyLogged, confirmedGuesses, copyEntries, deleteMessage, deleteWorklogs, loadPlan,
+  addManualRow, applyCopy, applyLogged, confirmedGuesses, copyEntries, deleteMessage, deleteWorklogs, dropRow, loadPlan,
+  nudgeRow,
   newDayState, notePending, previousWorkday, rememberMeetings, removeRow, setRowIssue, setRowMinutes, shiftIsoDate,
   submitMessages, submitRows, summary, toggleAll, toggleRow
 } from './day.js';
@@ -545,6 +546,9 @@ function onDayClick(act, el) {
     addManualRow(day);
     render();
     [...root.querySelectorAll('.issue-input')].pop()?.focus();
+  } else if (act === 'row-up' || act === 'row-down') {
+    const id = el.closest('tr[data-id]').dataset.id;
+    if (nudgeRow(day, id, act === 'row-up' ? -1 : 1)) render();
   } else if (act === 'remove-plan-row') {
     removeRow(day, el.closest('tr[data-id]').dataset.id);
     render();
@@ -766,6 +770,124 @@ function onTicketsClick(act, el) {
   return true;
 }
 
+// ------------------------------------------------------------------ riordinare
+
+let dragId = null;
+
+/** Il segno di dove finirebbe la riga, mentre la tieni sopra un'altra. */
+function markDrop(tr, sotto) {
+  for (const altro of panel.querySelectorAll('tr.drop-target')) altro.classList.remove('drop-target', 'sotto');
+  if (!tr) return;
+  tr.classList.add('drop-target');
+  tr.classList.toggle('sotto', sotto);
+}
+
+/** Il fuoco segue la riga spostata, o la freccia dopo sposterebbe un'altra. */
+function focusGrip(id) {
+  const tr = [...panel.querySelectorAll('tbody tr[data-id]:not(.worklogs)')].find((el) => el.dataset.id === id);
+  tr?.querySelector('.grip')?.focus();
+}
+
+const rigaDi = (event) => event.target.closest?.('tbody tr[data-id]:not(.worklogs)');
+const sottoMeta = (tr, event) => {
+  const meta = tr.getBoundingClientRect();
+  return event.clientY > meta.top + meta.height / 2;
+};
+
+function wireDrag() {
+  // `draggable` si accende solo premendo sulla maniglia: su tutta la riga
+  // impedirebbe di selezionare il testo dei campi.
+  panel.addEventListener('mousedown', (event) => {
+    if (event.target.closest('.grip')) rigaDi(event)?.setAttribute('draggable', 'true');
+  });
+  panel.addEventListener('mouseup', (event) => rigaDi(event)?.removeAttribute('draggable'));
+  panel.addEventListener('dragstart', (event) => {
+    const tr = rigaDi(event);
+    if (!tr) return;
+    dragId = tr.dataset.id;
+    tr.classList.add('dragging');
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', dragId);
+    }
+  });
+  panel.addEventListener('dragover', (event) => {
+    const tr = rigaDi(event);
+    if (!dragId || !tr || tr.dataset.id === dragId) return;
+    // Senza questo il browser rifiuta il rilascio.
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+    markDrop(tr, sottoMeta(tr, event));
+  });
+  panel.addEventListener('drop', (event) => {
+    const tr = rigaDi(event);
+    if (!tr) return;
+    event.preventDefault();
+    const preso = dragId || event.dataTransfer?.getData('text/plain');
+    markDrop(null);
+    dragId = null;
+    if (dropRow(day, preso, tr.dataset.id, sottoMeta(tr, event))) {
+      render();
+      focusGrip(preso);
+    }
+  });
+  panel.addEventListener('dragend', (event) => {
+    dragId = null;
+    markDrop(null);
+    const tr = rigaDi(event);
+    tr?.removeAttribute('draggable');
+    tr?.classList.remove('dragging');
+  });
+  // Con la maniglia sotto il fuoco, le frecce spostano la riga.
+  panel.addEventListener('keydown', (event) => {
+    if (!event.target.closest?.('.grip')) return;
+    const verso = event.key === 'ArrowUp' ? -1 : (event.key === 'ArrowDown' ? 1 : 0);
+    if (!verso) return;
+    event.preventDefault();
+    const id = rigaDi(event)?.dataset.id;
+    if (id && nudgeRow(day, id, verso)) {
+      render();
+      focusGrip(id);
+    }
+  });
+}
+
+// ------------------------------------------------------------------ quanto e' fresco
+
+/*
+ * Jira non ha un canale a cui restare in ascolto: si rilegge ogni tanto, e
+ * l'etichetta "letto alle" dice da quando e' quello che stai guardando.
+ */
+const POLL_MS = 60000;
+const TICK_MS = 15000;
+
+const freshnessAt = () => (tab === 'tickets' ? tk.at : day.analyzedAt);
+
+/**
+ * Rilegge la vista che stai guardando se ha piu' di `maxAge`, ma solo quando
+ * non da' fastidio. Ogni guardia copre un modo concreto di rovinare il lavoro
+ * a chi sta usando il pannello in quel momento.
+ */
+function refreshIfStale(maxAge) {
+  // A pannello chiuso o pagina nascosta non c'e' niente da tenere fresco.
+  if (!panel || panel.hidden || document.visibilityState !== 'visible') return;
+  if (tab !== 'day' && tab !== 'tickets') return;
+  // Un'analisi, un invio o uno spostamento in corso decidono loro.
+  if (dayBusy || daySending || dayWorking || tk.loading || tk.moving) return;
+  // Stai scrivendo: rileggere ti toglierebbe il campo da sotto le dita.
+  const attivo = root.activeElement?.tagName;
+  if (attivo === 'INPUT' || attivo === 'TEXTAREA') return;
+  // Un menu di spostamento aperto o una conferma armata sono azioni a meta'.
+  if (tk.openMenu || dayConfirming || dragId) return;
+  const quando = freshnessAt();
+  if (!quando || Date.now() - quando < maxAge) return;
+
+  if (tab === 'tickets') loadTickets();
+  // Il piano si rilegge nella versione leggera: solo le ore registrate, che
+  // sono l'unica cosa che cambia da sola.
+  else if (day.rows.length) refreshLogged().then(render, () => {});
+}
+
 // ------------------------------------------------------------------ eventi
 
 function showTab(nome) {
@@ -823,6 +945,11 @@ function mount() {
   panel.addEventListener('click', onClick);
   panel.addEventListener('change', onChange);
   panel.addEventListener('input', onInput);
+  wireDrag();
+  // Il battito, e il ritorno sulla pagina: se sposti un worklog da Clockwork
+  // tornando qui va riletto.
+  setInterval(() => refreshIfStale(POLL_MS), TICK_MS);
+  window.addEventListener('focus', () => refreshIfStale(3000));
   // Esc svuota la ricerca, come ogni campo di ricerca.
   panel.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.target.dataset?.act !== 'search' || !tk.query) return;

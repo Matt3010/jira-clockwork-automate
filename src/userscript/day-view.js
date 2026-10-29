@@ -36,6 +36,56 @@ export const hoursValue = (row) => (row.minutes ? +(row.minutes / 60).toFixed(2)
 /** Pulsante con icona e testo, come `setButton` del popup. */
 export const conIcona = (name, text) => `${ico(name, 14)}<span class="label">${esc(text)}</span>`;
 
+/** I colleghi che hanno lasciato una traccia su questa riga. */
+const othersOf = (row) => (row.others || []).filter((chi) => chi.changes || chi.commits);
+
+const link = (testo, href, titolo) => (href
+  ? `<a href="${esc(href)}" target="_blank" rel="noreferrer" title="${esc(titolo)}">${esc(testo)}</a>`
+  : esc(testo));
+
+/** Quando ci ha messo mano: un'ora sola, o da quando a quando. */
+function periodOf(chi) {
+  if (!chi.firstAt) return '';
+  // L'assegnazione ha gia' la sua ora accanto: se e' tutto quello che ha
+  // fatto, ripeterla in coda sarebbe la stessa ora due volte.
+  if (chi.assignedAt && chi.changes === 1 && !chi.commits) return '';
+  const dalle = eventTime(chi.firstAt);
+  const alle = eventTime(chi.lastAt);
+  return dalle === alle ? dalle : `${dalle}–${alle}`;
+}
+
+/**
+ * Un collega e cosa ha fatto: "Dario Decarlo: 2 commit (10:12–11:40)". Le
+ * modifiche portano alla issue, i commit al primo commit.
+ */
+function describeOther(chi, issueKey) {
+  const dove = issueKey ? `/browse/${encodeURIComponent(issueKey)}` : '';
+  const titolo = t('titleOpenInJira', issueKey);
+  const parti = [];
+  if (chi.assigned) {
+    parti.push(link(chi.assignedAt ? t('othersAssignedAt', eventTime(chi.assignedAt)) : t('othersAssigned'), dove, titolo));
+  }
+  // L'assegnazione e' gia' una modifica: dirla due volte gonfierebbe il conto.
+  const modifiche = chi.assigned ? chi.changes - 1 : chi.changes;
+  if (modifiche > 0) parti.push(link(t(modifiche === 1 ? 'activityChange' : 'activityChanges', modifiche), dove, titolo));
+  if (chi.commits) {
+    const [primo] = chi.commitUrls || [];
+    parti.push(link(t(chi.commits === 1 ? 'activityCommit' : 'activityCommits', chi.commits),
+      primo || dove, primo ? t('titleOpenCommit') : titolo));
+  }
+  const nome = `<span class="chi">${esc(chi.name || t('othersUnknown'))}</span>`;
+  if (!parti.length) return nome;
+  const arco = periodOf(chi);
+  return `${nome}: ${parti.join(', ')}${arco ? ` (${esc(arco)})` : ''}`;
+}
+
+/** La riga «ci ha messo mano anche…», o niente. */
+function othersLine(row) {
+  const altri = othersOf(row);
+  if (!altri.length) return '';
+  return `<div class="altri">${altri.map((chi) => describeOther(chi, row.issueKey)).join(' · ')}</div>`;
+}
+
 /** La riga in una frase: da dove viene. */
 function describeRow(row) {
   if (row.kind === 'meeting') {
@@ -49,7 +99,10 @@ function describeRow(row) {
   if (changes) parti.push(t(changes === 1 ? 'activityChange' : 'activityChanges', changes));
   if (comments) parti.push(t(comments === 1 ? 'activityComment' : 'activityComments', comments));
   if (commits) parti.push(t(commits === 1 ? 'activityCommit' : 'activityCommits', commits));
-  return parti.join(' · ');
+  if (!parti.length) return '';
+  // Con un collega sotto, "2 commit" non direbbe piu' di chi sono.
+  const frase = parti.join(' · ');
+  return othersOf(row).length ? t('othersLabel', t('activityYou'), frase) : frase;
 }
 
 function badges(row) {
@@ -67,6 +120,9 @@ function badges(row) {
 }
 
 function rowHtml(state, row, expanded, sectionStart) {
+  // Su e giu' si spengono agli estremi: un clic che non fa niente confonde.
+  const primo = state.rows[0] === row;
+  const ultimo = state.rows[state.rows.length - 1] === row;
   const config = state.config;
   const esempio = config?.jira?.projects?.[0];
   const placeholder = row.kind === 'meeting'
@@ -92,13 +148,17 @@ function rowHtml(state, row, expanded, sectionStart) {
     <td class="col-what">
       <div class="summary">${segno}${esc(titolo)}${badges(row)}</div>
       ${detail ? `<div class="detail">${esc(detail)}</div>` : ''}
+      ${othersLine(row)}
       <textarea class="comment" data-act="comment" rows="${noteRows(row.comment)}"
         placeholder="${esc(t('phComment'))}">${esc(row.comment)}</textarea>
     </td>
     <td class="col-hours"><input type="number" class="hours${row.locked ? ' locked' : ''}" data-act="hours"
       min="0" step="${step}" value="${hoursValue(row)}" title="${esc(t('labelHours'))}"></td>
     <td class="col-time"><span class="time"${spezzata ? ` title="${esc(t('titleSplitByBreak'))}"` : ''}>${esc(timeLabel(row))}</span></td>
-    <td class="col-actions">${cestino}<button class="remove" data-act="remove-plan-row" title="${esc(t('titleRemoveRow'))}">${ico('x')}</button></td>
+    <td class="col-actions"><button class="grip" data-act="grip" title="${esc(t('titleDragRow'))}"
+      aria-label="${esc(t('titleDragRow'))}">${ico('grip')}</button><button class="remove move-row" data-act="row-up"
+      title="Sposta su" ${primo ? 'disabled' : ''}>${ico('chevronUp')}</button><button class="remove move-row" data-act="row-down"
+      title="Sposta giù" ${ultimo ? 'disabled' : ''}>${ico('chevronDown')}</button>${cestino}<button class="remove" data-act="remove-plan-row" title="${esc(t('titleRemoveRow'))}">${ico('x')}</button></td>
   </tr>`;
   return tr + (aperta && row.existingMinutes ? worklogRow(state, row) : '');
 }
