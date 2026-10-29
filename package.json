@@ -7,7 +7,8 @@
   "scripts": {
     "test": "node test/run.mjs",
     "build": "node tools/build.mjs",
-    "build:userscript": "node tools/build-userscript.mjs"
+    "build:userscript": "node tools/build-userscript.mjs",
+    "release:userscript": "node tools/release-userscript.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

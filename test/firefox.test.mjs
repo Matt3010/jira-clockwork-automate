@@ -96,7 +96,7 @@ for (const chiave of ['manifest_version', 'name', 'version', 'default_locale', '
   // lasciare indietro l'altro è il modo in cui i due si sfasano. Lo userscript
   // è un prodotto a parte, non un terzo browser: ha il suo comando.
   const pkg = JSON.parse(leggi('package.json'));
-  assert.deepEqual(Object.keys(pkg.scripts), ['test', 'build', 'build:userscript']);
+  assert.deepEqual(Object.keys(pkg.scripts), ['test', 'build', 'build:userscript', 'release:userscript']);
   assert.doesNotMatch(pkg.scripts.build, /chromium|firefox/,
     'il build non deve poter scegliere un browser');
   assert.match(build, /for \(const nome of Object\.keys\(BERSAGLI\)\)/,
