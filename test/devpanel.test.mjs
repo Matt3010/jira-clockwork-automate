@@ -141,14 +141,14 @@ assert.equal(con.byIssue.size, 1, 'dichiarando l email alternativa il commit vie
   const { fileURLToPath } = await import('node:url');
   const { dirname, join } = await import('node:path');
   const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-  const bg = readFileSync(join(root, 'src/background.js'), 'utf8');
+  const bg = readFileSync(join(root, 'src/userscript/analysis.js'), 'utf8');
 
   // Una sola strada per leggere i commit: la sequenza sta in una funzione
   // sola. Ce n'erano due copie, e alla prima modifica — l'impostazione sui
   // merge — sono andate corrette tutte e due a mano.
   assert.equal((bg.match(/collectDevPanelCommits\(/g) || []).length, 1,
     'la sequenza che legge i commit va scritta in un posto solo');
-  const analisi = bg.slice(bg.indexOf('async function analyze('));
+  const analisi = bg.slice(bg.indexOf('export async function collectDay('));
   assert.match(analisi, /await collectDevPanelCommits\(/,
     'e il piano deve passare di lì');
 
@@ -169,7 +169,7 @@ assert.equal(con.byIssue.size, 1, 'dichiarando l email alternativa il commit vie
     'vanno raccolti prima del piano, o le righe nascono senza'
   );
 
-  const punto = bg.indexOf('if (foreignGitByIssue.size)');
+  const punto = bg.indexOf('const senzaRiga');
   const blocco = bg.slice(punto, punto + 800);
   assert.ok(punto > bg.indexOf('buildPlan({'),
     'l avviso si decide dopo il piano: prima non si sa quali commit hanno una riga');

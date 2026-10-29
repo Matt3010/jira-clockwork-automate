@@ -210,4 +210,17 @@ const config = { ...DEFAULT_CONFIG, meetings: [], work: { ...DEFAULT_CONFIG.work
   assert.deepEqual(riletto.meetingMemory, prima.weeklyMeetingIssues);
 }
 
+// --- un file che non e' nostro si rifiuta, con un motivo -----------------------
+{
+  const { importData, ImportError } = await import('../src/lib/storage.js');
+  const rifiuto = (dati) => { try { importData(dati); return null; } catch (e) { return e instanceof ImportError ? e.code : 'ALTRO'; } };
+  assert.equal(rifiuto({ foo: 1 }), 'NOT_OURS', 'un JSON qualunque non svuota la configurazione');
+  assert.equal(rifiuto({ app: 'clockwork-autofill', version: 99, config: {} }), 'TOO_NEW');
+  assert.equal(rifiuto({ app: 'clockwork-autofill', version: 1, config: 'rotto' }), 'BROKEN');
+  // L'identita' non entra nemmeno se qualcuno ce la mette a mano.
+  const letto = importData({ app: 'clockwork-autofill', version: 1, config: { cache: { accountId: 'x' }, work: { dailyHours: 6 } } });
+  assert.equal(letto.config.cache, undefined);
+  assert.equal(letto.config.work.dailyHours, 6);
+}
+
 console.log('userscript verifica: tutti i controlli passati.');

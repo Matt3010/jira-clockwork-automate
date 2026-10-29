@@ -26,7 +26,7 @@ function queryString(query) {
 }
 
 export class JiraClient {
-  /** @param {import('./transport.js').Channel} channel */
+  /** @param {{request: Function}} channel  qualunque cosa risponda `{ status, text }`, come PageChannel */
   constructor(channel) {
     this.channel = channel;
   }

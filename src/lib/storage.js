@@ -1,24 +1,11 @@
-// Configurazione persistente dell'estensione.
+// La configurazione: i default, come si fondono, la memoria delle riunioni e
+// il file di esportazione. Niente qui sa dove la configurazione viene salvata:
+// lo decide lo userscript (settings.js), nel localStorage del sito Jira.
 //
-// Sul disco sono due chiavi, non una: `config` sono le impostazioni, che sono
-// poche e non crescono, e `meetingMemory` e' la cache del ticket scelto per le
-// cerimonie, che cresce di una voce a settimana per riunione. In memoria
-// restano un oggetto solo — `config.weeklyMeetingIssues` — perche' e' cosi' che
-// il resto del codice le legge.
-//
-// Divise perche' vanno in due posti diversi. Le impostazioni finiscono anche in
-// `storage.sync`, che le riporta indietro dopo una reinstallazione sullo stesso
-// profilo; la cache no, e proprio perche' cresce: `storage.sync` ha un limite
-// di 8 kB per voce, e un anno di cerimonie ci arriva da solo. La cache si rifa'
-// da sola usando l'estensione, le impostazioni no.
-//
-// La sincronizzazione e' un ripiego comodo, non una garanzia: nessuno dei due
-// browser promette di conservare la copia dopo una disinstallazione, e serve
-// essere collegati a un account. Quello che regge sempre e' il file di
-// esportazione — `exportData`/`importData` qui sotto, i pulsanti nelle opzioni.
-
-const CHIAVE_CONFIG = 'config';
-const CHIAVE_MEMORIA = 'meetingMemory';
+// La memoria delle riunioni — il ticket scelto per le cerimonie, una voce a
+// settimana per riunione — sta dentro `config.weeklyMeetingIssues`, ma nel file
+// di esportazione viaggia a parte (`meetingMemory`), come faceva l'estensione:
+// cosi' i file esportati da li' si importano ancora.
 
 // Quante settimane di cache tenere. Serve a ricordare il ticket delle
 // cerimonie della settimana in corso, e a poter tornare indietro di qualche
@@ -27,10 +14,8 @@ const SETTIMANE_TENUTE = 8;
 
 export const DEFAULT_CONFIG = {
   jira: {
-    // Vuoto di proposito: si compila dalle opzioni, oppure viene dedotto dalla
-    // scheda Atlassian aperta nel browser. Nessun sito e nessun progetto
-    // cablati nel codice.
-    baseUrl: '',
+    // Vuoto di proposito: nessun progetto cablato nel codice. Il sito non c'e':
+    // e' quello della pagina su cui gira lo userscript.
     projects: [],
     scanComments: true,
     // Oltre alle issue toccate oggi, quante altre issue tue controllare per
@@ -40,13 +25,6 @@ export const DEFAULT_CONFIG = {
     // spariscono da tutte e tre le cose che i commit alimentano: il conto sulla
     // riga, la nota precompilata e il peso nella divisione a proporzione.
     countMerges: true
-  },
-  ui: {
-    // Il pannello laterale resta aperto mentre lavori su Jira, il popup si
-    // chiude al primo click fuori: per un'estensione che si usa *mentre* si
-    // guarda Jira il pannello e' l'impostazione giusta. Chi preferisce il
-    // popup lo rimette da qui.
-    sidePanel: true
   },
   // Nomi ed email con cui firmi i commit, se diversi dal tuo nome Jira.
   // Servono a riconoscere i tuoi commit fra quelli dei colleghi.
@@ -62,8 +40,6 @@ export const DEFAULT_CONFIG = {
     // l'intera mattina.
     split: 'equal',
     startTime: '09:00',
-    // Ore mancanti sull'icona dell'estensione: si vedono senza aprire niente.
-    showBadge: true,
     // La nota del worklog. Chi la vuole non trova niente di diverso; chi tiene
     // i worklog nudi la spegne e non deve piu' svuotare i campi a mano.
     sendComments: true,
@@ -80,9 +56,8 @@ export const DEFAULT_CONFIG = {
     { id: 'standup', label: 'Standup di progetto', days: [2, 3, 4, 5], time: '09:30', minutes: 30 }
   ],
   // Cache "issue delle cerimonie" scelta a mano: { "2026-W33|Standup": "ABC-123" }
-  // Vive nella sua chiave sul disco, non dentro `config`.
   weeklyMeetingIssues: {},
-  // Cache della tua identita' Jira, risolta al primo utilizzo.
+  // La tua identita' Jira: si chiede a Jira a ogni apertura e non si salva.
   cache: { accountId: null, displayName: '', emailAddress: '' }
 };
 
@@ -99,115 +74,17 @@ export function deepMerge(base, override) {
   return out;
 }
 
-// Campi di versioni precedenti che non usiamo piu'. Vengono cancellati dal
-// disco alla prima lettura: erano credenziali, non ha senso lasciarle li'.
-const LEGACY_KEYS = [
-  ['auth'],
-  ['bitbucket'],
-  ['jira', 'email'],
-  ['jira', 'apiToken'],
-  ['work', 'breakEnabled'],
-  ['work', 'breakStart'],
-  ['work', 'breakEnd']
-];
-
 /**
  * Le impostazioni senza l'identita' in cache.
  *
  * `cache` e' la tua identita' Jira risolta al primo utilizzo: si ricava di
- * nuovo da sola, e non e' una preferenza — e' un dato personale. Non esce da
- * questa macchina, in nessuna delle tre direzioni: non va nella copia
- * sincronizzata, non finisce nel file di esportazione, e se qualcuno la mette a
- * mano in un file non entra. Una regola sola, un posto solo.
+ * nuovo da sola, e non e' una preferenza — e' un dato personale. Non finisce
+ * nel file di esportazione, e se qualcuno la mette a mano in un file non
+ * entra. Una regola sola, un posto solo.
  */
 function senzaIdentita(impostazioni) {
   const { cache, ...resto } = impostazioni;
   return resto;
-}
-
-function pruneLegacy(config) {
-  let pruned = false;
-  for (const path of LEGACY_KEYS) {
-    const parent = path.length === 1 ? config : config[path[0]];
-    const key = path[path.length - 1];
-    if (parent && Object.prototype.hasOwnProperty.call(parent, key)) {
-      delete parent[key];
-      pruned = true;
-    }
-  }
-  return pruned;
-}
-
-// ------------------------------------------------------------ la copia sincronizzata
-
-async function leggiSync() {
-  try {
-    const dati = await chrome.storage.sync.get(CHIAVE_CONFIG);
-    return isPlainObject(dati?.[CHIAVE_CONFIG]) ? dati[CHIAVE_CONFIG] : null;
-  } catch {
-    // Sincronizzazione spenta, non disponibile, o nessun account collegato.
-    return null;
-  }
-}
-
-async function scriviSync(impostazioni) {
-  const payload = senzaIdentita(impostazioni);
-  try {
-    const attuale = (await chrome.storage.sync.get(CHIAVE_CONFIG))[CHIAVE_CONFIG];
-    // `storage.sync` conta le scritture, non le letture: riscrivere lo stesso
-    // oggetto a ogni salvataggio consumerebbe quota per niente.
-    if (JSON.stringify(attuale) === JSON.stringify(payload)) return;
-    await chrome.storage.sync.set({ [CHIAVE_CONFIG]: payload });
-  } catch {
-    // Quota piena, account assente, sincronizzazione spenta: la copia locale
-    // resta quella buona, e il file di esportazione e' la rete di sicurezza.
-  }
-}
-
-// ------------------------------------------------------------ lettura e scrittura
-
-async function scrivi(config) {
-  const { weeklyMeetingIssues, ...impostazioni } = config;
-  await chrome.storage.local.set({
-    [CHIAVE_CONFIG]: impostazioni,
-    [CHIAVE_MEMORIA]: weeklyMeetingIssues || {}
-  });
-  await scriviSync(impostazioni);
-}
-
-export async function loadConfig() {
-  const stored = await chrome.storage.local.get([CHIAVE_CONFIG, CHIAVE_MEMORIA]);
-  let salvato = stored[CHIAVE_CONFIG];
-  let memoria = stored[CHIAVE_MEMORIA];
-  let daRiscrivere = false;
-
-  // Disco vuoto ma copia sincronizzata piena: e' una reinstallazione, o un
-  // secondo computer. Le impostazioni tornano da li' invece che dai default.
-  if (!salvato) {
-    salvato = await leggiSync();
-    daRiscrivere = Boolean(salvato);
-  }
-
-  const config = deepMerge(DEFAULT_CONFIG, salvato || {});
-
-  // Fino a ieri la cache stava dentro `config`: chi aggiorna se la ritrova qui
-  // e va spostata, o la scelta della settimana in corso si perde.
-  if (!memoria && Object.keys(config.weeklyMeetingIssues || {}).length) {
-    memoria = config.weeklyMeetingIssues;
-    daRiscrivere = true;
-  }
-  config.weeklyMeetingIssues = isPlainObject(memoria) ? memoria : {};
-
-  if (pruneLegacy(config)) daRiscrivere = true;
-  if (daRiscrivere) await scrivi(config);
-  return config;
-}
-
-export async function saveConfig(patch) {
-  const current = await loadConfig();
-  const next = deepMerge(current, patch);
-  await scrivi(next);
-  return next;
 }
 
 /**
@@ -221,13 +98,6 @@ export function pruneMemory(memoria, tenute = SETTIMANE_TENUTE) {
   return Object.fromEntries(
     Object.entries(memoria).filter(([k]) => vive.has(k.split('|')[0]))
   );
-}
-
-/** La cache delle cerimonie, nella sua chiave. Non va in sincronizzazione. */
-export async function saveMeetingMemory(memoria) {
-  const potata = pruneMemory(memoria);
-  await chrome.storage.local.set({ [CHIAVE_MEMORIA]: potata });
-  return potata;
 }
 
 /** Chiave di memoria settimanale per la issue di una riunione ricorrente. */
@@ -279,12 +149,4 @@ export function importData(dati) {
     config: senzaIdentita(impostazioni),
     meetingMemory: isPlainObject(dati.meetingMemory) ? dati.meetingMemory : {}
   };
-}
-
-/** Scrive quello che arriva da un file, al posto di quello che c'era. */
-export async function replaceAll({ config, meetingMemory }) {
-  const next = deepMerge(DEFAULT_CONFIG, config);
-  next.weeklyMeetingIssues = pruneMemory(meetingMemory || {});
-  await scrivi(next);
-  return next;
 }

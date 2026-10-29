@@ -188,13 +188,21 @@ function worklogRow(state, row) {
   return `<tr class="worklogs" data-id="${esc(row.id)}"><td></td><td></td><td colspan="4">${dentro}</td></tr>`;
 }
 
-const LIVELLI = { err: ['xCircle', 0], action: ['alert', 1], ok: ['check', 2], info: ['info', 3] };
+// Peso dei messaggi: piu' basso = piu' in alto, cosi' quello che chiede un
+// intervento non finisce sotto tre righe informative.
+const LIVELLI = {
+  err: { rank: 0, glyph: 'xCircle' },
+  action: { rank: 1, glyph: 'alert' },
+  ok: { rank: 2, glyph: 'check' },
+  info: { rank: 3, glyph: 'info' }
+};
+const livello = (m) => LIVELLI[m.level] || LIVELLI.info;
 
 /** Gli avvisi, come quelli del popup: prima quello che chiede un intervento. */
 export function renderMessages(messages) {
   return [...messages]
-    .sort((a, b) => (LIVELLI[a.level]?.[1] ?? 3) - (LIVELLI[b.level]?.[1] ?? 3))
-    .map((m) => `<div class="msg ${esc(m.level)}"><span class="glyph">${ico((LIVELLI[m.level] || LIVELLI.info)[0], 15)}</span>`
+    .sort((a, b) => livello(a).rank - livello(b).rank)
+    .map((m) => `<div class="msg ${esc(m.level)}"><span class="glyph">${ico(livello(m).glyph, 15)}</span>`
       + `<span class="body">${esc(m.text)}</span></div>`).join('');
 }
 

@@ -3,10 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Test dei moduli puri dell'estensione. I browser ignorano questo file: serve solo a poter eseguire i test con node.",
+  "description": "Clockwork Autofill, userscript per Tampermonkey. Questo file serve a eseguire i test e a costruire e rilasciare lo script.",
   "scripts": {
     "test": "node test/run.mjs",
-    "build": "node tools/build.mjs",
     "build:userscript": "node tools/build-userscript.mjs",
     "release:userscript": "node tools/release-userscript.mjs"
   },

@@ -1,6 +1,6 @@
 // L'analisi di una giornata, fuori dall'estensione.
 //
-// E' il corpo di `analyze` di background.js staccato da chrome.*: riceve un
+// E' il corpo di `analyze` del vecchio background dell'estensione, senza chrome: riceve un
 // JiraClient gia' pronto e la configurazione, e non legge ne' scrive nessuno
 // storage. Torna i pezzi grezzi oltre al piano, perche' la verifica sui giorni
 // passati deve poter ricostruire il piano *come se* la giornata fosse vuota e
@@ -23,6 +23,7 @@ import {
 } from '../lib/jira.js';
 import { buildPlan } from '../lib/planner.js';
 import { localDateTime, toIsoDate } from '../lib/dates.js';
+import { t } from './i18n.js';
 
 function projectClause(projects) {
   const list = (projects || []).map((p) => String(p).trim()).filter(Boolean);
@@ -209,7 +210,7 @@ export function planFromDay(day, config, { asIfEmpty = false } = {}) {
   const logged = asIfEmpty
     ? { entries: [], byIssue: {}, total: 0, issues: [] }
     : day.logged;
-  return buildPlan({
+  const plan = buildPlan({
     isoDate: day.isoDate,
     config,
     jiraActivity: day.jiraActivity,
@@ -222,4 +223,21 @@ export function planFromDay(day, config, { asIfEmpty = false } = {}) {
     loggedByIssue: logged.byIssue,
     alreadyLoggedMinutes: logged.total
   });
+
+  // I commit dei colleghi stanno sulla riga a cui appartengono. L'avviso in
+  // cima resta solo per quelli che una riga non ce l'hanno: per tutti,
+  // direbbe ogni giorno una cosa che si legge due centimetri piu' sotto.
+  const senzaRiga = [...(day.foreignGitByIssue || [])]
+    .filter(([key]) => !plan.rows.some((row) => row.issueKey === key))
+    .flatMap(([, commits]) => commits);
+  if (senzaRiga.length) {
+    const chi = [...new Set(senzaRiga.map((c) => c.author).filter(Boolean))].join(', ')
+      || t('noteOtherAuthorsUnknown');
+    plan.warnings.push({
+      level: 'info',
+      key: senzaRiga.length === 1 ? 'noteOtherAuthorsOne' : 'noteOtherAuthors',
+      params: senzaRiga.length === 1 ? [chi] : [senzaRiga.length, chi]
+    });
+  }
+  return plan;
 }

@@ -141,8 +141,8 @@ function fakeClient(risposta) {
   const { fileURLToPath } = await import('node:url');
   const { dirname, join } = await import('node:path');
   const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-  const bg = readFileSync(join(root, 'src/background.js'), 'utf8');
-  const analyze = bg.slice(bg.indexOf('async function analyze('), bg.indexOf('\n}', bg.indexOf('async function analyze(')));
+  const bg = readFileSync(join(root, 'src/userscript/analysis.js'), 'utf8');
+  const analyze = bg.slice(bg.indexOf('export async function collectDay('), bg.indexOf('\n}', bg.indexOf('export async function collectDay(')));
 
   assert.match(analyze, /mergeCreatedIssues\(/, 'l analisi non cerca le issue che hai aperto');
   // La ricerca del giorno è larga e ha un tetto: se lo tocca, la giornata è

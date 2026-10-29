@@ -10,7 +10,7 @@
 //   - la soglia "stretto" passa da media query a container query: e' la
 //     larghezza del pannello che conta, non quella della finestra.
 
-import popupCss from '../popup.css';
+import popupCss from './panel.css';
 
 function adattaPopup(css) {
   return css

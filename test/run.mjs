@@ -3,13 +3,11 @@
 //
 //   npm test
 //
-// I moduli sotto src/lib sono puri (niente API di Chrome), quindi girano in node
-// cosi' come sono. Le parti che parlano con Chrome sono simulate nei test.
+// I moduli sotto src/lib e la logica dello userscript non toccano il DOM ne'
+// la rete: girano in node cosi' come sono, con Jira simulato nei test.
 
 const SUITES = [
   'base.test.mjs',
-  'configurazione.test.mjs',
-  'esportazione.test.mjs',
   'jira-lettura.test.mjs',
   'jira-client.test.mjs',
   'dates-planner.test.mjs',
@@ -28,24 +26,13 @@ const SUITES = [
   'modifica-manuale.test.mjs',
   'righe-senza-ticket.test.mjs',
   'aggiornamento-leggero.test.mjs',
-  'cambio-giorno.test.mjs',
-  'freschezza.test.mjs',
   'copia-badge.test.mjs',
   'conferma-invio.test.mjs',
-  'stato-occupato.test.mjs',
-  'avvisi.test.mjs',
-  'transport.test.mjs',
   'devpanel.test.mjs',
-  'opzioni.test.mjs',
-  'pagina-popup.test.mjs',
-  'pagina-opzioni.test.mjs',
-  'pannello.test.mjs',
   'icone.test.mjs',
-  'firefox.test.mjs',
-  'traduzioni.test.mjs',
-  'coerenza.test.mjs',
   'userscript-verifica.test.mjs',
-  'userscript-giorno.test.mjs'
+  'userscript-giorno.test.mjs',
+  'dati-reali.test.mjs'
 ];
 
 let failed = 0;

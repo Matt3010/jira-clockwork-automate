@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const css = readFileSync(join(root, 'src/popup.css'), 'utf8');
+const css = readFileSync(join(root, 'src/userscript/panel.css'), 'utf8');
 
 /** La stessa assegnazione che fa il popup. */
 function seriesClass(rows, issueKey) {

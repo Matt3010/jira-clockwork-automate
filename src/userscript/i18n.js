@@ -6,7 +6,7 @@
 // segnaposto come fa Chrome — `$NOME$` rimanda a `placeholders.nome.content`,
 // che a sua volta e' `$1`, `$2`, ...
 
-import messages from '../../_locales/it/messages.json' with { type: 'json' };
+import messages from './messages.it.json' with { type: 'json' };
 
 export function translate(catalog, key, ...subs) {
   const entry = catalog[key];
