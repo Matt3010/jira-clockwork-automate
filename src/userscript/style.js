@@ -108,10 +108,6 @@ const PANNELLO = `
     border-left: 1px solid var(--border); box-shadow: -8px 0 24px rgba(0,0,0,.25);
   }
   .panel > main, .panel > .opts, .panel > .verify { min-height: 0; }
-  /* Nel popup sopra le righe c'e' sempre qualcosa — l'anteprima, la legenda,
-     la spunta generale — che le stacca dagli avvisi. Qui ancora no: lo stacco
-     lo da' l'area stessa. */
-  .panel .grid-area { padding-top: 10px; }
   /* In stretto il popup restringe il margine di \`main\` a 8px: gli avvisi lo
      seguono, o restano disallineati rispetto alle righe. */
   @container cw (max-width: 720px) {

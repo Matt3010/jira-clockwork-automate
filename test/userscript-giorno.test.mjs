@@ -12,7 +12,7 @@ import { DEFAULT_CONFIG } from '../src/lib/storage.js';
 import {
   addManualRow, applyCopy, applyLogged, confirmedGuesses, copyEntries, deleteMessage, deleteWorklogs, loadPlan,
   loggedFor, newDayState, notePending, previousWorkday, rememberMeetings, setRowIssue, setRowMinutes,
-  submitMessages, submitRows, summary, toggleRow
+  seriesClass, submitMessages, submitRows, summary, timelineBlocks, timelineExtent, toggleAll, toggleRow
 } from '../src/userscript/day.js';
 import { translate } from '../src/userscript/i18n.js';
 
@@ -246,6 +246,34 @@ function giorno({ registrate = {}, entries = [] } = {}) {
   assert.equal(uno.comment, 'fatto x');
   assert.equal(state.rows.find((r) => r.issueKey === 'ABC-3').enabled, false, 'gia registrata oggi: resta spenta');
   assert.equal(applyCopy(state, [], '2026-10-20').level, 'info');
+}
+
+// --- anteprima: gli stessi segmenti che partono con l'invio -----------------
+{
+  const state = giorno({ registrate: { 'ABC-7': 60 }, entries: [{ key: 'ABC-7', startMinutes: 1020, minutes: 60 }] });
+  const blocchi = timelineBlocks(state);
+  const inviati = state.rows.filter((r) => r.enabled && r.issueKey).flatMap((r) => r.segments);
+  assert.equal(blocchi.filter((b) => b.tipo === 'task' || b.tipo === 'meeting').length, inviati.length,
+    'un blocco per ogni worklog che partirebbe');
+  assert.ok(blocchi.some((b) => b.tipo === 'pause' && b.from === 780 && b.to === 840), 'la pausa pranzo');
+  assert.ok(blocchi.some((b) => b.tipo === 'logged' && b.from === 1020), 'le ore gia registrate');
+  assert.ok(blocchi.filter((b) => b.tipo === 'task').every((b) => /^s\d/.test(b.serie)), 'ogni task ha la sua tinta');
+
+  // L'asse copre la giornata configurata, a ore intere: 9:00 + 8h + 1h di pausa.
+  assert.deepEqual(timelineExtent(state, []), { da: 540, a: 1080 });
+  assert.deepEqual(timelineExtent(state, [{ from: 500, to: 1130 }]), { da: 480, a: 1140 }, 'e si allarga se serve');
+
+  // Il colore segue il ticket, non la posizione.
+  const prima = seriesClass(state, 'ABC-2');
+  toggleRow(state, state.rows.find((r) => r.issueKey === 'ABC-1'), false);
+  assert.equal(seriesClass(state, 'ABC-2'), prima);
+
+  // Seleziona tutto / niente.
+  toggleAll(state, false);
+  assert.ok(state.rows.every((r) => !r.enabled && r.userToggled));
+  assert.equal(timelineBlocks(state).filter((b) => b.tipo === 'task').length, 0);
+  toggleAll(state, true);
+  assert.ok(state.rows.every((r) => r.enabled));
 }
 
 console.log('userscript giorno: tutti i controlli passati.');

@@ -23,10 +23,11 @@ import { breakRow, meetingRow, readSettingsForm, renderSettings } from './settin
 import {
   addManualRow, applyCopy, applyLogged, confirmedGuesses, copyEntries, deleteMessage, deleteWorklogs, loadPlan,
   newDayState, notePending, previousWorkday, rememberMeetings, removeRow, setRowIssue, setRowMinutes, shiftIsoDate,
-  submitMessages, submitRows, summary, toggleRow
+  submitMessages, submitRows, summary, toggleAll, toggleRow
 } from './day.js';
 import {
-  conIcona, hoursValue, ico, noteRows, renderDayBar, renderDayMain, renderFooter, renderMessages, timeLabel
+  conIcona, drawTimeline, highlightRow, hoursValue, ico, noteRows, renderDayBar, renderDayMain, renderFooter,
+  renderMessages, timeLabel
 } from './day-view.js';
 import { PANEL_CSS } from './style.js';
 import { t } from './i18n.js';
@@ -241,6 +242,21 @@ function render() {
   // Lo scroll si tiene solo ridisegnando la stessa scheda.
   const nuovo = panel.querySelector('main, .opts, .verify');
   if (stessaScheda && nuovo) nuovo.scrollTop = scroll;
+  if (tab === 'day') afterDayRender();
+}
+
+/**
+ * Quello che si fa solo a markup presente: lo stato "parziale" della spunta
+ * generale, che in HTML non si scrive, e l'anteprima, che si misura. La si
+ * ridisegna anche al frame dopo, a layout avvenuto, come fa il popup.
+ */
+let misura = 0;
+function afterDayRender() {
+  const tutte = panel.querySelector('[data-act="toggle-all"]');
+  if (tutte) tutte.indeterminate = Boolean(tutte.dataset.indeterminate);
+  drawTimeline(panel, day);
+  cancelAnimationFrame(misura);
+  misura = requestAnimationFrame(() => drawTimeline(panel, day));
 }
 
 // ------------------------------------------------------------------ impostazioni
@@ -382,6 +398,7 @@ function syncDayValues() {
     if (time) time.textContent = timeLabel(row);
   }
   renderDayFooter();
+  drawTimeline(panel, day);
 }
 
 /** Clockwork disegna il calendario una volta sola: dopo un invio va ricaricato. */
@@ -537,6 +554,10 @@ function onDayChange(act, el) {
   const row = rowOf(el);
   if (act === 'date') setDay(el.value);
   else if (act === 'copy-date') copyDate = el.value;
+  else if (act === 'toggle-all') {
+    toggleAll(day, el.checked);
+    render();
+  }
   else if (act === 'toggle' && row) {
     toggleRow(day, row, el.checked);
     render();
@@ -616,6 +637,16 @@ function mount() {
   panel.addEventListener('click', onClick);
   panel.addEventListener('change', onChange);
   panel.addEventListener('input', onInput);
+  // Passando sopra una riga se ne accendono i blocchi nell'anteprima.
+  for (const [evento, acceso] of [['mouseover', true], ['mouseout', false]]) {
+    panel.addEventListener(evento, (event) => {
+      const tr = event.target.closest?.('tbody tr[data-id]');
+      if (tr && !tr.contains(event.relatedTarget)) highlightRow(panel, tr.dataset.id, acceso);
+    });
+  }
+  window.addEventListener('resize', () => {
+    if (!panel.hidden && tab === 'day') drawTimeline(panel, day);
+  });
   document.body.appendChild(host);
 }
 

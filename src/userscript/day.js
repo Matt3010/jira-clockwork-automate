@@ -5,8 +5,8 @@
 // regole sono quelle del popup, commentate la' per esteso; qui c'e' il
 // riassunto e il perche' quando cambia qualcosa.
 
-import { reflow } from '../lib/planner.js';
-import { formatMinutes, jiraStarted, toIsoDate } from '../lib/dates.js';
+import { breakRanges, redoneKeys, reflow } from '../lib/planner.js';
+import { addMinutes, formatMinutes, jiraStarted, timeToMinutes, toIsoDate } from '../lib/dates.js';
 import { t } from './i18n.js';
 
 export function newDayState(isoDate) {
@@ -168,6 +168,16 @@ export function setRowIssue(state, row, value) {
   return { remember, clash };
 }
 
+/** Accende o spegne tutte le righe: da qui in poi le comandi tu. */
+export function toggleAll(state, on) {
+  for (const row of state.rows) {
+    row.enabled = on;
+    row.userToggled = true;
+    row.autoDisabled = false;
+  }
+  redistribute(state);
+}
+
 export function removeRow(state, id) {
   state.rows = state.rows.filter((row) => row.id !== id);
   redistribute(state);
@@ -193,6 +203,72 @@ export function addManualRow(state) {
   state.rows.push(row);
   redistribute(state);
   return row;
+}
+
+// ------------------------------------------------------------ anteprima
+
+/**
+ * La pastiglia colorata di una task: il colore segue il ticket, non la
+ * posizione — accendere o spegnere una riga non ricolora le altre. Tre tinte,
+ * poi lo stesso giro con un riempimento diverso (rigato, vuoto).
+ */
+export function seriesClass(state, issueKey) {
+  if (!issueKey) return '';
+  const chiavi = [...new Set(
+    state.rows.filter((row) => row.kind === 'task' && row.issueKey).map((row) => row.issueKey)
+  )].sort();
+  const posizione = chiavi.indexOf(issueKey);
+  if (posizione < 0) return '';
+  const tinta = `s${(posizione % 3) + 1}`;
+  const riempimento = Math.floor(posizione / 3) % 3;
+  return riempimento ? `${tinta} v${riempimento + 1}` : tinta;
+}
+
+/**
+ * I blocchi che compongono la giornata: quello che verra' scritto, le ore gia'
+ * registrate che non stai rifacendo, le pause. Sono gli stessi segmenti che
+ * partono con l'invio, non un calcolo parallelo.
+ */
+export function timelineBlocks(state) {
+  const blocchi = [];
+  for (const row of state.rows) {
+    if (!row.enabled || !row.issueKey) continue;
+    for (const segment of row.segments || []) {
+      const from = timeToMinutes(segment.time);
+      blocchi.push({
+        tipo: row.kind === 'meeting' ? 'meeting' : 'task',
+        serie: row.kind === 'meeting' ? '' : seriesClass(state, row.issueKey),
+        rowId: row.id,
+        from,
+        to: from + segment.minutes,
+        label: t('tlBlock', row.issueKey, segment.time, addMinutes(segment.time, segment.minutes))
+      });
+    }
+  }
+  const rifatte = redoneKeys(state.rows);
+  for (const entry of state.loggedEntries) {
+    if (rifatte.has(entry.key)) continue;
+    blocchi.push({ tipo: 'logged', from: entry.startMinutes, to: entry.startMinutes + entry.minutes, label: t('tlLogged', entry.key) });
+  }
+  for (const pausa of state.config ? breakRanges(state.config) : []) {
+    blocchi.push({ tipo: 'pause', from: pausa.from, to: pausa.to, label: t('tlPause') });
+  }
+  return blocchi;
+}
+
+/**
+ * L'asse copre sempre la giornata configurata — inizio, monte ore e pause —
+ * e non solo i blocchi presenti, arrotondata alle ore intere.
+ */
+export function timelineExtent(state, blocchi) {
+  const work = state.config?.work || {};
+  const inizio = timeToMinutes(work.startTime || '09:00');
+  const pause = state.config ? breakRanges(state.config) : [];
+  const minutiPausa = pause.reduce((sum, p) => sum + (p.to - p.from), 0);
+  const fine = inizio + Math.round((work.dailyHours || 8) * 60) + minutiPausa;
+  const da = Math.floor(Math.min(inizio, ...blocchi.map((b) => b.from)) / 60) * 60;
+  const a = Math.ceil(Math.max(fine, ...blocchi.map((b) => b.to)) / 60) * 60;
+  return { da, a: Math.max(a, da + 60) };
 }
 
 // ------------------------------------------------------------ memoria riunioni

@@ -5,7 +5,7 @@
 
 import { addMinutes, eventTime, formatMinutes, minutesToTime, todayIso } from '../lib/dates.js';
 import { icon } from '../lib/icons.js';
-import { loggedFor, summary } from './day.js';
+import { loggedFor, seriesClass, summary, timelineBlocks, timelineExtent } from './day.js';
 import { t } from './i18n.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
@@ -35,22 +35,6 @@ export const hoursValue = (row) => (row.minutes ? +(row.minutes / 60).toFixed(2)
 
 /** Pulsante con icona e testo, come `setButton` del popup. */
 export const conIcona = (name, text) => `${ico(name, 14)}<span class="label">${esc(text)}</span>`;
-
-/**
- * La pastiglia colorata di una task: il colore segue il ticket, non la
- * posizione. Stessa regola del popup.
- */
-function seriesClass(state, issueKey) {
-  if (!issueKey) return '';
-  const chiavi = [...new Set(
-    state.rows.filter((row) => row.kind === 'task' && row.issueKey).map((row) => row.issueKey)
-  )].sort();
-  const posizione = chiavi.indexOf(issueKey);
-  if (posizione < 0) return '';
-  const tinta = `s${(posizione % 3) + 1}`;
-  const riempimento = Math.floor(posizione / 3) % 3;
-  return riempimento ? `${tinta} v${riempimento + 1}` : tinta;
-}
 
 /** La riga in una frase: da dove viene. */
 function describeRow(row) {
@@ -82,7 +66,7 @@ function badges(row) {
   return out.length ? `<span class="badges">${out.join('')}</span>` : '';
 }
 
-function rowHtml(state, row, expanded) {
+function rowHtml(state, row, expanded, sectionStart) {
   const config = state.config;
   const esempio = config?.jira?.projects?.[0];
   const placeholder = row.kind === 'meeting'
@@ -101,7 +85,7 @@ function rowHtml(state, row, expanded) {
         title="${esc(t('titleWipe', formatMinutes(row.existingMinutes), row.issueKey))}">${ico('trash')}</button>`
     : '';
 
-  const tr = `<tr data-id="${esc(row.id)}" class="${row.kind}${row.enabled ? '' : ' disabled'}">
+  const tr = `<tr data-id="${esc(row.id)}" class="${row.kind}${row.enabled ? '' : ' disabled'}${sectionStart ? ' section-start' : ''}">
     <td class="col-check"><input type="checkbox" data-act="toggle" ${row.enabled ? 'checked' : ''}></td>
     <td class="col-issue"><input type="text" class="issue-input" list="recent-issues" data-act="issue"
       value="${esc(row.issueKey)}" placeholder="${esc(placeholder)}" spellcheck="false"></td>
@@ -170,12 +154,28 @@ export function renderDayBar(state, { busy }) {
     </div>`;
 }
 
-/** Il corpo della scheda Ore: righe, strumenti, suggerimenti. */
+/** Il corpo della scheda Ore: anteprima, righe, strumenti, suggerimenti. */
 export function renderDayMain(state, { busy, error, expanded = new Set(), copyDate = '', working = false }) {
   const righe = !busy && !error && state.rows.length;
   const vuoto = busy ? t('emptyAnalysing') : (error || t('emptyNothing'));
-  return `<div class="grid-area">
-      <table${righe ? '' : ' hidden'}><tbody>${righe ? state.rows.map((row) => rowHtml(state, row, expanded)).join('') : ''}</tbody></table>
+  // Stacco fra riunioni e attivita': sono due cose diverse.
+  const html = righe ? state.rows.map((row, i) =>
+    rowHtml(state, row, expanded, i > 0 && state.rows[i - 1].kind !== row.kind)).join('') : '';
+  const accese = state.rows.filter((row) => row.enabled).length;
+  const tutte = accese > 0 && accese === state.rows.length;
+  return `<div class="timeline"${state.config ? '' : ' hidden'}>
+      <div class="scale"><div class="ruler"></div><div class="track"></div></div>
+    </div>
+    <div class="grid-area">
+      <div class="legend" hidden></div>
+      <div class="list-head"${righe ? '' : ' hidden'}>
+        <label class="pick-all">
+          <input type="checkbox" data-act="toggle-all" title="${esc(t('titleToggleAll'))}" ${tutte ? 'checked' : ''}
+            ${accese > 0 && !tutte ? 'data-indeterminate="1"' : ''}>
+          <span>${esc(t('labelSelectAll'))}</span>
+        </label>
+      </div>
+      <table${righe ? '' : ' hidden'}><tbody>${html}</tbody></table>
       <p class="empty"${righe ? ' hidden' : ''}>${esc(vuoto)}</p>
       <div class="row-tools"${busy || error ? ' hidden' : ''}>
         <button class="ghost" data-act="add-row">${esc(t('btnAddRow'))}</button>
@@ -188,6 +188,73 @@ export function renderDayMain(state, { busy, error, expanded = new Set(), copyDa
     </div>
     <datalist id="recent-issues">${state.recentIssues.map((i) =>
       `<option value="${esc(i.key)}">${esc(i.summary)}</option>`).join('')}</datalist>`;
+}
+
+/**
+ * Disegna l'anteprima della giornata dentro `scope`. Va chiamata a layout
+ * avvenuto: verticale o coricata lo decide il foglio di stile (`--asse`), e
+ * la lunghezza dell'asse dipende dallo spazio che c'e'. Stessa logica del
+ * popup.
+ */
+export function drawTimeline(scope, state) {
+  const timeline = scope.querySelector('.timeline');
+  const legend = scope.querySelector('.legend');
+  if (!timeline || !state.config) return;
+
+  const blocchi = state.rows.length ? timelineBlocks(state) : [];
+  const { da, a } = timelineExtent(state, blocchi);
+  const span = a - da;
+  const pct = (minuti) => `${((minuti - da) / span) * 100}%`;
+  const orizzontale = getComputedStyle(timeline).getPropertyValue('--asse').trim() === 'orizzontale';
+
+  const scale = timeline.querySelector('.scale');
+  const disponibile = Math.max(300, (timeline.parentElement?.clientHeight || 0) - 20);
+  const lungoAsse = orizzontale
+    ? Math.max(240, timeline.clientWidth)
+    : Math.min(Math.round((span / 60) * 40), disponibile);
+  scale.style.setProperty('--lungo-asse', `${lungoAsse}px`);
+  if (orizzontale) {
+    const alto = Math.round(timeline.getBoundingClientRect().height);
+    if (alto) timeline.parentElement?.style.setProperty('--asse-alto', `${alto}px`);
+  }
+
+  // Le etichette si diradano quando lo spazio si stringe.
+  const pxPerMinuto = lungoAsse / span;
+  const minimo = orizzontale ? 46 : 22;
+  let passo = 60;
+  while (passo * pxPerMinuto < minimo && passo < 8 * 60) passo *= 2;
+  let tacche = '';
+  for (let m = da; m <= a; m += passo) {
+    const quota = ((m - da) / span) * 100;
+    const bordo = quota <= 1.5 ? ' bordo-inizio' : (quota >= 98.5 ? ' bordo-fine' : '');
+    tacche += `<span class="tick${bordo}" style="--inizio:${pct(m)}">${minutesToTime(m)}</span>`;
+  }
+  timeline.querySelector('.ruler').innerHTML = tacche;
+
+  // Le pause per prime, cosi' stanno sotto agli altri blocchi.
+  const ordine = { pause: 0, logged: 1, meeting: 2, task: 3 };
+  timeline.querySelector('.track').innerHTML = [...blocchi]
+    .sort((x, y) => ordine[x.tipo] - ordine[y.tipo])
+    .map((b) => `<div class="${`block ${b.tipo} ${b.serie || ''}`.trim()}" title="${esc(b.label)}"
+      style="--inizio:${pct(b.from)};--durata:${((b.to - b.from) / span) * 100}%"
+      ${b.rowId ? `data-row-id="${esc(b.rowId)}"` : ''}></div>`).join('');
+
+  // Le attivita' non hanno una voce: la loro legenda e' la pastiglia accanto
+  // alla riga. Qui restano le categorie fisse.
+  if (legend) {
+    const voci = [['meeting', t('legendMeeting')], ['logged', t('legendLogged')], ['pause', t('legendPause')]]
+      .filter(([tipo]) => blocchi.some((b) => b.tipo === tipo));
+    legend.hidden = !blocchi.length;
+    legend.innerHTML = voci.map(([tipo, testo]) =>
+      `<span class="legend-item"><i class="block ${tipo}"></i>${esc(testo)}</span>`).join('');
+  }
+}
+
+/** Evidenzia nell'anteprima i blocchi di una riga. */
+export function highlightRow(scope, rowId, on) {
+  for (const nodo of scope.querySelectorAll('.timeline .block[data-row-id]')) {
+    if (nodo.dataset.rowId === rowId) nodo.classList.toggle('hot', on);
+  }
 }
 
 /** Il piede: totale, sito, Invia (rosso quando chiede conferma). */
