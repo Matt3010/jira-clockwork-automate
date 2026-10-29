@@ -276,4 +276,41 @@ function giorno({ registrate = {}, entries = [] } = {}) {
   assert.ok(state.rows.every((r) => r.enabled));
 }
 
+// --- ticket: spostare rilegge lo stato vero e l'elenco ----------------------
+{
+  const { findShown, moveIssue, newTicketsState, transitionsFor } = await import('../src/userscript/tickets.js');
+  const chiamate = [];
+  const jira = {
+    async getTransitions() {
+      return [
+        { id: '1', name: 'Resta', to: 'In corso', category: 'indeterminate' },
+        { id: '2', name: 'A test', to: 'Dev test', category: 'indeterminate' }
+      ];
+    },
+    async transitionIssue(key, id) { chiamate.push(['move', key, id]); },
+    async getIssue() { return { fields: { status: { name: 'Review' } } }; },
+    async search(jql) {
+      chiamate.push(['search', jql]);
+      return [{ key: 'ABC-1', fields: { summary: 'Uno', status: { name: 'Review', statusCategory: { key: 'indeterminate' } },
+        updated: '2026-10-29T10:00:00.000+0100' } }];
+    }
+  };
+  const transizioni = await transitionsFor(jira, 'ABC-1', 'In corso');
+  assert.deepEqual(transizioni.map((t) => t.id), ['2'], 'quella verso lo stato in cui si e gia non serve');
+
+  const esito = await moveIssue(jira, { jira: { projects: ['ABC'] } }, 'ABC-1', '2');
+  assert.deepEqual(chiamate[0], ['move', 'ABC-1', '2']);
+  assert.equal(esito.reached, 'Review', 'lo stato si rilegge: un automatismo puo averlo cambiato');
+  assert.equal(esito.moved, 'ABC-1');
+  assert.equal(esito.total, 1);
+
+  const state = newTicketsState();
+  state.groups = esito.groups;
+  assert.equal(findShown(state, 'ABC-1').summary, 'Uno');
+  state.query = 'x';
+  state.results = [{ key: 'ABC-5', summary: 'Cinque' }];
+  assert.equal(findShown(state, 'ABC-1'), null, 'con la ricerca attiva conta quello che si vede');
+  assert.equal(findShown(state, 'ABC-5').summary, 'Cinque');
+}
+
 console.log('userscript giorno: tutti i controlli passati.');

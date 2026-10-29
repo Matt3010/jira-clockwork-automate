@@ -30,6 +30,8 @@ import {
   renderMessages, timeLabel
 } from './day-view.js';
 import { PANEL_CSS } from './style.js';
+import { findIssues, findShown, loadOpenIssues, moveIssue, newTicketsState, transitionsFor } from './tickets.js';
+import { renderTickets } from './tickets-view.js';
 import { t } from './i18n.js';
 
 const MY_WORK = /\/jira\/apps\/[^/]+\/[^/]+\/my-work/;
@@ -61,7 +63,7 @@ let host;
 let root;
 let panel;
 let config = loadSettings();
-// 'day' | 'verify' | 'settings'. Le impostazioni non hanno linguetta: si
+// 'day' | 'tickets' | 'verify' | 'settings'. Le impostazioni non hanno linguetta: si
 // aprono dall'ingranaggio e si chiudono tornando a una linguetta.
 let tab = 'day';
 
@@ -86,6 +88,15 @@ const expanded = new Set();
 let copyDate = previousWorkday(todayIso());
 // Una cancellazione o una copia in corso: i loro pulsanti restano spenti.
 let dayWorking = false;
+
+// Ticket.
+let tk = newTicketsState();
+let ticketsToken = 0;
+let searchToken = 0;
+let searchTimer = 0;
+// I ticket si rileggono tornando sulla scheda, se quello che c'e' ha piu' di
+// un minuto: e' quello che si ha in mano adesso, e cambia sotto.
+const TICKETS_MAX_AGE = 60000;
 
 // ------------------------------------------------------------------ verifica
 
@@ -202,13 +213,22 @@ function verifyBody() {
 
 // ------------------------------------------------------------------ disegno
 
-const TABS = [['day', t('tabHours')], ['verify', 'Verifica']];
+const TABS = [['day', t('tabHours')], ['tickets', t('tabTickets')], ['verify', 'Verifica']];
 
 function headerHtml() {
   const comandi = `<button class="ghost icon-only" data-act="options" title="${esc(t('titleOptions'))}">${ico('settings')}</button>
     <button class="ghost icon-only" data-act="close" title="${esc(t('btnCancel'))}">${ico('x')}</button>`;
   if (tab === 'day') {
     return renderDayBar(day, { busy: dayBusy }).replace(/<\/div>\s*$/, `${comandi}</div>`);
+  }
+  // I ticket aperti non dipendono dal giorno: niente selettore, che farebbe
+  // pensare il contrario.
+  if (tab === 'tickets') {
+    const letto = tk.at && !tk.loading ? new Date(tk.at).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }) : '';
+    return `<div class="bar-left"></div><div class="bar-right">
+      <span class="sync">${letto ? esc(t('syncTime', letto)) : ''}</span>
+      <button class="ghost" data-act="tickets-refresh" ${tk.loading ? 'disabled' : ''}>${conIcona('refresh', tk.loading ? t('btnAnalysing') : t('btnRefresh'))}</button>
+      ${comandi}</div>`;
   }
   const titolo = tab === 'settings' ? t('titleOptions') : 'Clockwork Autofill';
   return `<div class="bar-left"><span class="title">${esc(titolo)}</span></div><div class="bar-right">${comandi}</div>`;
@@ -220,7 +240,7 @@ const dayFooter = () => renderFooter(day, {
 
 function render() {
   if (!panel) return;
-  const scroller = panel.querySelector('main, .opts, .verify');
+  const scroller = panel.querySelector('main, .opts, .verify, .tickets-view');
   const scroll = scroller?.scrollTop || 0;
   const stessaScheda = panel.dataset.tab === tab;
   panel.dataset.tab = tab;
@@ -228,6 +248,7 @@ function render() {
   let corpo;
   if (tab === 'settings') corpo = renderSettings(config);
   else if (tab === 'verify') corpo = verifyBody();
+  else if (tab === 'tickets') corpo = `<div id="messages">${renderMessages(tk.messages)}</div>${renderTickets(tk)}`;
   else {
     corpo = `<div id="messages">${dayBusy ? '' : renderMessages(day.messages)}</div>
       <main>${renderDayMain(day, { busy: dayBusy, error: dayError, expanded, copyDate, working: dayWorking })}</main>
@@ -240,9 +261,10 @@ function render() {
       `<button class="tab" role="tab" data-act="tab" data-tab="${id}" aria-selected="${tab === id}">${esc(label)}</button>`).join('')}</nav>
     ${corpo}`;
   // Lo scroll si tiene solo ridisegnando la stessa scheda.
-  const nuovo = panel.querySelector('main, .opts, .verify');
+  const nuovo = panel.querySelector('main, .opts, .verify, .tickets-view');
   if (stessaScheda && nuovo) nuovo.scrollTop = scroll;
   if (tab === 'day') afterDayRender();
+  if (tab === 'tickets') afterTicketsRender();
 }
 
 /**
@@ -574,11 +596,174 @@ function onDayChange(act, el) {
 
 function onInput(event) {
   const el = event.target;
+  if (el.dataset.act === 'search') {
+    tk.query = el.value.trim();
+    // Svuotare il campo rimette subito l'elenco: aspettare sembrerebbe un niente.
+    if (!tk.query) clearSearch();
+    else scheduleSearch();
+    return;
+  }
   if (el.dataset.act !== 'comment') return;
   const row = rowOf(el);
   if (!row) return;
   row.comment = el.value;
   el.rows = noteRows(el.value);
+}
+
+// ------------------------------------------------------------------ ticket
+
+/**
+ * Ridisegna l'elenco senza toccare il campo di ricerca: chi sta scrivendo non
+ * deve perdere il cursore a ogni risultato.
+ */
+function refreshTickets() {
+  if (tab !== 'tickets' || !panel) return;
+  const vista = panel.querySelector('.tickets-view');
+  if (!vista) return render();
+  const nuovo = document.createElement('div');
+  nuovo.innerHTML = renderTickets(tk);
+  for (const parte of ['.log-head', '.tickets', '.empty']) {
+    vista.querySelector(parte).replaceWith(nuovo.querySelector(parte));
+  }
+  panel.querySelector('#messages').innerHTML = renderMessages(tk.messages);
+  panel.querySelector('header.bar').innerHTML = headerHtml();
+  afterTicketsRender();
+}
+
+/**
+ * Lo spostato cambia gruppo e puo' finire fuori schermo: lo si riporta in
+ * vista, una volta sola.
+ */
+function afterTicketsRender() {
+  if (!tk.justMoved) return;
+  const riga = [...panel.querySelectorAll('.ticket')].find((li) => li.dataset.key === tk.justMoved);
+  const fermo = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  riga?.scrollIntoView({ block: 'center', behavior: fermo ? 'auto' : 'smooth' });
+  tk.justMoved = '';
+}
+
+async function loadTickets() {
+  const token = ++ticketsToken;
+  tk.loading = true;
+  tk.error = '';
+  refreshTickets();
+  try {
+    const { groups, total } = await loadOpenIssues(jira, config);
+    if (token !== ticketsToken) return;
+    tk.groups = groups;
+    tk.total = total;
+    tk.at = Date.now();
+    // Dopo una rilettura le transizioni possono essere altre.
+    tk.transitions.clear();
+  } catch (error) {
+    if (token !== ticketsToken) return;
+    tk.groups = [];
+    tk.total = 0;
+    tk.error = error.message || String(error);
+  } finally {
+    if (token === ticketsToken) {
+      tk.loading = false;
+      if (tk.query) await runSearch();
+      else refreshTickets();
+    }
+  }
+}
+
+/** Si digita una lettera alla volta: senza ritardo sarebbe una ricerca per tasto. */
+function scheduleSearch(delay = 300) {
+  clearTimeout(searchTimer);
+  searchToken++;
+  searchTimer = setTimeout(runSearch, delay);
+}
+
+function clearSearch() {
+  clearTimeout(searchTimer);
+  searchToken++;
+  tk.query = '';
+  tk.results = [];
+  tk.searching = false;
+  refreshTickets();
+}
+
+async function runSearch() {
+  clearTimeout(searchTimer);
+  const token = ++searchToken;
+  if (!tk.query) return clearSearch();
+  tk.searching = true;
+  refreshTickets();
+  try {
+    const risultati = await findIssues(jira, config, tk.query);
+    if (token !== searchToken) return;
+    tk.results = risultati;
+    tk.error = '';
+  } catch (error) {
+    if (token !== searchToken) return;
+    tk.results = [];
+    tk.error = error.message || String(error);
+  } finally {
+    if (token === searchToken) {
+      tk.searching = false;
+      refreshTickets();
+    }
+  }
+}
+
+/** Apre o chiude gli stati in cui il ticket puo' andare. Uno alla volta. */
+async function toggleMoves(key) {
+  if (tk.openMenu === key) {
+    tk.openMenu = '';
+    refreshTickets();
+    return;
+  }
+  tk.openMenu = key;
+  tk.menuError = '';
+  refreshTickets();
+  if (tk.transitions.has(key)) return;
+  try {
+    const issue = findShown(tk, key);
+    tk.transitions.set(key, await transitionsFor(jira, key, issue?.status));
+  } catch (error) {
+    tk.menuError = error.message || String(error);
+  }
+  refreshTickets();
+}
+
+async function moveTo(key, transitionId, verso) {
+  tk.moving = key;
+  tk.movingLabel = t('ticketsMoving', verso);
+  refreshTickets();
+  try {
+    const esito = await moveIssue(jira, config, key, transitionId);
+    tk.groups = esito.groups;
+    tk.total = esito.total;
+    tk.at = Date.now();
+    tk.transitions.clear();
+    tk.justMoved = key;
+    // Un avviso per ticket: quattro passi di fila ne lascerebbero quattro.
+    tk.messages = [{ level: 'ok', text: t('msgTicketMoved', key, esito.reached || verso) }];
+    tk.moving = '';
+    if (tk.query) await runSearch();
+    // Il menu si riapre sulla riga spostata: attraversare un workflow lungo e'
+    // un click per stato, tutti nello stesso punto dello schermo.
+    tk.openMenu = '';
+    await toggleMoves(key);
+  } catch (error) {
+    // Si rilegge, non si riprova lo spostamento: puo' essere andato a segno e
+    // fallito subito dopo, e rifarlo lo porterebbe uno stato piu' avanti.
+    tk.moving = '';
+    tk.openMenu = '';
+    tk.messages = [{ level: 'err', text: error.message || String(error) }];
+    loadTickets();
+  }
+}
+
+function onTicketsClick(act, el) {
+  if (act === 'tickets-refresh') loadTickets();
+  else if (act === 'move') toggleMoves(el.dataset.key);
+  else if (act === 'move-to') {
+    if (!tk.moving) moveTo(el.dataset.key, el.dataset.transition, el.dataset.to);
+  } else return false;
+  return true;
 }
 
 // ------------------------------------------------------------------ eventi
@@ -587,6 +772,7 @@ function showTab(nome) {
   tab = nome;
   render();
   if (tab === 'day' && dayStale && !dayBusy) analyzeDay();
+  if (tab === 'tickets' && !tk.loading && Date.now() - tk.at >= TICKETS_MAX_AGE) loadTickets();
 }
 
 function onClick(event) {
@@ -596,8 +782,8 @@ function onClick(event) {
   if (act === 'close') panel.hidden = true;
   else if (act === 'tab') showTab(el.dataset.tab);
   else if (act === 'options') showTab(tab === 'settings' ? 'day' : 'settings');
-  else if (onDayClick(act, el)) {
-    // gestito dalla scheda Ore
+  else if (onDayClick(act, el) || onTicketsClick(act, el)) {
+    // gestito dalla scheda Ore o Ticket
   } else if (act === 'verify') {
     count = Math.max(1, Math.min(30, Number(panel.querySelector('.count').value) || 5));
     verify(count);
@@ -637,6 +823,12 @@ function mount() {
   panel.addEventListener('click', onClick);
   panel.addEventListener('change', onChange);
   panel.addEventListener('input', onInput);
+  // Esc svuota la ricerca, come ogni campo di ricerca.
+  panel.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || event.target.dataset?.act !== 'search' || !tk.query) return;
+    event.target.value = '';
+    clearSearch();
+  });
   // Passando sopra una riga se ne accendono i blocchi nell'anteprima.
   for (const [evento, acceso] of [['mouseover', true], ['mouseout', false]]) {
     panel.addEventListener(evento, (event) => {
