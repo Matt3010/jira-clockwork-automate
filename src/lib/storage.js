@@ -90,7 +90,7 @@ function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function deepMerge(base, override) {
+export function deepMerge(base, override) {
   if (!isPlainObject(override)) return override === undefined ? base : override;
   const out = { ...base };
   for (const [key, value] of Object.entries(override)) {

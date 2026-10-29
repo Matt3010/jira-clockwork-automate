@@ -81,13 +81,28 @@ export class JiraClient {
     });
   }
 
-  /** Coda del changelog: `expand=changelog` nella search e' troncato sulle issue lunghe. */
-  async getChangelogTail(key, total, size = 50) {
-    const startAt = Math.max(0, total - size);
-    const data = await this.request(`/rest/api/3/issue/${encodeURIComponent(key)}/changelog`, {
-      query: { startAt, maxResults: size }
-    });
-    return data.values || [];
+  /**
+   * Il changelog dalla fine all'indietro, finche' non si passa `sinceMs`.
+   *
+   * `expand=changelog` nella search porta solo le 40 modifiche piu' recenti.
+   * Prima qui si leggevano le ultime 50 e basta: su una issue viva, il giorno
+   * che stai guardando puo' stare piu' indietro, e le sue modifiche sparivano.
+   * L'endpoint dedicato e' in ordine crescente, a pagine di 100 al massimo: si
+   * parte dall'ultima pagina e si risale finche' la pagina comincia prima del
+   * giorno — oltre non c'e' niente che serva.
+   */
+  async getChangelogSince(key, total, sinceMs, size = 100) {
+    const out = [];
+    for (let end = total; end > 0; end -= size) {
+      const startAt = Math.max(0, end - size);
+      const data = await this.request(`/rest/api/3/issue/${encodeURIComponent(key)}/changelog`, {
+        query: { startAt, maxResults: end - startAt }
+      });
+      const values = data.values || [];
+      out.unshift(...values);
+      if (!values.length || Date.parse(values[0].created) < sinceMs) break;
+    }
+    return out;
   }
 
   /**
@@ -324,12 +339,18 @@ export async function collectJiraActivity(client, { isoDate, projects, accountId
     activity.get(key).events.push({ kind, at, by, ...extra });
   };
 
+  const { start: inizioGiorno } = dayBounds(isoDate);
   for (const issue of issues) {
     const changelog = issue.changelog || {};
     let histories = changelog.histories || [];
-    if (typeof changelog.total === 'number' && changelog.total > histories.length) {
+    // La search porta le modifiche piu' recenti: se la piu' vecchia che ha e'
+    // gia' dentro o prima del giorno, il giorno c'e' tutto. Altrimenti si
+    // risale il changelog fino a coprirlo.
+    const piuVecchia = Math.min(...histories.map((h) => Date.parse(h.created)).filter(Number.isFinite));
+    const scoperto = !histories.length || !(piuVecchia < inizioGiorno);
+    if (typeof changelog.total === 'number' && changelog.total > histories.length && scoperto) {
       try {
-        histories = await client.getChangelogTail(issue.key, changelog.total);
+        histories = await client.getChangelogSince(issue.key, changelog.total, inizioGiorno);
       } catch {
         // Se il fetch di coda fallisce restano le histories parziali: meglio
         // qualche evento in meno che far fallire l'intera analisi.

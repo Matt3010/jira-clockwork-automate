@@ -43,7 +43,8 @@ const SUITES = [
   'icone.test.mjs',
   'firefox.test.mjs',
   'traduzioni.test.mjs',
-  'coerenza.test.mjs'
+  'coerenza.test.mjs',
+  'userscript-verifica.test.mjs'
 ];
 
 let failed = 0;

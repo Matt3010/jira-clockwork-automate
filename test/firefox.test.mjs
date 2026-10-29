@@ -93,9 +93,10 @@ for (const chiave of ['manifest_version', 'name', 'version', 'default_locale', '
   assert.match(build, /chromium: \{ esbuild: 'chrome\d+'/, 'e Chromium pure');
 
   // Un comando solo, e ricostruisce sempre tutto: rifare un pacchetto e
-  // lasciare indietro l'altro è il modo in cui i due si sfasano.
+  // lasciare indietro l'altro è il modo in cui i due si sfasano. Lo userscript
+  // è un prodotto a parte, non un terzo browser: ha il suo comando.
   const pkg = JSON.parse(leggi('package.json'));
-  assert.deepEqual(Object.keys(pkg.scripts), ['test', 'build']);
+  assert.deepEqual(Object.keys(pkg.scripts), ['test', 'build', 'build:userscript']);
   assert.doesNotMatch(pkg.scripts.build, /chromium|firefox/,
     'il build non deve poter scegliere un browser');
   assert.match(build, /for \(const nome of Object\.keys\(BERSAGLI\)\)/,

@@ -21,7 +21,7 @@ function fakeClient(risposte) {
       chiamate.comments.push(key);
       return risposte.comments?.[key] || [];
     },
-    async getChangelogTail(key, total) {
+    async getChangelogSince(key, total) {
       chiamate.tail.push({ key, total });
       return risposte.tail?.[key] || [];
     },

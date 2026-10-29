@@ -6,7 +6,8 @@
   "description": "Test dei moduli puri dell'estensione. I browser ignorano questo file: serve solo a poter eseguire i test con node.",
   "scripts": {
     "test": "node test/run.mjs",
-    "build": "node tools/build.mjs"
+    "build": "node tools/build.mjs",
+    "build:userscript": "node tools/build-userscript.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
