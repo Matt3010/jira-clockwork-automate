@@ -1,13 +1,19 @@
-// La scheda Giorno: disegno del piano. Solo HTML da stato, niente eventi —
-// quelli li collega main.js, per delega, sui `data-act`.
+// La scheda Ore: disegno del piano, con lo stesso markup del popup
+// dell'estensione — stesse classi, stesse icone — cosi' `popup.css` lo veste
+// uguale. Solo HTML da stato, niente eventi: quelli li collega main.js, per
+// delega, sui `data-act`.
 
-import { addMinutes, formatMinutes, todayIso } from '../lib/dates.js';
-import { summary } from './day.js';
+import { addMinutes, eventTime, formatMinutes, minutesToTime, todayIso } from '../lib/dates.js';
+import { icon } from '../lib/icons.js';
+import { loggedFor, summary } from './day.js';
 import { t } from './i18n.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[c]));
+
+/** Un'icona del set dell'estensione, come HTML. */
+export const ico = (name, size = 16) => icon(name, { size }).outerHTML;
 
 const RIGHE_NOTA_MAX = 8;
 export const noteRows = (testo) => Math.min(Math.max(testo ? testo.split('\n').length : 1, 1), RIGHE_NOTA_MAX);
@@ -26,6 +32,25 @@ export function timeLabel(row) {
 }
 
 export const hoursValue = (row) => (row.minutes ? +(row.minutes / 60).toFixed(2) : 0);
+
+/** Pulsante con icona e testo, come `setButton` del popup. */
+export const conIcona = (name, text) => `${ico(name, 14)}<span class="label">${esc(text)}</span>`;
+
+/**
+ * La pastiglia colorata di una task: il colore segue il ticket, non la
+ * posizione. Stessa regola del popup.
+ */
+function seriesClass(state, issueKey) {
+  if (!issueKey) return '';
+  const chiavi = [...new Set(
+    state.rows.filter((row) => row.kind === 'task' && row.issueKey).map((row) => row.issueKey)
+  )].sort();
+  const posizione = chiavi.indexOf(issueKey);
+  if (posizione < 0) return '';
+  const tinta = `s${(posizione % 3) + 1}`;
+  const riempimento = Math.floor(posizione / 3) % 3;
+  return riempimento ? `${tinta} v${riempimento + 1}` : tinta;
+}
 
 /** La riga in una frase: da dove viene. */
 function describeRow(row) {
@@ -49,95 +74,139 @@ function badges(row) {
   if (row.sources?.includes('git')) out.push('<span class="badge git">git</span>');
   if (row.guessed) {
     const why = { orario: t('whyTime'), nome: t('whyName'), data: t('whyDate') }[row.guessReason] || t('whyAuto');
-    out.push(`<span class="badge warn" title="${esc(why)}">${esc(t('badgeProposed'))}</span>`);
+    out.push(`<span class="badge dup" title="${esc(why)}">${esc(t('badgeProposed'))}</span>`);
   }
   if (row.existingMinutes) {
-    out.push(`<span class="badge warn">${esc(t('badgeAlready', formatMinutes(row.existingMinutes)))}</span>`);
+    out.push(`<span class="badge dup">${esc(t('badgeAlready', formatMinutes(row.existingMinutes)))}</span>`);
   }
-  return out.join('');
+  return out.length ? `<span class="badges">${out.join('')}</span>` : '';
 }
 
-function rowCard(row, config) {
+function rowHtml(state, row, expanded) {
+  const config = state.config;
   const esempio = config?.jira?.projects?.[0];
   const placeholder = row.kind === 'meeting'
     ? t('phMeetingTicket')
     : (esempio ? t('phIssuePrefix', esempio) : t('phIssueExample'));
   const titolo = row.kind === 'meeting' ? row.label : (row.summary || t('rowNoTitle'));
+  const segno = row.kind === 'meeting'
+    ? ico('calendar', 14)
+    : `<span class="chip ${seriesClass(state, row.issueKey)}"></span>`;
   const step = (config?.work.roundingMinutes || 15) / 60;
   const detail = describeRow(row);
   const spezzata = segmentsOf(row).length > 1;
-  const link = row.issueKey
-    ? `<a href="/browse/${encodeURIComponent(row.issueKey)}" target="_blank" title="${esc(row.issueKey)}">↗</a>`
+  const aperta = expanded.has(row.id);
+  const cestino = row.existingMinutes && row.issueKey
+    ? `<button class="remove wipe${aperta ? ' open' : ''}" data-act="wipe"
+        title="${esc(t('titleWipe', formatMinutes(row.existingMinutes), row.issueKey))}">${ico('trash')}</button>`
     : '';
-  return `<div class="prow ${row.kind}${row.enabled ? '' : ' off'}" data-id="${esc(row.id)}">
-    <div class="ptop">
-      <input type="checkbox" data-act="toggle" ${row.enabled ? 'checked' : ''} title="Includi">
-      <input type="text" class="issue" list="cw-recent" data-act="issue" value="${esc(row.issueKey)}"
-        placeholder="${esc(placeholder)}" spellcheck="false">
-      ${link}
-      <input type="number" class="hours${row.locked ? ' locked' : ''}" data-act="hours" min="0" step="${step}"
-        value="${hoursValue(row)}" title="Ore">
-      <span class="muted">h</span>
-      <button class="icon" data-act="remove-plan-row" title="${esc(t('titleRemoveRow'))}">✕</button>
-    </div>
-    <div class="psum">${row.kind === 'meeting' ? '📅 ' : ''}<b>${esc(titolo)}</b> ${badges(row)}</div>
-    ${detail ? `<div class="pdetail muted">${esc(detail)}</div>` : ''}
-    <div class="ptime muted"${spezzata ? ` title="${esc(t('titleSplitByBreak'))}"` : ''}>🕘 <span class="time">${esc(timeLabel(row))}</span></div>
-    <textarea class="comment" data-act="comment" rows="${noteRows(row.comment)}"
-      placeholder="${esc(t('phComment'))}">${esc(row.comment)}</textarea>
-  </div>`;
+
+  const tr = `<tr data-id="${esc(row.id)}" class="${row.kind}${row.enabled ? '' : ' disabled'}">
+    <td class="col-check"><input type="checkbox" data-act="toggle" ${row.enabled ? 'checked' : ''}></td>
+    <td class="col-issue"><input type="text" class="issue-input" list="recent-issues" data-act="issue"
+      value="${esc(row.issueKey)}" placeholder="${esc(placeholder)}" spellcheck="false"></td>
+    <td class="col-what">
+      <div class="summary">${segno}${esc(titolo)}${badges(row)}</div>
+      ${detail ? `<div class="detail">${esc(detail)}</div>` : ''}
+      <textarea class="comment" data-act="comment" rows="${noteRows(row.comment)}"
+        placeholder="${esc(t('phComment'))}">${esc(row.comment)}</textarea>
+    </td>
+    <td class="col-hours"><input type="number" class="hours${row.locked ? ' locked' : ''}" data-act="hours"
+      min="0" step="${step}" value="${hoursValue(row)}" title="${esc(t('labelHours'))}"></td>
+    <td class="col-time"><span class="time"${spezzata ? ` title="${esc(t('titleSplitByBreak'))}"` : ''}>${esc(timeLabel(row))}</span></td>
+    <td class="col-actions">${cestino}<button class="remove" data-act="remove-plan-row" title="${esc(t('titleRemoveRow'))}">${ico('x')}</button></td>
+  </tr>`;
+  return tr + (aperta && row.existingMinutes ? worklogRow(state, row) : '');
 }
 
-const LIVELLI = { err: 0, action: 1, ok: 2, info: 3 };
-
-function messages(state) {
-  return [...state.messages]
-    .sort((a, b) => (LIVELLI[a.level] ?? 3) - (LIVELLI[b.level] ?? 3))
-    .map((m) => `<div class="msg ${esc(m.level)}">${esc(m.text)}</div>`).join('');
-}
-
-/** Il riepilogo e il pulsante di invio: si ridisegnano da soli a ogni modifica. */
-export function renderFooter(state, { busy, sending, confirming }) {
-  if (busy || !state.config) {
-    return `<div class="total muted">${esc(t('emptyAnalysing'))}</div>
-      <button class="primary" disabled>${esc(t('btnSend'))}</button>`;
+/**
+ * Sotto una riga con ore gia' su Jira: i singoli worklog, ognuno col suo
+ * Elimina. Niente "cancella tutto" alla cieca. Se gli id non sono ancora
+ * arrivati — subito dopo un invio — si propone di rileggere.
+ */
+function worklogRow(state, row) {
+  const entries = loggedFor(state, row.issueKey);
+  let dentro;
+  if (!entries.length) {
+    dentro = `<div class="worklogs-title">${esc(t('worklogsUnlistable', row.issueKey, formatMinutes(row.existingMinutes)))}</div>
+      <button class="ghost inline" data-act="reload-logged">${esc(t('btnRefresh'))}</button>`;
+  } else {
+    const titolo = entries.length === 1 ? t('worklogsOne', row.issueKey) : t('worklogsMany', entries.length, row.issueKey);
+    dentro = `<div class="worklogs-title">${esc(titolo)}</div>` + entries.map((e) => `<div class="worklog-item">
+        <span>${esc(minutesToTime(e.startMinutes))}–${esc(minutesToTime(e.startMinutes + e.minutes))} · ${esc(formatMinutes(e.minutes))}</span>
+        <button class="ghost inline" data-act="delete-worklog" data-worklog="${esc(e.id)}">${esc(t('btnDelete'))}</button>
+      </div>`).join('')
+      + (entries.length > 1
+        ? `<button class="ghost inline danger-text" data-act="delete-worklog"
+            data-worklog="${esc(entries.map((e) => e.id).join(','))}">${esc(t('btnDeleteAllCount', entries.length))}</button>`
+        : '');
   }
-  const s = summary(state);
-  const etichetta = sending ? t('btnSending') : (confirming && s.needsConfirm ? s.confirmLabel : s.sendLabel);
-  return `<div class="total${s.overflow ? ' over' : ''}"><b>${esc(formatMinutes(s.total))}</b>${esc(s.text)}</div>
-    <div class="row">
-      <button class="${confirming && s.needsConfirm ? 'danger' : 'primary'}" data-act="send"
-        ${s.sendable && !sending ? '' : 'disabled'} title="${esc(etichetta)}">${esc(etichetta)}</button>
-      ${confirming && s.needsConfirm ? `<button data-act="cancel-send">${esc(t('btnCancel'))}</button>` : ''}
+  return `<tr class="worklogs" data-id="${esc(row.id)}"><td></td><td></td><td colspan="4">${dentro}</td></tr>`;
+}
+
+const LIVELLI = { err: ['xCircle', 0], action: ['alert', 1], ok: ['check', 2], info: ['info', 3] };
+
+/** Gli avvisi, come quelli del popup: prima quello che chiede un intervento. */
+export function renderMessages(messages) {
+  return [...messages]
+    .sort((a, b) => (LIVELLI[a.level]?.[1] ?? 3) - (LIVELLI[b.level]?.[1] ?? 3))
+    .map((m) => `<div class="msg ${esc(m.level)}"><span class="glyph">${ico((LIVELLI[m.level] || LIVELLI.info)[0], 15)}</span>`
+      + `<span class="body">${esc(m.text)}</span></div>`).join('');
+}
+
+/** La barra in alto: giorno, quando e' stato letto, Aggiorna, Opzioni, chiudi. */
+export function renderDayBar(state, { busy }) {
+  const letto = state.analyzedAt && !busy ? eventTime(state.analyzedAt) : '';
+  return `<div class="bar-left">
+      <label>${esc(t('labelDay'))}</label>
+      <input type="date" data-act="date" value="${esc(state.isoDate)}">
+      <button class="ghost icon-only" data-act="prev-day" title="${esc(t('titlePrevDay'))}">${ico('chevronLeft')}</button>
+      <button class="ghost icon-only" data-act="next-day" title="${esc(t('titleNextDay'))}">${ico('chevronRight')}</button>
+      ${state.isoDate === todayIso() ? '' : `<button class="ghost" data-act="today" title="${esc(t('titleToday'))}">${esc(t('btnToday'))}</button>`}
+    </div>
+    <div class="bar-right">
+      <span class="sync" title="${letto ? esc(t('syncAt', letto)) : ''}">${letto ? esc(t('syncTime', letto)) : ''}</span>
+      <button class="ghost" data-act="analyze" ${busy ? 'disabled' : ''} title="${esc(t('btnRefresh'))}">${conIcona('refresh', busy ? t('btnAnalysing') : t('btnRefresh'))}</button>
     </div>`;
 }
 
-export function renderDay(state, { busy, sending, confirming, error }) {
-  const oggi = state.isoDate === todayIso();
-  const letto = state.analyzedAt
-    ? new Date(state.analyzedAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })
-    : '';
-  const corpo = busy
-    ? `<p class="muted empty">${esc(t('emptyAnalysing'))}</p>`
-    : error
-      ? `<p class="bad empty">${esc(error)}</p>`
-      : state.rows.length
-        ? state.rows.map((row) => rowCard(row, state.config)).join('')
-        : `<p class="muted empty">${esc(t('emptyNothing'))}</p>`;
-  return `<div class="dayview">
-    <div class="daybar">
-      <button class="icon" data-act="prev-day" title="${esc(t('titlePrevDay'))}">‹</button>
-      <input type="date" class="date" data-act="date" value="${esc(state.isoDate)}">
-      <button class="icon" data-act="next-day" title="${esc(t('titleNextDay'))}">›</button>
-      ${oggi ? '' : `<button data-act="today">${esc(t('btnToday'))}</button>`}
-      <span class="sp"></span>
-      ${letto && !busy ? `<span class="muted small">letto alle ${esc(letto)}</span>` : ''}
-      <button data-act="analyze" ${busy ? 'disabled' : ''}>${esc(busy ? t('btnAnalysing') : t('btnRefresh'))}</button>
+/** Il corpo della scheda Ore: righe, strumenti, suggerimenti. */
+export function renderDayMain(state, { busy, error, expanded = new Set(), copyDate = '', working = false }) {
+  const righe = !busy && !error && state.rows.length;
+  const vuoto = busy ? t('emptyAnalysing') : (error || t('emptyNothing'));
+  return `<div class="grid-area">
+      <table${righe ? '' : ' hidden'}><tbody>${righe ? state.rows.map((row) => rowHtml(state, row, expanded)).join('') : ''}</tbody></table>
+      <p class="empty"${righe ? ' hidden' : ''}>${esc(vuoto)}</p>
+      <div class="row-tools"${busy || error ? ' hidden' : ''}>
+        <button class="ghost" data-act="add-row">${esc(t('btnAddRow'))}</button>
+        <span class="copy-from">
+          <label>${esc(t('labelCopyFrom'))}</label>
+          <input type="date" class="copy-date" data-act="copy-date" value="${esc(copyDate)}">
+          <button class="ghost" data-act="copy-day" ${working ? 'disabled' : ''}>${esc(t('btnCopy'))}</button>
+        </span>
+      </div>
     </div>
-    <div class="msgs">${busy ? '' : messages(state)}</div>
-    <div class="plan">${corpo}</div>
-    ${busy || error ? '' : `<button data-act="add-row">${esc(t('btnAddRow'))}</button>`}
-    <datalist id="cw-recent">${state.recentIssues.map((i) =>
-      `<option value="${esc(i.key)}">${esc(i.summary)}</option>`).join('')}</datalist>
-  </div>`;
+    <datalist id="recent-issues">${state.recentIssues.map((i) =>
+      `<option value="${esc(i.key)}">${esc(i.summary)}</option>`).join('')}</datalist>`;
+}
+
+/** Il piede: totale, sito, Invia (rosso quando chiede conferma). */
+export function renderFooter(state, { busy, sending, confirming, host }) {
+  const sito = `<div class="site live"><span class="dot"></span>${esc(t('siteSession', host || '', ''))}</div>`;
+  if (busy || !state.config) {
+    return `<div class="foot-info"><div class="total">${esc(t('emptyAnalysing'))}</div>${sito}</div>
+      <div class="actions"><button class="primary" disabled>${conIcona('send', t('btnSend'))}</button></div>`;
+  }
+  const s = summary(state);
+  const conferma = confirming && s.needsConfirm;
+  const etichetta = sending ? t('btnSending') : (conferma ? s.confirmLabel : s.sendLabel);
+  return `<div class="foot-info">
+      <div class="total${s.overflow ? ' over' : ''}"><strong>${esc(formatMinutes(s.total))}</strong>${esc(s.text)}</div>
+      ${sito}
+    </div>
+    <div class="actions">
+      ${conferma ? `<button class="ghost" data-act="cancel-send">${esc(t('btnCancel'))}</button>` : ''}
+      <button id="submit" class="${conferma ? 'danger' : 'primary'}" data-act="send"
+        ${s.sendable && !sending ? '' : 'disabled'} title="${esc(etichetta)}">${conIcona('send', etichetta)}</button>
+    </div>`;
 }

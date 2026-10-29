@@ -10,8 +10,9 @@ import assert from 'node:assert/strict';
 import { buildPlan } from '../src/lib/planner.js';
 import { DEFAULT_CONFIG } from '../src/lib/storage.js';
 import {
-  addManualRow, applyLogged, confirmedGuesses, loadPlan, newDayState, notePending, rememberMeetings,
-  setRowIssue, setRowMinutes, submitMessages, submitRows, summary, toggleRow
+  addManualRow, applyCopy, applyLogged, confirmedGuesses, copyEntries, deleteMessage, deleteWorklogs, loadPlan,
+  loggedFor, newDayState, notePending, previousWorkday, rememberMeetings, setRowIssue, setRowMinutes,
+  submitMessages, submitRows, summary, toggleRow
 } from '../src/userscript/day.js';
 import { translate } from '../src/userscript/i18n.js';
 
@@ -172,6 +173,79 @@ function giorno({ registrate = {}, entries = [] } = {}) {
     isoDate: '2026-10-28', rows: state.rows, config: { ...state.config, work: { ...state.config.work, sendComments: false } }
   });
   assert.ok(corpi.every((b) => b.comment === undefined));
+}
+
+// --- eliminare: solo i tuoi, solo quel giorno, solo quelli scelti ------------
+{
+  const ME = 'acc-me';
+  const worklogs = [
+    { id: '1', author: { accountId: ME }, started: '2026-10-28T09:00:00.000+0100', timeSpentSeconds: 1800 },
+    { id: '2', author: { accountId: ME }, started: '2026-10-28T10:00:00.000+0100', timeSpentSeconds: 10800 },
+    { id: '3', author: { accountId: 'altro' }, started: '2026-10-28T10:00:00.000+0100', timeSpentSeconds: 3600 },
+    { id: '4', author: { accountId: ME }, started: '2026-10-29T09:00:00.000+0100', timeSpentSeconds: 3600 }
+  ];
+  const cancellati = [];
+  const jira = {
+    async getWorklogs() { return worklogs; },
+    async deleteWorklog(key, id) {
+      if (id === '2' && cancellati.includes('fail')) throw new Error('Jira 403');
+      cancellati.push(id);
+    }
+  };
+  const tutti = ['1', '2', '3', '4'];
+  const out = await deleteWorklogs(jira, { isoDate: '2026-10-28', issueKey: 'ABC-1', worklogIds: tutti, accountId: ME });
+  assert.deepEqual(cancellati, ['1', '2'], 'mai quello di un collega, mai un altro giorno');
+  assert.deepEqual(out, { deleted: 2, minutes: 210, total: 2, error: null });
+  assert.equal(deleteMessage('ABC-1', out).level, 'ok');
+
+  // Senza id non si cancella niente.
+  cancellati.length = 0;
+  assert.equal((await deleteWorklogs(jira, { isoDate: '2026-10-28', issueKey: 'ABC-1', worklogIds: [], accountId: ME })).deleted, 0);
+  assert.deepEqual(cancellati, []);
+
+  // A meta' strada: si dice quanto e' gia' andato.
+  cancellati.length = 0;
+  cancellati.push('fail');
+  const meta = await deleteWorklogs(jira, { isoDate: '2026-10-28', issueKey: 'ABC-1', worklogIds: ['1', '2'], accountId: ME });
+  assert.equal(meta.deleted, 1);
+  assert.equal(meta.error, 'Jira 403');
+  assert.equal(deleteMessage('ABC-1', meta).level, 'err');
+}
+
+// --- l'elenco dei worklog di una riga ---------------------------------------
+{
+  const state = newDayState('2026-10-28');
+  state.loggedEntries = [
+    { id: '9', key: 'ABC-1', startMinutes: 840, minutes: 60 },
+    { id: '8', key: 'ABC-1', startMinutes: 540, minutes: 30 },
+    { key: 'ABC-1', startMinutes: 600, minutes: 30 },
+    { id: '7', key: 'ABC-2', startMinutes: 600, minutes: 30 }
+  ];
+  assert.deepEqual(loggedFor(state, 'ABC-1').map((e) => e.id), ['8', '9'], 'in ordine, e solo quelli con id');
+}
+
+// --- copiare un giorno --------------------------------------------------------
+{
+  assert.equal(previousWorkday('2026-10-26'), '2026-10-23', 'di lunedi si copia il venerdi');
+  assert.equal(previousWorkday('2026-10-28'), '2026-10-27');
+
+  const entries = copyEntries({ entries: [
+    { key: 'ABC-1', summary: 'Uno', minutes: 30, comment: '' },
+    { key: 'ABC-1', summary: 'Uno', minutes: 180, comment: 'fatto x' },
+    { key: 'ABC-3', summary: 'Tre', minutes: 60, comment: '' }
+  ] });
+  assert.deepEqual(entries.map((e) => [e.key, e.minutes, e.comment]), [['ABC-1', 210, 'fatto x'], ['ABC-3', 60, '']]);
+
+  const state = giorno({ registrate: { 'ABC-3': 60 } });
+  state.rows.push({ id: 'task:ABC-3', kind: 'task', issueKey: 'ABC-3', summary: 'Tre', existingMinutes: 60, enabled: false, sources: [] });
+  const msg = applyCopy(state, entries, '2026-10-27');
+  assert.equal(msg.level, 'ok');
+  const uno = state.rows.find((r) => r.issueKey === 'ABC-1');
+  assert.equal(uno.minutes, 210, 'le ore copiate restano quelle');
+  assert.equal(uno.locked, true);
+  assert.equal(uno.comment, 'fatto x');
+  assert.equal(state.rows.find((r) => r.issueKey === 'ABC-3').enabled, false, 'gia registrata oggi: resta spenta');
+  assert.equal(applyCopy(state, [], '2026-10-20').level, 'info');
 }
 
 console.log('userscript giorno: tutti i controlli passati.');

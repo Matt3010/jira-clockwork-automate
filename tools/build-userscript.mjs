@@ -53,6 +53,9 @@ await build({
   minify: false,
   legalComments: 'none',
   banner: { js: HEADER },
+  // I fogli di stile dell'estensione entrano come testo: il pannello li mette
+  // nel suo shadow root, cosi' ha lo stesso aspetto del popup senza copiarlo.
+  loader: { '.css': 'text' },
   logLevel: 'warning'
 });
 console.log(`✓ ${OUT}`);

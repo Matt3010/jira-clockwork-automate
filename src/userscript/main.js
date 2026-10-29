@@ -5,9 +5,11 @@
 // il pannello sta nella pagina Jira che lo contiene, e da li' parla con le API
 // Jira con il login gia' fatto.
 //
-// Tre schede: Giorno — il piano della giornata, da correggere e inviare —,
-// Verifica — ricostruisce i giorni passati come se fossero vuoti e li
-// confronta con i worklog registrati davvero — e Impostazioni.
+// L'aspetto e' quello del popup dell'estensione — stesso foglio di stile,
+// stesse icone, stesso markup — con due linguette: Ore, il piano della
+// giornata da correggere e inviare, e Verifica, che ricostruisce i giorni
+// passati come se fossero vuoti e li confronta con i worklog veri. Le
+// impostazioni si aprono dall'ingranaggio, come le Opzioni dell'estensione.
 
 import { JiraClient, loggedMinutesForDay } from '../lib/jira.js';
 import { formatMinutes, todayIso } from '../lib/dates.js';
@@ -19,10 +21,14 @@ import {
 } from './settings.js';
 import { breakRow, meetingRow, readSettingsForm, renderSettings } from './settings-view.js';
 import {
-  addManualRow, applyLogged, confirmedGuesses, loadPlan, newDayState, notePending, rememberMeetings,
-  removeRow, setRowIssue, setRowMinutes, shiftIsoDate, submitMessages, submitRows, summary, toggleRow
+  addManualRow, applyCopy, applyLogged, confirmedGuesses, copyEntries, deleteMessage, deleteWorklogs, loadPlan,
+  newDayState, notePending, previousWorkday, rememberMeetings, removeRow, setRowIssue, setRowMinutes, shiftIsoDate,
+  submitMessages, submitRows, summary, toggleRow
 } from './day.js';
-import { hoursValue, noteRows, renderDay, renderFooter, timeLabel } from './day-view.js';
+import {
+  conIcona, hoursValue, ico, noteRows, renderDayBar, renderDayMain, renderFooter, renderMessages, timeLabel
+} from './day-view.js';
+import { PANEL_CSS } from './style.js';
 import { t } from './i18n.js';
 
 const MY_WORK = /\/jira\/apps\/[^/]+\/[^/]+\/my-work/;
@@ -54,12 +60,16 @@ let host;
 let root;
 let panel;
 let config = loadSettings();
+// 'day' | 'verify' | 'settings'. Le impostazioni non hanno linguetta: si
+// aprono dall'ingranaggio e si chiudono tornando a una linguetta.
+let tab = 'day';
+
+// Verifica.
 let running = false;
 let report = [];
-let tab = 'day';
 let count = 5;
 
-// Scheda Giorno.
+// Ore.
 const jira = new JiraClient(new PageChannel());
 let me = null;
 let day = newDayState(todayIso());
@@ -70,6 +80,11 @@ let dayError = '';
 let dayStale = true;
 let dayToken = 0;
 let dayTimer = 0;
+// Righe con l'elenco dei worklog aperto, e il giorno da cui copiare.
+const expanded = new Set();
+let copyDate = previousWorkday(todayIso());
+// Una cancellazione o una copia in corso: i loro pulsanti restano spenti.
+let dayWorking = false;
 
 // ------------------------------------------------------------------ verifica
 
@@ -84,15 +99,14 @@ async function verify(giorni) {
   report = [];
   refreshVerify();
   try {
-    const jira = new JiraClient(new PageChannel());
-    const me = await resolveMe(jira);
+    const who = await whoAmI();
     const days = lastWorkingDays(giorni, todayIso());
     for (const [index, isoDate] of days.entries()) {
       setProgress(`Analisi ${dayLabel(isoDate)} (${index + 1}/${days.length})…`);
       try {
-        const day = await collectDay(jira, { isoDate, config, me });
-        const plan = planFromDay(day, config, { asIfEmpty: true });
-        report.push({ ...compareDay(day, plan), warnings: plan.warnings });
+        const raccolto = await collectDay(jira, { isoDate, config, me: who });
+        const plan = planFromDay(raccolto, config, { asIfEmpty: true });
+        report.push({ ...compareDay(raccolto, plan), warnings: plan.warnings });
       } catch (error) {
         report.push({ isoDate, error: error.message || String(error) });
       }
@@ -111,14 +125,14 @@ async function verify(giorni) {
 /** Il report in testo, da incollare dove serve. */
 function reportText() {
   const lines = [];
-  for (const day of report) {
-    if (day.error) {
-      lines.push(`${day.isoDate}  ERRORE: ${day.error}`);
+  for (const giorno of report) {
+    if (giorno.error) {
+      lines.push(`${giorno.isoDate}  ERRORE: ${giorno.error}`);
       continue;
     }
-    lines.push(`${day.isoDate}  registrate ${fmt(day.loggedTotal)} · ricostruite ${fmt(day.plannedTotal)} `
-      + `· ticket ${day.matchedTickets}/${day.loggedTickets}`);
-    for (const r of day.rows) {
+    lines.push(`${giorno.isoDate}  registrate ${fmt(giorno.loggedTotal)} · ricostruite ${fmt(giorno.plannedTotal)} `
+      + `· ticket ${giorno.matchedTickets}/${giorno.loggedTickets}`);
+    for (const r of giorno.rows) {
       const why = r.reason ? ` (${REASONS[r.reason] || r.reason})` : '';
       lines.push(`  ${STATUS[r.status].icon} ${r.key.padEnd(12)} reg ${fmt(r.logged).padEnd(7)} `
         + `piano ${fmt(r.planned).padEnd(7)} ${r.kind === 'meeting' ? '[riunione] ' : ''}${r.summary}${why}`);
@@ -126,8 +140,6 @@ function reportText() {
   }
   return lines.join('\n');
 }
-
-// ------------------------------------------------------------------ disegno
 
 function setProgress(text) {
   const el = root?.querySelector('.progress');
@@ -138,20 +150,20 @@ function configSummary() {
   const projects = config.jira.projects || [];
   if (!projects.length) {
     return '<p class="warn">Nessun progetto configurato: impostali, o importa il file di '
-      + 'configurazione, nella scheda Impostazioni.</p>';
+      + 'configurazione, dalle Opzioni.</p>';
   }
   return `<p class="muted">Progetti: <b>${esc(projects.join(', '))}</b> · `
     + `${(config.meetings || []).length} riunioni · ${config.work.dailyHours}h al giorno</p>`;
 }
 
-function dayBlock(day) {
-  if (day.error) {
-    return `<details class="day" open><summary><b>${esc(dayLabel(day.isoDate))}</b>`
-      + `<span class="bad">errore</span></summary><p class="bad">${esc(day.error)}</p></details>`;
+function verifyDay(giorno) {
+  if (giorno.error) {
+    return `<details class="vday" open><summary><b>${esc(dayLabel(giorno.isoDate))}</b>`
+      + `<span class="bad">errore</span></summary><p class="bad">${esc(giorno.error)}</p></details>`;
   }
-  const perc = day.loggedTotal ? Math.round((day.overlapMinutes / day.loggedTotal) * 100) : 100;
+  const perc = giorno.loggedTotal ? Math.round((giorno.overlapMinutes / giorno.loggedTotal) * 100) : 100;
   const tone = perc >= 90 ? 'good' : perc >= 60 ? 'mid' : 'bad';
-  const righe = day.rows.map((r) => `
+  const righe = giorno.rows.map((r) => `
     <tr class="${r.status}">
       <td class="st" title="${STATUS[r.status].label}">${STATUS[r.status].icon}</td>
       <td><a href="/browse/${encodeURIComponent(r.key)}" target="_blank">${esc(r.key)}</a>
@@ -161,74 +173,89 @@ function dayBlock(day) {
       <td class="num">${fmt(r.logged)}</td>
       <td class="num">${fmt(r.planned)}</td>
     </tr>`).join('');
-  return `<details class="day" ${tone === 'good' ? '' : 'open'}>
-    <summary><b>${esc(dayLabel(day.isoDate))}</b>
-      <span class="muted">reg ${fmt(day.loggedTotal)} · piano ${fmt(day.plannedTotal)} · `
-      + `ticket ${day.matchedTickets}/${day.loggedTickets}</span>
+  return `<details class="vday" ${tone === 'good' ? '' : 'open'}>
+    <summary><b>${esc(dayLabel(giorno.isoDate))}</b>
+      <span class="muted">reg ${fmt(giorno.loggedTotal)} · piano ${fmt(giorno.plannedTotal)} · `
+      + `ticket ${giorno.matchedTickets}/${giorno.loggedTickets}</span>
       <span class="${tone}">${perc}%</span></summary>
-    ${day.rows.length ? `<table><thead><tr><th></th><th>Ticket</th><th>Registrate</th><th>Piano</th></tr></thead>
+    ${giorno.rows.length ? `<table class="vtab"><thead><tr><th></th><th>Ticket</th><th>Registrate</th><th>Piano</th></tr></thead>
       <tbody>${righe}</tbody></table>` : '<p class="muted">Niente registrato e niente trovato.</p>'}
   </details>`;
 }
 
 function verifyBody() {
-  return `<section>${configSummary()}</section>
-    <section>
-      <h3>Verifica giorni passati</h3>
-      <p class="muted">Ricostruisce ogni giorno come se fosse vuoto e lo confronta con i worklog che hai
-        registrato. Solo letture: su Jira non scrive niente.</p>
-      <div class="row">
-        <label>Ultimi <input type="number" min="1" max="30" value="${count}" class="count"> giorni lavorativi</label>
-        <button class="primary" data-act="verify" ${running ? 'disabled' : ''}>Verifica</button>
-        ${report.length && !running ? '<button data-act="copy">Copia report</button>' : ''}
-      </div>
-      <p class="progress muted"></p>
-      ${report.map(dayBlock).join('')}
-    </section>`;
+  return `<div class="verify">
+    ${configSummary()}
+    <h3>Verifica giorni passati</h3>
+    <p class="muted">Ricostruisce ogni giorno come se fosse vuoto e lo confronta con i worklog che hai
+      registrato. Solo letture: su Jira non scrive niente.</p>
+    <div class="vrow">
+      <label>Ultimi <input type="number" min="1" max="30" value="${count}" class="count"> giorni lavorativi</label>
+      <button class="primary" data-act="verify" ${running ? 'disabled' : ''}>Verifica</button>
+      ${report.length && !running ? '<button class="ghost" data-act="copy">Copia report</button>' : ''}
+    </div>
+    <p class="progress muted"></p>
+    ${report.map(verifyDay).join('')}
+  </div>`;
 }
 
-const TABS = [['day', 'Giorno'], ['verify', 'Verifica'], ['settings', 'Impostazioni']];
+// ------------------------------------------------------------------ disegno
 
-function bodyOf(scheda) {
-  if (scheda === 'settings') return renderSettings(config);
-  if (scheda === 'day') {
-    return renderDay(day, { busy: dayBusy, sending: daySending, confirming: dayConfirming, error: dayError });
+const TABS = [['day', t('tabHours')], ['verify', 'Verifica']];
+
+function headerHtml() {
+  const comandi = `<button class="ghost icon-only" data-act="options" title="${esc(t('titleOptions'))}">${ico('settings')}</button>
+    <button class="ghost icon-only" data-act="close" title="${esc(t('btnCancel'))}">${ico('x')}</button>`;
+  if (tab === 'day') {
+    return renderDayBar(day, { busy: dayBusy }).replace(/<\/div>\s*$/, `${comandi}</div>`);
   }
-  return verifyBody();
+  const titolo = tab === 'settings' ? t('titleOptions') : 'Clockwork Autofill';
+  return `<div class="bar-left"><span class="title">${esc(titolo)}</span></div><div class="bar-right">${comandi}</div>`;
 }
+
+const dayFooter = () => renderFooter(day, {
+  busy: dayBusy, sending: daySending, confirming: dayConfirming, host: location.host
+});
 
 function render() {
   if (!panel) return;
-  const scroll = panel.querySelector('.body')?.scrollTop || 0;
+  const scroller = panel.querySelector('main, .opts, .verify');
+  const scroll = scroller?.scrollTop || 0;
   const stessaScheda = panel.dataset.tab === tab;
   panel.dataset.tab = tab;
+
+  let corpo;
+  if (tab === 'settings') corpo = renderSettings(config);
+  else if (tab === 'verify') corpo = verifyBody();
+  else {
+    corpo = `<div id="messages">${dayBusy ? '' : renderMessages(day.messages)}</div>
+      <main>${renderDayMain(day, { busy: dayBusy, error: dayError, expanded, copyDate, working: dayWorking })}</main>
+      <footer class="bar">${dayFooter()}</footer>`;
+  }
+
   panel.innerHTML = `
-    <header>
-      <h2>Clockwork Autofill</h2>
-      <button class="icon" data-act="close" title="Chiudi">✕</button>
-    </header>
-    <nav class="tabs">${TABS.map(([id, label]) =>
-      `<button data-act="tab" data-tab="${id}" class="${tab === id ? 'on' : ''}">${label}</button>`).join('')}</nav>
-    <div class="body">${bodyOf(tab)}</div>
-    ${tab === 'day' ? `<footer class="dayfoot">${dayFooter()}</footer>` : ''}`;
-  // Lo scroll si tiene solo ridisegnando la stessa scheda: cambiandola si
-  // riparte dall'alto.
-  if (stessaScheda) panel.querySelector('.body').scrollTop = scroll;
+    <header class="bar">${headerHtml()}</header>
+    <nav class="tabs" role="tablist">${TABS.map(([id, label]) =>
+      `<button class="tab" role="tab" data-act="tab" data-tab="${id}" aria-selected="${tab === id}">${esc(label)}</button>`).join('')}</nav>
+    ${corpo}`;
+  // Lo scroll si tiene solo ridisegnando la stessa scheda.
+  const nuovo = panel.querySelector('main, .opts, .verify');
+  if (stessaScheda && nuovo) nuovo.scrollTop = scroll;
 }
 
 // ------------------------------------------------------------------ impostazioni
 
-function settingsMessage(text, tone = 'muted') {
-  const el = root?.querySelector('.save-result');
+function settingsResult(selector, text, tone = '') {
+  const el = root?.querySelector(selector);
   if (!el) return;
   el.textContent = text;
-  el.className = `save-result ${tone}`;
+  el.className = `result ${selector.slice(1)} ${tone}`;
 }
 
 function saveFromForm() {
   const { config: next, invalid } = applySettingsForm(config, readSettingsForm(panel.querySelector('.settings')));
   if (invalid.length) {
-    settingsMessage(`Non salvato: la fine deve venire dopo l'inizio (${invalid.join(', ')}).`, 'bad');
+    settingsResult('.save-result', t('msgNotSavedTimes', invalid.join(', ')), 'err');
     return;
   }
   config = next;
@@ -236,7 +263,7 @@ function saveFromForm() {
   // Il piano del giorno era fatto con le impostazioni di prima.
   dayStale = true;
   render();
-  settingsMessage('Salvato.', 'good');
+  settingsResult('.save-result', t('msgSaved'), 'ok');
 }
 
 function exportFile() {
@@ -250,38 +277,48 @@ function exportFile() {
 }
 
 async function testConnection() {
-  const el = root.querySelector('.test-result');
-  el.textContent = 'Verifica…';
-  el.className = 'test-result muted';
+  settingsResult('.test-result', t('btnAnalysing'));
   try {
-    const me = await resolveMe(new JiraClient(new PageChannel()));
-    el.textContent = `Connesso come ${me.displayName}.`;
-    el.className = 'test-result good';
+    const io = await resolveMe(jira);
+    settingsResult('.test-result', t('msgConnectedAs', io.displayName, location.host), 'ok');
   } catch (error) {
-    el.textContent = error.message || String(error);
-    el.className = 'test-result bad';
+    settingsResult('.test-result', error.message || String(error), 'err');
   }
 }
 
 function addRow(kind) {
   const id = `${kind}-${Date.now()}`;
   const html = kind === 'break'
-    ? breakRow({ id, label: 'Pausa', start: '13:00', end: '14:00' })
-    : meetingRow({ id, label: 'Riunione', days: [1, 2, 3, 4, 5], time: '09:30', minutes: 30 });
+    ? breakRow({ id, label: t('defaultBreakName'), start: '13:00', end: '14:00' })
+    : meetingRow({ id, label: t('defaultMeetingName'), days: [1, 2, 3, 4, 5], time: '09:30', minutes: 30 });
   panel.querySelector(kind === 'break' ? '.list.breaks' : '.list.meetings').insertAdjacentHTML('beforeend', html);
 }
 
-// ------------------------------------------------------------------ giorno
+const ERRORI_IMPORT = { NOT_OURS: 'msgImportNotOurs', TOO_NEW: 'msgImportTooNew', BROKEN: 'msgImportBroken' };
+
+async function importFile(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+    config = importSettingsFile(await file.text());
+    dayStale = true;
+    render();
+    settingsResult('.save-result', t('msgImported'), 'ok');
+  } catch (error) {
+    render();
+    settingsResult('.save-result', t(ERRORI_IMPORT[error.code] || 'msgImportUnreadable'), 'err');
+  }
+}
+
+// ------------------------------------------------------------------ ore
 
 async function whoAmI() {
   if (!me) me = await resolveMe(jira);
   return me;
 }
 
-const dayFooter = () => renderFooter(day, { busy: dayBusy, sending: daySending, confirming: dayConfirming });
-
 function renderDayFooter() {
-  const foot = root?.querySelector('.dayfoot');
+  const foot = root?.querySelector('footer.bar');
   if (foot) foot.innerHTML = dayFooter();
 }
 
@@ -305,6 +342,7 @@ async function analyzeDay() {
     loadPlan(nuovo, { plan: planFromDay(raccolto, config), day: raccolto, config });
     if (rememberMeetings(config, confirmedGuesses(nuovo))) saveSettings(config);
     day = nuovo;
+    expanded.clear();
   } catch (error) {
     if (token !== dayToken) return;
     dayError = error.message || String(error);
@@ -322,24 +360,25 @@ function setDay(isoDate) {
   const pending = day.pending;
   day = newDayState(isoDate);
   day.pending = pending;
+  copyDate = previousWorkday(isoDate);
   dayBusy = true;
   render();
   clearTimeout(dayTimer);
   dayTimer = setTimeout(analyzeDay, 300);
 }
 
-const rowOf = (el) => day.rows.find((row) => row.id === el.closest('.prow')?.dataset.id);
+const rowOf = (el) => day.rows.find((row) => row.id === el.closest('tr[data-id]')?.dataset.id);
 
 /** Aggiorna ore e orari senza ridisegnare: chi sta scrivendo non perde il fuoco. */
 function syncDayValues() {
   dayConfirming = false;
-  for (const row of day.rows) {
-    const card = [...root.querySelectorAll('.prow')].find((el) => el.dataset.id === row.id);
-    if (!card) continue;
-    const hours = card.querySelector('.hours');
+  for (const tr of root.querySelectorAll('tbody tr[data-id]:not(.worklogs)')) {
+    const row = day.rows.find((r) => r.id === tr.dataset.id);
+    if (!row) continue;
+    const hours = tr.querySelector('.hours');
     if (hours && root.activeElement !== hours) hours.value = hoursValue(row);
     hours?.classList.toggle('locked', Boolean(row.locked));
-    const time = card.querySelector('.time');
+    const time = tr.querySelector('.time');
     if (time) time.textContent = timeLabel(row);
   }
   renderDayFooter();
@@ -392,10 +431,8 @@ async function sendDay() {
     const scritte = results.filter((r) => r.ok).map((r) => r.issueKey);
     if (scritte.length) {
       notePending(day, results);
-      const who = await whoAmI();
-      const chiavi = [...new Set([...day.rows.map((row) => row.issueKey), ...scritte].filter(Boolean))];
       try {
-        applyLogged(day, await loggedMinutesForDay(jira, { isoDate, accountId: who.accountId, extraKeys: chiavi }), scritte);
+        await refreshLogged(scritte);
       } catch (error) {
         day.messages.push({ level: 'action', text: t('msgPlanNotUpdated', error.message) });
       }
@@ -413,6 +450,53 @@ async function sendDay() {
   }
 }
 
+/**
+ * Rilegge solo le ore gia' registrate del giorno guardato. `forced` sono le
+ * issue appena scritte o ripulite: li' la scelta di prima non vale piu'.
+ */
+async function refreshLogged(forced = []) {
+  const who = await whoAmI();
+  const chiavi = [...new Set([...day.rows.map((row) => row.issueKey), ...forced].filter(Boolean))];
+  applyLogged(day, await loggedMinutesForDay(jira, { isoDate: day.isoDate, accountId: who.accountId, extraKeys: chiavi }), forced);
+}
+
+async function deleteFromRow(row, ids) {
+  dayWorking = true;
+  render();
+  try {
+    const who = await whoAmI();
+    const out = await deleteWorklogs(jira, { isoDate: day.isoDate, issueKey: row.issueKey, worklogIds: ids, accountId: who.accountId });
+    day.messages = [deleteMessage(row.issueKey, out)];
+    expanded.delete(row.id);
+    // Il minimo di quello appena scritto non vale piu': terrebbe a schermo ore che non ci sono.
+    delete day.pending.perIssue[row.issueKey];
+    await refreshLogged([row.issueKey]);
+    if (out.deleted) reloadClockworkSoon();
+  } catch (error) {
+    day.messages.push({ level: 'err', text: error.message || String(error) });
+  } finally {
+    dayWorking = false;
+    render();
+  }
+}
+
+async function copyDay() {
+  copyDate = root.querySelector('.copy-date')?.value || copyDate;
+  if (!copyDate || !day.config) return;
+  dayWorking = true;
+  render();
+  try {
+    const who = await whoAmI();
+    const logged = await loggedMinutesForDay(jira, { isoDate: copyDate, accountId: who.accountId });
+    day.messages = [applyCopy(day, copyEntries(logged), copyDate)];
+  } catch (error) {
+    day.messages.push({ level: 'err', text: error.message || String(error) });
+  } finally {
+    dayWorking = false;
+    render();
+  }
+}
+
 function onDayClick(act, el) {
   if (act === 'prev-day') setDay(shiftIsoDate(day.isoDate, -1));
   else if (act === 'next-day') setDay(shiftIsoDate(day.isoDate, 1));
@@ -421,10 +505,26 @@ function onDayClick(act, el) {
   else if (act === 'add-row') {
     addManualRow(day);
     render();
-    [...root.querySelectorAll('.prow .issue')].pop()?.focus();
+    [...root.querySelectorAll('.issue-input')].pop()?.focus();
   } else if (act === 'remove-plan-row') {
-    removeRow(day, el.closest('.prow').dataset.id);
+    removeRow(day, el.closest('tr[data-id]').dataset.id);
     render();
+  } else if (act === 'wipe') {
+    const id = el.closest('tr[data-id]').dataset.id;
+    if (expanded.has(id)) expanded.delete(id);
+    else expanded.add(id);
+    render();
+  } else if (act === 'delete-worklog') {
+    const row = rowOf(el);
+    if (row && !dayWorking) deleteFromRow(row, el.dataset.worklog.split(','));
+  } else if (act === 'reload-logged') {
+    const row = rowOf(el);
+    el.disabled = true;
+    refreshLogged(row ? [row.issueKey] : [])
+      .catch((error) => day.messages.push({ level: 'action', text: t('msgPlanNotUpdated', error.message) }))
+      .finally(render);
+  } else if (act === 'copy-day') {
+    if (!dayWorking) copyDay();
   } else if (act === 'send') sendDay();
   else if (act === 'cancel-send') {
     dayConfirming = false;
@@ -436,6 +536,7 @@ function onDayClick(act, el) {
 function onDayChange(act, el) {
   const row = rowOf(el);
   if (act === 'date') setDay(el.value);
+  else if (act === 'copy-date') copyDate = el.value;
   else if (act === 'toggle' && row) {
     toggleRow(day, row, el.checked);
     render();
@@ -459,142 +560,23 @@ function onInput(event) {
   el.rows = noteRows(el.value);
 }
 
-// ------------------------------------------------------------------ montaggio
+// ------------------------------------------------------------------ eventi
 
-const CSS = `
-  :host { all: initial; }
-  * { box-sizing: border-box; }
-  .tab {
-    position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 2147483000;
-    writing-mode: vertical-rl; padding: 12px 6px; border: 0; border-radius: 8px 0 0 8px; cursor: pointer;
-    font: 600 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--ds-background-brand-bold, #0c66e4); color: var(--ds-text-inverse, #fff);
-  }
-  .panel {
-    position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 100vw); z-index: 2147483001;
-    display: flex; flex-direction: column;
-    background: var(--ds-surface-overlay, #fff); color: var(--ds-text, #172b4d);
-    border-left: 1px solid var(--ds-border, #dfe1e6); box-shadow: -8px 0 24px rgba(0,0,0,.25);
-    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  }
-  .panel[hidden] { display: none; }
-  header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
-    border-bottom: 1px solid var(--ds-border, #dfe1e6); }
-  h2 { font-size: 16px; margin: 0; }
-  h3 { font-size: 14px; margin: 0 0 4px; }
-  /* Niente padding in fondo: il pulsante Salva e' sticky, e col padding restava
-     sollevato con le righe che scorrevano visibili sotto. */
-  .body { flex: 1; overflow: auto; padding: 0 16px; }
-  .body > section:last-child { padding-bottom: 24px; }
-  section { padding: 12px 0; border-bottom: 1px solid var(--ds-border, #dfe1e6); }
-  section:last-child { border-bottom: 0; }
-  p { margin: 4px 0 8px; }
-  .muted { color: var(--ds-text-subtle, #626f86); }
-  .warn { color: var(--ds-text-warning, #a54800); }
-  .good { color: var(--ds-text-success, #216e4e); font-weight: 600; }
-  .mid { color: var(--ds-text-warning, #a54800); font-weight: 600; }
-  .bad { color: var(--ds-text-danger, #ae2e24); font-weight: 600; }
-  button, .file {
-    font: inherit; color: inherit; background: var(--ds-background-neutral, #091e420f);
-    border: 0; border-radius: 4px; padding: 6px 12px; cursor: pointer; display: inline-block;
-  }
-  button:hover, .file:hover { background: var(--ds-background-neutral-hovered, #091e4224); }
-  button.primary { background: var(--ds-background-brand-bold, #0c66e4); color: var(--ds-text-inverse, #fff); }
-  button[disabled] { opacity: .5; cursor: default; }
-  .icon { background: transparent; padding: 4px 8px; }
-  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  input.count { width: 52px; font: inherit; padding: 4px; border-radius: 4px;
-    border: 1px solid var(--ds-border-input, #8590a2); background: transparent; color: inherit; }
-  .day { margin: 8px 0; border: 1px solid var(--ds-border, #dfe1e6); border-radius: 6px; }
-  .day summary { cursor: pointer; padding: 8px 10px; display: flex; gap: 8px; align-items: baseline; }
-  .day summary .muted { flex: 1; }
-  table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; font-weight: 500; font-size: 11px; color: var(--ds-text-subtle, #626f86);
-    padding: 4px 8px; border-top: 1px solid var(--ds-border, #dfe1e6); }
-  td { padding: 6px 8px; border-top: 1px solid var(--ds-border, #dfe1e6); vertical-align: top; }
-  td.num, th:nth-child(n+3) { text-align: right; white-space: nowrap; }
-  td.st { width: 20px; font-weight: 700; }
-  tr.ok td.st { color: var(--ds-text-success, #216e4e); }
-  tr.hours td.st { color: var(--ds-text-warning, #a54800); }
-  tr.missing td.st, tr.extra td.st { color: var(--ds-text-danger, #ae2e24); }
-  a { color: var(--ds-link, #0c66e4); text-decoration: none; font-weight: 600; }
-  .sum { color: var(--ds-text-subtle, #626f86); font-size: 12px; }
-  .why { color: var(--ds-text-danger, #ae2e24); font-size: 12px; }
-  .tag { font-size: 10px; padding: 0 4px; border-radius: 3px; margin-left: 4px;
-    background: var(--ds-background-accent-yellow-subtler, #f8e6a0); color: var(--ds-text-accent-yellow, #7f5f01); }
-  .tabs { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid var(--ds-border, #dfe1e6); }
-  .tabs button { background: transparent; border-radius: 0; padding: 8px 10px; color: var(--ds-text-subtle, #626f86);
-    border-bottom: 2px solid transparent; }
-  .tabs button.on { color: var(--ds-text-selected, #0c66e4); border-bottom-color: var(--ds-border-selected, #0c66e4); }
-  .tabs button:hover { background: transparent; color: var(--ds-text, #172b4d); }
-  .settings input[type=text], .settings input[type=number], .settings input[type=time], .settings select {
-    font: inherit; color: inherit; background: var(--ds-background-input, transparent);
-    border: 1px solid var(--ds-border-input, #8590a2); border-radius: 4px; padding: 4px 6px; }
-  .field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; font-weight: 500; }
-  .field input[type=text], .field select { width: 100%; }
-  .field input[type=number] { width: 90px; }
-  .check { display: flex; gap: 6px; align-items: center; margin: 8px 0; }
-  .hint { font-weight: 400; font-size: 12px; color: var(--ds-text-subtle, #626f86); }
-  .list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 8px; }
-  .item { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px;
-    border: 1px solid var(--ds-border, #dfe1e6); border-radius: 6px; }
-  .item .f-label { flex: 1; min-width: 120px; }
-  .item.meeting .f-label { flex-basis: calc(100% - 40px); }
-  .item.meeting .days { margin-right: auto; }
-  .days { display: flex; gap: 2px; }
-  .day-box { display: flex; flex-direction: column; align-items: center; font-size: 10px; cursor: pointer; }
-  .footer { position: sticky; bottom: 0; padding: 12px 0; display: flex; gap: 8px; align-items: center;
-    background: var(--ds-surface-overlay, #fff); border-top: 1px solid var(--ds-border, #dfe1e6); }
-  .dayview { padding: 12px 0 24px; display: flex; flex-direction: column; gap: 10px; }
-  .daybar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .sp { flex: 1; }
-  .small { font-size: 11px; }
-  .dayview input, .dayview textarea {
-    font: inherit; color: inherit; background: var(--ds-background-input, transparent);
-    border: 1px solid var(--ds-border-input, #8590a2); border-radius: 4px; padding: 4px 6px; }
-  .msgs { display: flex; flex-direction: column; gap: 6px; }
-  .msgs:empty { display: none; }
-  .msg { padding: 6px 10px; border-radius: 4px; font-size: 12px; border-left: 3px solid; }
-  .msg.err { border-color: var(--ds-border-danger, #e2483d); background: var(--ds-background-danger, #ffeceb); }
-  .msg.action { border-color: var(--ds-border-warning, #e56910); background: var(--ds-background-warning, #fff7d6); }
-  .msg.ok { border-color: var(--ds-border-success, #22a06b); background: var(--ds-background-success, #dcfff1); }
-  .msg.info { border-color: var(--ds-border-information, #1d7afc); background: var(--ds-background-information, #e9f2ff); }
-  .plan { display: flex; flex-direction: column; gap: 8px; }
-  .empty { text-align: center; padding: 24px 0; }
-  .prow { border: 1px solid var(--ds-border, #dfe1e6); border-radius: 6px; padding: 8px;
-    display: flex; flex-direction: column; gap: 4px; }
-  .prow.meeting { border-left: 3px solid var(--ds-border-accent-yellow, #b38600); }
-  .prow.off { opacity: .55; }
-  .ptop { display: flex; align-items: center; gap: 6px; }
-  .ptop .issue { flex: 1; min-width: 0; font-weight: 600; text-transform: uppercase; }
-  .ptop .hours { width: 64px; text-align: right; }
-  .ptop .hours.locked { border-color: var(--ds-border-selected, #0c66e4); border-width: 2px; }
-  .psum { font-size: 12px; }
-  .pdetail, .ptime { font-size: 12px; }
-  .comment { width: 100%; resize: vertical; font-size: 12px; }
-  .badge { font-size: 10px; padding: 1px 5px; border-radius: 3px; margin-left: 3px; font-weight: 600;
-    background: var(--ds-background-neutral, #091e420f); }
-  .badge.jira { background: var(--ds-background-information, #e9f2ff); color: var(--ds-text-information, #0055cc); }
-  .badge.git { background: var(--ds-background-discovery, #f3f0ff); color: var(--ds-text-discovery, #5e4db2); }
-  .badge.warn { background: var(--ds-background-warning, #fff7d6); color: var(--ds-text-warning, #a54800); }
-  .dayfoot { padding: 10px 16px; border-top: 1px solid var(--ds-border, #dfe1e6); display: flex;
-    flex-direction: column; gap: 8px; background: var(--ds-surface-overlay, #fff); }
-  .total { font-size: 12px; }
-  .total b { font-size: 14px; margin-right: 4px; }
-  .total.over { color: var(--ds-text-danger, #ae2e24); }
-  button.danger { background: var(--ds-background-danger-bold, #c9372c); color: var(--ds-text-inverse, #fff); }
-`;
+function showTab(nome) {
+  tab = nome;
+  render();
+  if (tab === 'day' && dayStale && !dayBusy) analyzeDay();
+}
 
 function onClick(event) {
   const el = event.target.closest('[data-act]');
   const act = el?.dataset.act;
+  if (!act) return;
   if (act === 'close') panel.hidden = true;
-  else if (act === 'tab') {
-    tab = el.dataset.tab;
-    render();
-    if (tab === 'day' && dayStale && !dayBusy) analyzeDay();
-  } else if (onDayClick(act, el)) {
-    // gestito dalla scheda Giorno
+  else if (act === 'tab') showTab(el.dataset.tab);
+  else if (act === 'options') showTab(tab === 'settings' ? 'day' : 'settings');
+  else if (onDayClick(act, el)) {
+    // gestito dalla scheda Ore
   } else if (act === 'verify') {
     count = Math.max(1, Math.min(30, Number(panel.querySelector('.count').value) || 5));
     verify(count);
@@ -602,37 +584,30 @@ function onClick(event) {
     navigator.clipboard.writeText(reportText()).then(() => setProgress('Report copiato.'));
   } else if (act === 'save') saveFromForm();
   else if (act === 'export') exportFile();
+  else if (act === 'import-open') panel.querySelector('[data-act="import"]').click();
   else if (act === 'test') testConnection();
   else if (act === 'add-break') addRow('break');
   else if (act === 'add-meeting') addRow('meeting');
-  else if (act === 'remove-row') el.closest('.item')?.remove();
+  else if (act === 'remove-row') el.closest('[data-kind]')?.remove();
 }
 
-async function onChange(event) {
-  if (event.target.dataset.act !== 'import') {
-    onDayChange(event.target.dataset.act, event.target);
-    return;
-  }
-  const file = event.target.files?.[0];
-  if (!file) return;
-  try {
-    config = importSettingsFile(await file.text());
-    dayStale = true;
-    render();
-    settingsMessage('Configurazione importata.', 'good');
-  } catch (error) {
-    render();
-    settingsMessage(`File non valido: ${error.code || error.message}`, 'bad');
-  }
+function onChange(event) {
+  const el = event.target;
+  if (el.dataset.act === 'import') importFile(el);
+  else onDayChange(el.dataset.act, el);
 }
+
+// ------------------------------------------------------------------ montaggio
 
 function mount() {
   host = document.createElement('div');
   host.id = 'clockwork-autofill';
   root = host.attachShadow({ mode: 'open' });
-  root.innerHTML = `<style>${CSS}</style><button class="tab">Autofill</button><aside class="panel" hidden></aside>`;
+  root.innerHTML = `<style>${PANEL_CSS}</style>
+    <button class="handle" title="Clockwork Autofill">${conIcona('calendar', 'Autofill')}</button>
+    <aside class="panel" hidden></aside>`;
   panel = root.querySelector('.panel');
-  root.querySelector('.tab').addEventListener('click', () => {
+  root.querySelector('.handle').addEventListener('click', () => {
     panel.hidden = !panel.hidden;
     if (panel.hidden) return;
     render();

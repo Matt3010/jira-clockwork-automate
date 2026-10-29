@@ -1,105 +1,112 @@
-// La scheda Impostazioni del pannello: disegno e lettura del modulo.
+// Le Impostazioni del pannello: disegno e lettura del modulo.
+//
+// Stesso markup e stesse frasi della pagina Opzioni dell'estensione, meno
+// quello che qui non ha senso (sito, icona, popup o pannello laterale).
 //
 // La validazione non sta qui: `readSettingsForm` restituisce i valori come
 // sono, e `applySettingsForm` (settings.js) decide cosa diventano. Cosi' le
 // regole si provano in node senza un DOM.
 
 import { addMinutes } from '../lib/dates.js';
+import { t } from './i18n.js';
 
-const GIORNI = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
+const GIORNI = ['dayMon', 'dayTue', 'dayWed', 'dayThu', 'dayFri', 'daySat', 'daySun'];
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[c]));
 
+const campo = (etichetta, dentro, classe = '') =>
+  `<div class="field ${classe}"><label>${esc(etichetta)}</label>${dentro}</div>`;
+
 export function breakRow(pausa) {
-  return `<div class="item" data-kind="break" data-id="${esc(pausa.id)}">
-    <input type="text" class="f-label" value="${esc(pausa.label)}" placeholder="Nome">
-    <input type="time" class="f-start" value="${esc(pausa.start)}">
-    <span class="muted">→</span>
-    <input type="time" class="f-end" value="${esc(pausa.end)}">
-    <button class="icon" data-act="remove-row" title="Rimuovi">✕</button>
+  return `<div class="meeting break-row" data-kind="break" data-id="${esc(pausa.id)}">
+    ${campo(t('fieldName'), `<input type="text" class="f-label" value="${esc(pausa.label)}">`, 'label-field')}
+    ${campo(t('fieldFrom'), `<input type="time" class="f-start" value="${esc(pausa.start)}">`, 'small')}
+    ${campo(t('fieldTo'), `<input type="time" class="f-end" value="${esc(pausa.end)}">`, 'small')}
+    <button type="button" class="ghost" data-act="remove-row">${esc(t('btnRemove'))}</button>
   </div>`;
 }
 
 export function meetingRow(riunione) {
   const days = new Set(riunione.days || []);
-  const giorni = GIORNI.map((g, i) => `<label class="day-box" title="${g}">
-      <input type="checkbox" class="f-day" value="${i + 1}" ${days.has(i + 1) ? 'checked' : ''}>${g}</label>`).join('');
-  return `<div class="item meeting" data-kind="meeting" data-id="${esc(riunione.id)}">
-    <input type="text" class="f-label" value="${esc(riunione.label)}" placeholder="Nome">
-    <div class="days">${giorni}</div>
-    <input type="time" class="f-start" value="${esc(riunione.time)}">
-    <span class="muted">→</span>
-    <input type="time" class="f-end" value="${esc(addMinutes(riunione.time, riunione.minutes))}">
-    <button class="icon" data-act="remove-row" title="Rimuovi">✕</button>
+  const giorni = GIORNI.map((chiave, i) => `<label><input type="checkbox" class="f-day" value="${i + 1}"
+      ${days.has(i + 1) ? 'checked' : ''}><span>${esc(t(chiave))}</span></label>`).join('');
+  return `<div class="meeting" data-kind="meeting" data-id="${esc(riunione.id)}">
+    ${campo(t('fieldName'), `<input type="text" class="f-label" value="${esc(riunione.label)}">`, 'label-field')}
+    ${campo(t('fieldDays'), `<div class="days">${giorni}</div>`, 'days-field')}
+    ${campo(t('fieldFrom'), `<input type="time" class="f-start" value="${esc(riunione.time)}">`, 'small')}
+    ${campo(t('fieldTo'), `<input type="time" class="f-end" value="${esc(addMinutes(riunione.time, riunione.minutes))}">`, 'small')}
+    <button type="button" class="ghost" data-act="remove-row">${esc(t('btnRemove'))}</button>
   </div>`;
 }
 
+const check = (name, acceso, etichetta) => `<div class="field check">
+    <input type="checkbox" id="opt-${name}" name="${name}" ${acceso ? 'checked' : ''}>
+    <label for="opt-${name}">${esc(etichetta)}</label>
+  </div>`;
+
 export function renderSettings(config) {
   const { jira, work, identity } = config;
-  return `<div class="settings">
+  const split = (valore, chiave) => `<option value="${valore}" ${work.split === valore ? 'selected' : ''}>${esc(t(chiave))}</option>`;
+  return `<div class="opts settings">
     <section>
-      <h3>Jira</h3>
-      <label class="field">Progetti da analizzare
-        <input type="text" name="projects" value="${esc((jira.projects || []).join(', '))}" placeholder="ABC, XYZ">
-        <span class="hint">Chiavi separate da virgola.</span></label>
-      <label class="check"><input type="checkbox" name="scanComments" ${jira.scanComments ? 'checked' : ''}>
-        Conta anche i miei commenti come attività</label>
-      <div class="row"><button type="button" data-act="test">Prova connessione</button>
-        <span class="test-result muted"></span></div>
-    </section>
-    <section>
-      <h3>Commit</h3>
-      <label class="check"><input type="checkbox" name="countMerges" ${jira.countMerges !== false ? 'checked' : ''}>
-        Conta anche i commit di merge</label>
-      <label class="field">Ticket da controllare oltre a quelli del giorno
-        <input type="number" name="devCandidates" min="0" max="100" value="${esc(jira.devCandidates)}">
-        <span class="hint">Quelli su cui hai registrato ore e quelli assegnati a te, nelle tre settimane prima.
-          0 = solo quelli del giorno.</span></label>
-      <label class="field">Nomi o email con cui firmi i commit
-        <input type="text" name="authors" value="${esc((identity.extraAuthors || []).join(', '))}"
-          placeholder="di solito si lascia vuoto">
-        <span class="hint">Il tuo nome e la tua email Jira valgono già.</span></label>
-    </section>
-    <section>
-      <h3>Giornata</h3>
-      <div class="row">
-        <label class="field">Ore<input type="number" name="dailyHours" min="1" max="24" step="0.5" value="${esc(work.dailyHours)}"></label>
-        <label class="field">Arrotondamento (min)<input type="number" name="roundingMinutes" min="1" max="60" value="${esc(work.roundingMinutes)}"></label>
-        <label class="field">Inizio<input type="time" name="startTime" value="${esc(work.startTime)}"></label>
+      <h2>${esc(t('secJira'))}</h2>
+      ${campo(t('fieldProjects'), `<input type="text" name="projects" value="${esc((jira.projects || []).join(', '))}" placeholder="ABC, XYZ">
+        <p class="hint">${esc(t('hintProjects'))}</p>`)}
+      ${check('scanComments', jira.scanComments, t('checkComments'))}
+      <div class="with-button">
+        <button type="button" class="ghost" data-act="test">${esc(t('btnTestConnection'))}</button>
+        <span class="result test-result"></span>
       </div>
-      <label class="field">Come dividere le ore
-        <select name="split">
-          <option value="equal" ${work.split === 'equal' ? 'selected' : ''}>In parti uguali</option>
-          <option value="activity" ${work.split === 'activity' ? 'selected' : ''}>In proporzione a commit e modifiche</option>
-          <option value="estimate" ${work.split === 'estimate' ? 'selected' : ''}>In proporzione alla stima</option>
-        </select></label>
-      <label class="check"><input type="checkbox" name="sendComments" ${work.sendComments !== false ? 'checked' : ''}>
-        Invia la nota con ogni worklog</label>
     </section>
     <section>
-      <h3>Pause</h3>
-      <p class="hint">Non consumano ore: sono buchi nella giornata, e il lavoro che ci cade sopra viene spezzato.</p>
+      <h2>${esc(t('secCommits'))}</h2>
+      <p class="hint">${esc(t('hintDevPanel'))}</p>
+      ${check('countMerges', jira.countMerges !== false, t('checkCountMerges'))}
+      <p class="hint">${esc(t('hintCountMerges'))}</p>
+      ${campo(t('fieldDevCandidates'), `<input type="number" name="devCandidates" min="0" max="100" value="${esc(jira.devCandidates)}">
+        <p class="hint">${esc(t('hintDevCandidates'))}</p>`)}
+      ${campo(t('fieldAuthors'), `<input type="text" name="authors" value="${esc((identity.extraAuthors || []).join(', '))}"
+          placeholder="${esc(t('authorsPlaceholder'))}">
+        <p class="hint">${esc(t('hintAuthors'))}</p>`)}
+    </section>
+    <section>
+      <h2>${esc(t('secDay'))}</h2>
+      <div class="row">
+        ${campo(t('fieldDailyHours'), `<input type="number" name="dailyHours" min="1" max="24" step="0.5" value="${esc(work.dailyHours)}">`)}
+        ${campo(t('fieldRounding'), `<input type="number" name="roundingMinutes" min="1" max="60" step="1" value="${esc(work.roundingMinutes)}">`)}
+        ${campo(t('fieldStartTime'), `<input type="time" name="startTime" value="${esc(work.startTime)}">`)}
+      </div>
+      ${campo(t('fieldSplit'), `<select name="split">${split('equal', 'splitEqual')}${split('activity', 'splitActivity')}${split('estimate', 'splitEstimate')}</select>
+        <p class="hint">${esc(t('hintSplit'))}</p>`)}
+      ${check('sendComments', work.sendComments !== false, t('checkSendComments'))}
+      <p class="hint">${esc(t('hintSendComments'))}</p>
+    </section>
+    <section>
+      <h2>${esc(t('secBreaks'))}</h2>
+      <p class="hint">${esc(t('hintBreaks'))}</p>
       <div class="list breaks">${(work.breaks || []).map(breakRow).join('')}</div>
-      <button type="button" data-act="add-break">Aggiungi pausa</button>
+      <button type="button" class="ghost" data-act="add-break">${esc(t('btnAddBreak'))}</button>
     </section>
     <section>
-      <h3>Riunioni ricorrenti</h3>
-      <p class="hint">Durata fissa, tolta dalla giornata prima di dividere il resto.</p>
+      <h2>${esc(t('secMeetings'))}</h2>
+      <p class="hint">${esc(t('hintMeetings'))}</p>
       <div class="list meetings">${(config.meetings || []).map(meetingRow).join('')}</div>
-      <button type="button" data-act="add-meeting">Aggiungi riunione</button>
+      <button type="button" class="ghost" data-act="add-meeting">${esc(t('btnAddMeeting'))}</button>
     </section>
     <section>
-      <h3>File di configurazione</h3>
-      <div class="row">
-        <button type="button" data-act="export">Esporta</button>
-        <label class="file">Importa…<input type="file" accept="application/json,.json" data-act="import" hidden></label>
+      <h2>${esc(t('secBackup'))}</h2>
+      <p class="hint">${esc(t('hintBackup'))}</p>
+      <div class="with-button">
+        <button type="button" class="ghost" data-act="export">${esc(t('btnExport'))}</button>
+        <button type="button" class="ghost" data-act="import-open">${esc(t('btnImport'))}</button>
+        <input type="file" accept="application/json,.json" data-act="import" hidden>
       </div>
     </section>
-    <div class="footer">
-      <button type="button" class="primary" data-act="save">Salva</button>
-      <span class="save-result muted"></span>
+    <div class="opts-foot">
+      <button type="button" class="primary" data-act="save">${esc(t('btnSave'))}</button>
+      <span class="result save-result"></span>
     </div>
   </div>`;
 }
@@ -107,7 +114,7 @@ export function renderSettings(config) {
 /** I valori del modulo, cosi' come sono: li valida `applySettingsForm`. */
 export function readSettingsForm(form) {
   const val = (name) => form.querySelector(`[name="${name}"]`);
-  const righe = (kind) => [...form.querySelectorAll(`.item[data-kind="${kind}"]`)];
+  const righe = (kind) => [...form.querySelectorAll(`[data-kind="${kind}"]`)];
   return {
     projects: val('projects').value,
     scanComments: val('scanComments').checked,

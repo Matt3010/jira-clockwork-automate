@@ -333,6 +333,124 @@ export function applyLogged(state, logged, forced = []) {
   redistribute(state);
 }
 
+// ------------------------------------------------------------ eliminare e copiare
+
+/** I worklog gia' registrati quel giorno su una issue, in ordine di orario. */
+export function loggedFor(state, issueKey) {
+  return state.loggedEntries
+    .filter((entry) => entry.key === issueKey && entry.id)
+    .sort((a, b) => a.startMinutes - b.startMinutes);
+}
+
+/**
+ * Cancella i tuoi worklog di quel giorno su una issue, solo quelli indicati
+ * per id. Senza id non si cancella niente: un "tutti quelli del giorno"
+ * toccherebbe anche ore messe prima, da Clockwork o da un altro invio.
+ *
+ * I worklog si rileggono diretti dalla issue, non dall'indice di Jira: subito
+ * dopo un invio — proprio quando lo si vuole disfare — l'indice e' indietro.
+ * Se una cancellazione fallisce a meta', le precedenti sono gia' andate: si
+ * riporta quanto e' stato fatto.
+ */
+export async function deleteWorklogs(jira, { isoDate, issueKey, worklogIds, accountId }) {
+  const wanted = new Set((worklogIds || []).map(String));
+  if (!issueKey || !wanted.size) return { deleted: 0, minutes: 0, total: 0, error: null };
+
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const inizio = new Date(y, m - 1, d).getTime();
+  const fine = new Date(y, m - 1, d + 1).getTime();
+  const miei = (await jira.getWorklogs(issueKey, inizio - 1)).filter((worklog) => {
+    const quando = Date.parse(worklog.started);
+    return worklog.author?.accountId === accountId && quando >= inizio && quando < fine
+      && wanted.has(String(worklog.id));
+  }).map((worklog) => ({ id: worklog.id, minutes: Math.round((worklog.timeSpentSeconds || 0) / 60) }));
+
+  let deleted = 0;
+  let minutes = 0;
+  let error = null;
+  for (const entry of miei) {
+    try {
+      await jira.deleteWorklog(issueKey, entry.id);
+      deleted += 1;
+      minutes += entry.minutes;
+    } catch (e) {
+      error = e.message;
+      break;
+    }
+  }
+  return { deleted, minutes, total: miei.length, error };
+}
+
+export function deleteMessage(issueKey, out) {
+  if (out.error) {
+    return {
+      level: 'err',
+      text: t('msgDeletedPartial', issueKey, out.deleted, out.total, formatMinutes(out.minutes), out.error)
+    };
+  }
+  return {
+    level: 'ok',
+    text: t(out.deleted === 1 ? 'msgDeletedOne' : 'msgDeleted', issueKey, out.deleted, formatMinutes(out.minutes))
+  };
+}
+
+/** Il giorno lavorativo precedente: sabato e domenica non si copiano. */
+export function previousWorkday(isoDate) {
+  let giorno = shiftIsoDate(isoDate, -1);
+  const settimana = (iso) => new Date(`${iso}T12:00:00`).getDay();
+  while (settimana(giorno) === 0 || settimana(giorno) === 6) giorno = shiftIsoDate(giorno, -1);
+  return giorno;
+}
+
+/**
+ * Le righe da copiare da un altro giorno: piu' worklog sulla stessa issue
+ * diventano una riga sola, perche' la spezzatura la rifa' il planner con le
+ * pause del giorno di arrivo.
+ */
+export function copyEntries(logged) {
+  const byKey = new Map();
+  for (const entry of logged.entries || []) {
+    const riga = byKey.get(entry.key) || { key: entry.key, summary: entry.summary, minutes: 0, comment: '' };
+    riga.minutes += entry.minutes;
+    if (!riga.comment && entry.comment) riga.comment = entry.comment;
+    byKey.set(entry.key, riga);
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * Riparte da una giornata gia' fatta. Le ore copiate arrivano bloccate: sono
+ * una tua scelta, non una stima, e non si ridistribuiscono. Le issue che oggi
+ * hanno gia' ore restano spente: copiare non scavalca i doppioni.
+ */
+export function applyCopy(state, entries, fromDate) {
+  for (const entry of entries) {
+    const esistente = state.rows.find((row) => row.issueKey === entry.key);
+    const riga = esistente || {
+      id: `copia:${entry.key}`,
+      kind: 'task',
+      issueKey: entry.key,
+      summary: entry.summary,
+      label: '',
+      sources: [],
+      detail: t('detailCopied', fromDate),
+      segments: [],
+      existingMinutes: 0,
+      enabled: true
+    };
+    riga.minutes = entry.minutes;
+    riga.lockedMinutes = entry.minutes;
+    riga.locked = true;
+    if (entry.comment) riga.comment = entry.comment;
+    if (!riga.existingMinutes) riga.enabled = true;
+    if (!esistente) state.rows.push(riga);
+  }
+  redistribute(state);
+  return entries.length
+    ? { level: 'ok', text: t(entries.length === 1 ? 'msgCopiedOne' : 'msgCopied', entries.length, fromDate) }
+    : { level: 'info', text: t('msgCopiedNone', fromDate) };
+}
+
 /** Il giorno spostato di `giorni`. */
 export function shiftIsoDate(isoDate, giorni) {
   const [y, m, d] = isoDate.split('-').map(Number);
