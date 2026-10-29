@@ -171,4 +171,43 @@ const config = { ...DEFAULT_CONFIG, meetings: [], work: { ...DEFAULT_CONFIG.work
   assert.deepEqual(pagine, [], 'il giorno e dentro le 40 della search');
 }
 
+// --- le impostazioni dal modulo -------------------------------------------
+{
+  const { applySettingsForm, exportSettingsFile } = await import('../src/userscript/settings.js');
+  const { importData } = await import('../src/lib/storage.js');
+  const prima = { ...DEFAULT_CONFIG, weeklyMeetingIssues: { '2026-W44|Standup': 'ABC-9' } };
+  const modulo = {
+    projects: ' abc , xyz,, ', scanComments: false, countMerges: true, devCandidates: '-3', authors: 'm.r, ',
+    dailyHours: '7.5', roundingMinutes: '', startTime: '08:30', split: 'boh', sendComments: true,
+    breaks: [{ id: 'p', label: '', start: '13:00', end: '14:00' }],
+    meetings: [
+      { id: 'a', label: 'Daily', days: [1, 2], start: '09:30', end: '09:45' },
+      { id: 'b', label: 'Sospesa', days: [], start: '10:00', end: '09:00' }
+    ]
+  };
+  const { config: dopo, invalid } = applySettingsForm(prima, modulo);
+  assert.deepEqual(invalid, [], 'una riunione senza giorni si scarta, non blocca il salvataggio');
+  assert.deepEqual(dopo.jira.projects, ['ABC', 'XYZ']);
+  assert.equal(dopo.jira.devCandidates, 0, 'mai sotto zero');
+  assert.deepEqual(dopo.identity.extraAuthors, ['m.r']);
+  assert.equal(dopo.work.dailyHours, 7.5);
+  assert.equal(dopo.work.roundingMinutes, 15, 'vuoto torna al default');
+  assert.equal(dopo.work.split, 'equal', 'un valore sconosciuto vale parti uguali');
+  assert.deepEqual(dopo.work.breaks, [{ id: 'p', label: 'Pausa', start: '13:00', end: '14:00' }]);
+  assert.deepEqual(dopo.meetings, [{ id: 'a', label: 'Daily', days: [1, 2], time: '09:30', minutes: 15 }],
+    'da/a diventa orario + durata');
+  assert.deepEqual(dopo.weeklyMeetingIssues, prima.weeklyMeetingIssues, 'la memoria delle riunioni resta');
+
+  // La fine prima dell'inizio blocca, e dice dove.
+  const rotto = applySettingsForm(prima, { ...modulo, breaks: [{ id: 'p', label: 'Pranzo', start: '14:00', end: '13:00' }] });
+  assert.deepEqual(rotto.invalid, ['Pranzo']);
+
+  // Il file esportato si reimporta: e' lo stesso formato dell'estensione.
+  const file = exportSettingsFile(dopo);
+  assert.match(file.name, /^clockwork-autofill-\d{4}-\d{2}-\d{2}\.json$/);
+  const riletto = importData(JSON.parse(file.text));
+  assert.deepEqual(riletto.config.meetings, dopo.meetings);
+  assert.deepEqual(riletto.meetingMemory, prima.weeklyMeetingIssues);
+}
+
 console.log('userscript verifica: tutti i controlli passati.');
